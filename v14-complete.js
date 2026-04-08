@@ -797,7 +797,6 @@
       var realItems = cart.items.filter(function(it) {
         return it.handle !== PROT && it.handle !== WATCH_CASE_HANDLE;
       });
-
       var targetVid = null;
       var target = CFG.scarcityTarget || '2';
 
@@ -839,8 +838,8 @@
           var seenH = {};
           var uniq = [];
           for (var i = 0; i < realItems.length; i++) {
-            if (!seenH[realItems[i].handle]) {
-              seenH[realItems[i].handle] = true;
+            if (!seenH[realItems[i].variant_id]) {
+              seenH[realItems[i].variant_id] = true;
               uniq.push(i);
             }
           }
@@ -864,7 +863,6 @@
           }
         }
       }
-
       // Save to session + global
       scarcityVariantId = targetVid;
       try {
