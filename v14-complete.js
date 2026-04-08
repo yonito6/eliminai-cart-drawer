@@ -46,11 +46,15 @@
       this.setupScrollIndicator();
       this.updateProgress();
       this.checkOverflow();
-      // Remove instant class after first paint so toggle animates on user interaction
-      setTimeout(function() {
-        var sl = document.querySelector(".ccd-toggle--instant");
-        if (sl) sl.classList.remove("ccd-toggle--instant");
-      }, 500);
+      // Remove instant class only on first user interaction with the toggle
+      var tglInput = document.getElementById("ccd-shipping-toggle");
+      if (tglInput) {
+        tglInput.addEventListener("change", function onFirstToggle() {
+          var sl = tglInput.nextElementSibling;
+          if (sl) sl.classList.remove("ccd-toggle--instant");
+          tglInput.removeEventListener("change", onFirstToggle);
+        });
+      }
     },
 
     getRealCount: function(cart) {
