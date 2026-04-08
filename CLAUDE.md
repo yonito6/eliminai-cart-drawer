@@ -120,6 +120,66 @@ The cart drawer settings are in `settings_schema_new.json` under these groups:
 
 ---
 
+## Shopify App Architecture — MANDATORY
+
+This cart drawer is a **standalone Shopify app** (separate from Eliminai support app).
+All settings live in the app, NOT in theme settings.
+
+### Why Separate App
+- Different product, different billing, different Shopify permissions
+- Cart drawer needs minimal scopes (read_themes or none with Theme App Extension)
+- Support app has different scopes (orders, customers, emails)
+- Customers might want one without the other
+- Separate App Store listing
+
+### Developer App
+- Create a NEW app in Shopify Partners (not reuse Eliminai support app)
+- App name: "Eliminai Cart Optimizer" (or similar)
+- Required scopes: read_products (for upsell product picker)
+- Theme App Extension replaces manual theme file editing
+
+### How It Works
+
+**1. Theme App Extension (app embed block)**
+- Lives in extensions/ directory of the app
+- Merchant toggles it ON in theme editor — no manual code editing
+- Injects cart drawer JS/CSS into every storefront page
+- Replaces current manual upload workflow for production merchants
+- Dev/testing: we still use upload-v14.js for our own store
+
+**2. App Panel (embedded in Shopify admin)**
+- React/Next.js page rendered inside Shopify admin via App Bridge
+- This is where merchants configure EVERYTHING:
+  - Cart drawer design (colors, layout, text)
+  - Scarcity settings (type, text, target item)
+  - Checkout button text/icons/emojis
+  - Upsell rules (trigger product -> upsell product)
+  - Progress bar thresholds and messaging
+  - Gift/bonus incentive rules
+  - Trust elements
+  - A/B test dashboard (live results, winning variants, revenue impact)
+  - Seasonal/holiday theme selector
+- NO settings in Shopify theme editor (except the on/off toggle for the embed block)
+
+**3. App Proxy (config delivery + event collection)**
+- Store routes: store.com/apps/eliminai-cart/*
+- GET /apps/eliminai-cart/config — returns cart drawer config (settings, active variants, upsell rules)
+- POST /apps/eliminai-cart/events — receives tracking events (batched)
+- Same-origin, zero CORS, free, HMAC-signed by Shopify
+
+**4. Backend (Railway — shared or separate)**
+- Can share Railway instance with Eliminai support app (separate routes)
+- Or deploy as separate service if needed for scaling
+- Stores: merchant settings, experiment data, event logs, bandit calculations
+- Serves variant assignments and config via App Proxy
+
+### Migration Path
+- Phase 1 (NOW): Manual upload to our own store, theme settings, no app
+- Phase 2: Build Shopify app scaffold, Theme App Extension, basic panel
+- Phase 3: Move settings from theme to app panel, App Proxy for config
+- Phase 4: A/B testing engine, event collection, dashboard
+- Phase 5: App Store submission, billing, onboarding flow
+
 ## VISION: Self-Learning Cart Drawer
 
 The Eliminai Cart Drawer is not just a cart — it is a **self-learning conversion engine** that A/B tests every element, measures real checkout behavior, and automatically shifts to the highest-converting combinations. It gets smarter every single day.
