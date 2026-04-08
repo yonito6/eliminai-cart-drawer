@@ -345,6 +345,20 @@
               return Promise.resolve(new Response(JSON.stringify({items:[]}), {status: 200}));
             }
           }
+
+          // Gift case guard: block adding case if already in cart
+          try {
+            var addBody = JSON.parse(opts.body);
+            var addList = addBody.items || [addBody];
+            var caseAlreadyInCart = CCD._caseKey != null;
+            var tryingToAddCase = addList.some(function(ai) {
+              return parseInt(ai.id) === WATCH_CASE_VID || String(ai.id) === String(WATCH_CASE_VID);
+            });
+            if (caseAlreadyInCart && tryingToAddCase) {
+              return Promise.resolve(new Response(JSON.stringify({items:[]}), {status: 200}));
+            }
+          } catch(caseEx) {}
+
           return origFetch.call(this, url, opts).then(function(resp) {
             var clone = resp.clone();
             clone.json().then(function() {
@@ -468,17 +482,33 @@
 
       var watchCount = CCD.getWatchCount(cart);
       var hasCase = false;
-      var caseKey = CCD._caseKey || null;
+      var caseKey = null;
+      var caseQty = 0;
 
       if (cart && cart.items) {
         cart.items.forEach(function(i) {
           if (i.handle === WATCH_CASE_HANDLE) {
             hasCase = true;
             caseKey = i.key;
+            caseQty = i.quantity;
             CCD._caseKey = i.key;
           }
         });
         if (!hasCase) CCD._caseKey = null;
+      }
+
+      // GUARD: If someone got qty > 1 (manual add, race condition), force back to 1
+      if (hasCase && caseQty > 1 && caseKey) {
+        watchCaseBusy = true;
+        fetch('/cart/change.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: caseKey, quantity: 1 })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(c) { watchCaseBusy = false; CCD.refresh(c); })
+        .catch(function() { watchCaseBusy = false; });
+        return;
       }
 
       if (watchCount >= WATCH_GOAL && !hasCase && !caseDismissed) {
