@@ -346,7 +346,7 @@
             } catch(ex2) {}
             if (scBlocked) {
               CCD.showScarcityToast(CFG.scarcityToastMsg || CFG.scarcityText || 'Only 1 left — already in your cart!');
-              return Promise.resolve(new Response(JSON.stringify({items:[]}), {status: 200}));
+              return Promise.resolve(new Response(JSON.stringify({status:422, message:"Cart Error", description:"Only 1 left"}), {status: 422, statusText: "Unprocessable Entity", headers: {"Content-Type": "application/json"}}));
             }
           }
 
@@ -409,6 +409,16 @@
           } catch(ex3) {}
           if (xhrBlocked) {
             CCD.showScarcityToast(CFG.scarcityToastMsg || CFG.scarcityText || 'Only 1 left — already in your cart!');
+            var self = this;
+            setTimeout(function() {
+              Object.defineProperty(self, "readyState", {get: function(){return 4;}, configurable: true});
+              Object.defineProperty(self, "status", {get: function(){return 422;}, configurable: true});
+              Object.defineProperty(self, "responseText", {get: function(){return JSON.stringify({description:"Only 1 left"});}, configurable: true});
+              if (typeof self.onreadystatechange === "function") self.onreadystatechange();
+              if (typeof self.onload === "function") self.onload();
+              try { self.dispatchEvent(new Event("load")); } catch(evx) {}
+              try { self.dispatchEvent(new Event("loadend")); } catch(evx) {}
+            }, 10);
             return;
           }
         }
