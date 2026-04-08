@@ -590,7 +590,7 @@
           el.style.margin = '0';
           el.style.borderWidth = '0';
           el.style.overflow = 'hidden';
-          setTimeout(function() { el.remove(); }, 150);
+          setTimeout(function() { el.remove(); }, 400);
         }
       });
 
@@ -621,9 +621,20 @@
           else if (!nBdg && exBdg) { exBdg.remove(); }
           else if (exBdg && nBdg) { exBdg.innerHTML = nBdg.innerHTML; }
         } else {
-          n.el.classList.add('ccd-item--adding');
+          // Animate new item: start collapsed, expand smoothly
+          n.el.style.maxHeight = '0';
+          n.el.style.overflow = 'hidden';
+          n.el.style.opacity = '0';
           if (giftEl) { existing.insertBefore(n.el, giftEl); }
           else { existing.appendChild(n.el); }
+          // Force reflow then expand
+          n.el.offsetHeight;
+          n.el.style.transition = 'max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease';
+          n.el.style.maxHeight = n.el.scrollHeight + 'px';
+          n.el.style.opacity = '1';
+          n.el.classList.add('ccd-item--adding');
+          // Clean up inline styles after animation
+          setTimeout(function() { n.el.style.maxHeight = ''; n.el.style.overflow = ''; n.el.style.transition = ''; n.el.style.opacity = ''; }, 450);
         }
       });
 
