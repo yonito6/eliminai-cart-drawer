@@ -1,0 +1,109 @@
+{%- comment -%}
+  Custom Cart Item — White Luxe Design v3
+  Guard: hide shipping protection (shown in footer toggle instead)
+{%- endcomment -%}
+
+{%- if product.handle == 'shipping-protection-1' or product.product.title == 'Shipping Protection' -%}
+  {%- comment -%}Hidden — managed by footer toggle{%- endcomment -%}
+{%- else -%}
+
+{%- assign img_url = product | img_url: '1x1' | replace: '_1x1.', '_{width}x.' -%}
+
+<div class="ccd-item" data-key="{{ product.key }}" data-handle="{{ product.handle }}">
+  <div class="ccd-item__image">
+    <a href="{{ product.url }}">
+      <img class="lazyload"
+        data-src="{{ img_url }}"
+        data-widths="[180, 360]"
+        data-aspectratio="{{ product.image.aspect_ratio }}"
+        data-sizes="auto"
+        alt="{{ product.product.title | escape }}">
+      <noscript>
+        <img src="{{ product | img_url: '180x' }}" alt="{{ product.product.title | escape }}">
+      </noscript>
+    </a>
+  </div>
+
+  <div class="ccd-item__details">
+    <div class="ccd-item__title-row">
+      <a href="{{ product.url }}" class="ccd-item__name">
+        {{ product.product.title }}
+      </a>
+      <button type="button" class="ccd-item__remove" data-key="{{ product.key }}" aria-label="Remove {{ product.product.title | escape }}">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      </button>
+    </div>
+
+    {%- unless product.product.has_only_default_variant -%}
+      <div class="ccd-item__variant">
+        {%- for option in product.options_with_values -%}
+          {{ option.value }}{% unless forloop.last %} &middot; {% endunless %}
+        {%- endfor -%}
+      </div>
+    {%- endunless -%}
+
+    {%- if product.selling_plan_allocation != empty -%}
+      <div class="ccd-item__variant">{{ product.selling_plan_allocation.selling_plan.name }}</div>
+    {%- endif -%}
+
+    {%- assign property_size = product.properties | size -%}
+    {%- if property_size > 0 -%}
+      {%- for p in product.properties -%}
+        {%- assign first_character_in_key = p.first | truncate: 1, '' -%}
+        {%- unless p.last == blank or first_character_in_key == '_' -%}
+          <div class="ccd-item__variant">
+            {{ p.first }}: {% if p.last contains '/uploads/' %}<a href="{{ p.last }}" style="color:#6BA4E8;">{{ p.last | split: '/' | last }}</a>{% else %}{{ p.last }}{% endif %}
+          </div>
+        {%- endunless -%}
+      {%- endfor -%}
+    {%- endif -%}
+
+    <div class="ccd-item__bottom">
+      <div class="ccd-qty">
+        <button type="button" class="ccd-qty__btn ccd-qty__btn--minus" aria-label="Decrease quantity">
+          <svg viewBox="0 0 20 20"><path d="M17.543 11.029H2.1A1.032 1.032 0 0 1 1.071 10c0-.566.463-1.029 1.029-1.029h15.443c.566 0 1.029.463 1.029 1.029 0 .566-.463 1.029-1.029 1.029z"/></svg>
+        </button>
+        <input type="text"
+          class="ccd-qty__input"
+          value="{{ product.quantity }}"
+          min="0"
+          pattern="[0-9]*"
+          data-id="{{ product.key }}"
+          aria-label="Quantity">
+        <button type="button" class="ccd-qty__btn ccd-qty__btn--plus" aria-label="Increase quantity">
+          <svg viewBox="0 0 20 20"><path d="M17.409 8.929h-6.695V2.258c0-.566-.506-1.029-1.071-1.029s-1.071.463-1.071 1.029v6.671H1.967C1.401 8.929.938 9.435.938 10s.463 1.071 1.029 1.071h6.605V17.7c0 .566.506 1.029 1.071 1.029s1.071-.463 1.071-1.029v-6.629h6.695c.566 0 1.029-.506 1.029-1.071s-.463-1.071-1.029-1.071z"/></svg>
+        </button>
+      </div>
+
+      <div class="ccd-item__price-col">
+        <div class="ccd-item__price-row">
+          {%- if product.original_price != product.final_price -%}
+            <span class="ccd-item__compare-price">{{ product.original_price | money }}</span>
+            {%- if product.final_price == 0 -%}
+              <span class="ccd-item__price ccd-item__price--free">Free</span>
+            {%- else -%}
+              <span class="ccd-item__price">{{ product.final_price | money }}</span>
+            {%- endif -%}
+          {%- else -%}
+            {%- if product.original_price == 0 -%}
+              <span class="ccd-item__price ccd-item__price--free">Free</span>
+            {%- else -%}
+              <span class="ccd-item__price">{{ product.original_price | money }}</span>
+            {%- endif -%}
+          {%- endif -%}
+        </div>
+
+        {%- if product.line_level_discount_allocations != blank -%}
+          {%- for discount_allocation in product.line_level_discount_allocations -%}
+            <span class="ccd-badge">
+              <svg viewBox="0 0 24 24"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>
+              {{ discount_allocation.discount_application.title }}
+            </span>
+          {%- endfor -%}
+        {%- endif -%}
+      </div>
+    </div>
+  </div>
+</div>
+
+{%- endif -%}
