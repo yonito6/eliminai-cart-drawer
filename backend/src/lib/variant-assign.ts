@@ -22,23 +22,19 @@ export async function assignVariant(
     orderBy: { startedAt: 'desc' },
   });
 
-  // 2. Find or create visitor session
-  let session = await prisma.visitorSession.findUnique({
+  // 2. Find or create visitor session (upsert to handle race conditions)
+  const session = await prisma.visitorSession.upsert({
     where: { sessionToken },
+    update: {},
+    create: {
+      storeId,
+      sessionToken,
+      deviceType,
+      isReturning,
+      referralSource,
+      country,
+    },
   });
-
-  if (!session) {
-    session = await prisma.visitorSession.create({
-      data: {
-        storeId,
-        sessionToken,
-        deviceType,
-        isReturning,
-        referralSource,
-        country,
-      },
-    });
-  }
 
   // 3. No active experiment = baseline phase
   if (!experiment) {
