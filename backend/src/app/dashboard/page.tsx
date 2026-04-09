@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import CartPreview from './cart-preview';
 
 const STORE_ID = 'cmnriegez0000jc70ro9nltw2';
+const STORE_DOMAIN = 'eleganto-3011.myshopify.com';
 const API = '';
 
 interface VS {
@@ -23,11 +24,11 @@ interface Stats {
 }
 
 const FEATS = [
-  { key: 'showTrustBadges', label: 'Trust Badges', desc: 'Payment icons + secure checkout text below checkout button' },
-  { key: 'showScarcityTimer', label: 'Scarcity Timer', desc: 'Countdown timer above checkout \u2014 "Cart reserved for 14:59"' },
-  { key: 'showProgressBar', label: 'Free Shipping Bar', desc: 'Visual bar showing distance to free shipping threshold' },
+  { key: 'showTrustBadges', label: 'Trust Badges', desc: 'Visa/MC/Amex/PayPal icons + "Secure Checkout" below checkout button' },
+  { key: 'showScarcityTimer', label: 'Scarcity Timer', desc: '"Cart reserved for 14:59 \u2014 items selling fast!" countdown' },
+  { key: 'showProgressBar', label: 'Free Shipping Bar', desc: 'Visual progress bar to free shipping threshold' },
   { key: 'showUpsells', label: 'Upsell Recommendations', desc: '"You might also like" product suggestion in cart' },
-  { key: 'stickyCheckout', label: 'Sticky Checkout', desc: 'Checkout button stays pinned when scrolling cart items' },
+  { key: 'stickyCheckout', label: 'Sticky Checkout', desc: 'Checkout button stays pinned when scrolling' },
   { key: 'showSocialProof', label: 'Social Proof', desc: '"23 people viewing right now" live indicator' },
 ];
 
@@ -37,12 +38,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [name, setName] = useState('');
+  const [nm, setNm] = useState('');
   const [slot, setSlot] = useState('cart-drawer');
   const [ctrlF, setCtrlF] = useState<Record<string, boolean>>({});
   const [varF, setVarF] = useState<Record<string, boolean>>({});
   const [days, setDays] = useState(14);
   const [previewExp, setPreviewExp] = useState<string | null>(null);
+  const [showLiveCart, setShowLiveCart] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -64,14 +66,14 @@ export default function Dashboard() {
       const r = await fetch(API + '/api/experiments', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          storeId: STORE_ID, name, slot, maxDays: days,
+          storeId: STORE_ID, name: nm, slot, maxDays: days,
           variants: [
             { id: 'control', name: 'Control', features: ctrlF },
             { id: 'variant-b', name: 'Variant B', features: varF },
           ],
         }),
       });
-      if (r.ok) { setShowCreate(false); setName(''); setCtrlF({}); setVarF({}); await load(); }
+      if (r.ok) { setShowCreate(false); setNm(''); setCtrlF({}); setVarF({}); await load(); }
     } finally { setCreating(false); }
   }
 
@@ -84,43 +86,80 @@ export default function Dashboard() {
   }
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#e2e8f0' }}>
-      <div style={{ fontSize: 18 }}>Loading dashboard...</div>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa' }}>
+      <div style={{ fontSize: 16, color: '#6b7280' }}>Loading dashboard...</div>
     </div>
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', padding: '24px 32px', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#fafafa', color: '#111827', padding: '24px 32px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
           <div>
-            <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: '#f1f5f9' }}>Cart Optimizer Dashboard</h1>
-            <p style={{ color: '#94a3b8', margin: '4px 0 0', fontSize: 14 }}>
-              {stats?.store.shopDomain || 'Loading...'} &middot; Auto-refreshes every 15s
+            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#111827' }}>Cart Optimizer</h1>
+            <p style={{ color: '#9ca3af', margin: '4px 0 0', fontSize: 13 }}>
+              {stats?.store.shopDomain || 'Loading...'} \u00b7 Auto-refreshes every 15s
             </p>
           </div>
-          <button onClick={() => setShowCreate(!showCreate)}
-            style={{ padding: '10px 20px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14 }}>
-            {showCreate ? 'Cancel' : '+ New Experiment'}
-          </button>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={() => setShowLiveCart(!showLiveCart)}
+              style={{ padding: '9px 18px', background: showLiveCart ? '#dc2626' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+              {showLiveCart ? 'Close Live Cart' : '\ud83d\udc41 Live Cart Preview'}
+            </button>
+            <button onClick={() => setShowCreate(!showCreate)}
+              style={{ padding: '9px 18px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+              {showCreate ? 'Cancel' : '+ New Experiment'}
+            </button>
+          </div>
         </div>
+
+        {/* LIVE CART PREVIEW — Real store iframe */}
+        {showLiveCart && (
+          <div style={{ background: '#fff', borderRadius: 12, padding: 24, marginBottom: 24, border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Live Store Preview</h2>
+                <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>
+                  This is your real store. Add products to cart to see how the cart drawer looks with active experiments.
+                </p>
+              </div>
+              <a href={'https://' + STORE_DOMAIN} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 12, color: '#7c3aed', textDecoration: 'none', fontWeight: 500 }}>
+                Open in new tab \u2197
+              </a>
+            </div>
+            <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb', height: 700 }}>
+              <iframe
+                src={'https://' + STORE_DOMAIN + '/collections/all'}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                title="Live Store Preview"
+              />
+            </div>
+            <p style={{ fontSize: 11, color: '#d1d5db', marginTop: 8, textAlign: 'center' as const }}>
+              Tip: Add a product to cart to see the cart drawer with your active A/B test features
+            </p>
+          </div>
+        )}
 
         {/* Stats Cards */}
         {stats && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 28 }}>
             {[
-              { l: 'Total Sessions', v: stats.totals.sessions, s: stats.last7Days.sessions + ' last 7d' },
-              { l: 'Cart Opens', v: stats.totals.cartOpens, s: stats.last7Days.cartOpens + ' last 7d' },
-              { l: 'Checkouts', v: stats.totals.checkouts, s: stats.last7Days.checkouts + ' last 7d' },
-              { l: 'Checkout Rate', v: stats.totals.checkoutRate + '%', s: stats.last7Days.checkoutRate + '% last 7d' },
-              { l: 'Active Tests', v: stats.experiments.active, s: stats.experiments.completed + ' completed' },
-              { l: 'Orders', v: stats.totals.orders, s: stats.store.currency || 'USD' },
+              { l: 'Sessions', v: stats.totals.sessions, s: stats.last7Days.sessions + ' last 7d', icon: '\ud83d\udc64' },
+              { l: 'Cart Opens', v: stats.totals.cartOpens, s: stats.last7Days.cartOpens + ' last 7d', icon: '\ud83d\uded2' },
+              { l: 'Checkouts', v: stats.totals.checkouts, s: stats.last7Days.checkouts + ' last 7d', icon: '\ud83d\udcb3' },
+              { l: 'Checkout Rate', v: stats.totals.checkoutRate + '%', s: stats.last7Days.checkoutRate + '% last 7d', icon: '\ud83d\udcc8' },
+              { l: 'Active Tests', v: stats.experiments.active, s: stats.experiments.completed + ' completed', icon: '\ud83e\uddea' },
+              { l: 'Orders', v: stats.totals.orders, s: stats.store.currency || 'USD', icon: '\ud83d\udce6' },
             ].map((c, i) => (
-              <div key={i} style={{ background: '#1e293b', borderRadius: 12, padding: '20px 16px', border: '1px solid #334155' }}>
-                <div style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 1 }}>{c.l}</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#f1f5f9', marginTop: 4 }}>{c.v}</div>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{c.s}</div>
+              <div key={i} style={{ background: '#fff', borderRadius: 10, padding: '16px 14px', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase' as const, letterSpacing: 0.5, fontWeight: 500 }}>{c.l}</span>
+                  <span style={{ fontSize: 16 }}>{c.icon}</span>
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: '#111827' }}>{c.v}</div>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>{c.s}</div>
               </div>
             ))}
           </div>
@@ -128,115 +167,134 @@ export default function Dashboard() {
 
         {/* Create Form */}
         {showCreate && (
-          <form onSubmit={createExp} style={{ background: '#1e293b', borderRadius: 12, padding: 24, marginBottom: 32, border: '1px solid #334155' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 16px', color: '#f1f5f9' }}>Create New Experiment</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
+          <form onSubmit={createExp} style={{ background: '#fff', borderRadius: 12, padding: 24, marginBottom: 24, border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 16px' }}>Create New Experiment</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 20 }}>
               <div>
-                <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Name</label>
-                <input value={name} onChange={e => setName(e.target.value)} required placeholder="e.g. Trust Badges Test"
-                  style={{ width: '100%', padding: '8px 12px', background: '#0f172a', border: '1px solid #475569', borderRadius: 6, color: '#e2e8f0', fontSize: 14, boxSizing: 'border-box' as const }} />
+                <label style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 4, fontWeight: 500 }}>Name</label>
+                <input value={nm} onChange={e => setNm(e.target.value)} required placeholder="e.g. Trust Badges Test"
+                  style={{ width: '100%', padding: '8px 12px', background: '#fafafa', border: '1px solid #d1d5db', borderRadius: 6, color: '#111827', fontSize: 14, boxSizing: 'border-box' as const }} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Slot</label>
+                <label style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 4, fontWeight: 500 }}>Slot</label>
                 <input value={slot} onChange={e => setSlot(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', background: '#0f172a', border: '1px solid #475569', borderRadius: 6, color: '#e2e8f0', fontSize: 14, boxSizing: 'border-box' as const }} />
+                  style={{ width: '100%', padding: '8px 12px', background: '#fafafa', border: '1px solid #d1d5db', borderRadius: 6, color: '#111827', fontSize: 14, boxSizing: 'border-box' as const }} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>Max Days</label>
+                <label style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 4, fontWeight: 500 }}>Max Days</label>
                 <input type="number" value={days} onChange={e => setDays(Number(e.target.value))} min={1} max={90}
-                  style={{ width: '100%', padding: '8px 12px', background: '#0f172a', border: '1px solid #475569', borderRadius: 6, color: '#e2e8f0', fontSize: 14, boxSizing: 'border-box' as const }} />
+                  style={{ width: '100%', padding: '8px 12px', background: '#fafafa', border: '1px solid #d1d5db', borderRadius: 6, color: '#111827', fontSize: 14, boxSizing: 'border-box' as const }} />
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 20 }}>
               <div>
-                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8', margin: '0 0 12px' }}>Control (A)</h3>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', margin: '0 0 10px' }}>Control (A) \u2014 Features</h3>
                 {FEATS.map(f => (
-                  <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, cursor: 'pointer', fontSize: 14 }}>
-                    <input type="checkbox" checked={!!ctrlF[f.key]} onChange={e => setCtrlF(p => ({ ...p, [f.key]: e.target.checked }))} />
-                    <span>{f.label}</span>
-                    <span style={{ fontSize: 11, color: '#64748b' }}>&mdash; {f.desc}</span>
+                  <label key={f.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10, cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={!!ctrlF[f.key]} onChange={e => setCtrlF(p => ({ ...p, [f.key]: e.target.checked }))} style={{ marginTop: 3 }} />
+                    <div>
+                      <div style={{ fontWeight: 500, color: '#374151' }}>{f.label}</div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{f.desc}</div>
+                    </div>
                   </label>
                 ))}
               </div>
               <div>
-                <h3 style={{ fontSize: 14, fontWeight: 600, color: '#60a5fa', margin: '0 0 12px' }}>Variant B</h3>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#7c3aed', margin: '0 0 10px' }}>Variant B \u2014 Features</h3>
                 {FEATS.map(f => (
-                  <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, cursor: 'pointer', fontSize: 14 }}>
-                    <input type="checkbox" checked={!!varF[f.key]} onChange={e => setVarF(p => ({ ...p, [f.key]: e.target.checked }))} />
-                    <span>{f.label}</span>
-                    <span style={{ fontSize: 11, color: '#64748b' }}>&mdash; {f.desc}</span>
+                  <label key={f.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10, cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={!!varF[f.key]} onChange={e => setVarF(p => ({ ...p, [f.key]: e.target.checked }))} style={{ marginTop: 3 }} />
+                    <div>
+                      <div style={{ fontWeight: 500, color: '#374151' }}>{f.label}</div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{f.desc}</div>
+                    </div>
                   </label>
                 ))}
               </div>
             </div>
 
-            <button type="submit" disabled={creating || !name}
-              style={{ padding: '10px 24px', background: creating ? '#475569' : '#22c55e', color: '#fff', border: 'none', borderRadius: 8, cursor: creating ? 'default' : 'pointer', fontWeight: 600, fontSize: 14 }}>
+            {/* Side-by-side feature comparison */}
+            <div style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: '0 0 12px' }}>Feature Comparison</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, justifyItems: 'center' }}>
+                <CartPreview variant="control" features={ctrlF} label="Control (A)" color="#6b7280" />
+                <CartPreview variant="variant-b" features={varF} label="Variant B" color="#7c3aed" />
+              </div>
+            </div>
+
+            <button type="submit" disabled={creating || !nm}
+              style={{ padding: '10px 24px', background: creating ? '#d1d5db' : '#111827', color: '#fff', border: 'none', borderRadius: 8, cursor: creating ? 'default' : 'pointer', fontWeight: 600, fontSize: 14 }}>
               {creating ? 'Creating...' : 'Create & Start Experiment'}
             </button>
           </form>
         )}
 
         {/* Experiments List */}
-        <h2 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 16px', color: '#f1f5f9' }}>Experiments</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 14px' }}>Experiments</h2>
         {exps.length === 0 ? (
-          <div style={{ background: '#1e293b', borderRadius: 12, padding: 32, textAlign: 'center' as const, border: '1px solid #334155' }}>
-            <p style={{ color: '#64748b', margin: 0 }}>No experiments yet. Create one above.</p>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center' as const, border: '1px solid #e5e7eb' }}>
+            <p style={{ color: '#9ca3af', margin: 0 }}>No experiments yet. Create one above.</p>
           </div>
         ) : exps.map(exp => (
-          <div key={exp.id} style={{ background: '#1e293b', borderRadius: 12, padding: 24, marginBottom: 16, border: '1px solid #334155' }}>
-            {/* Experiment Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div key={exp.id} style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 14, border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
-                <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0, color: '#f1f5f9' }}>
+                <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: '#111827' }}>
                   {exp.name}
                   <span style={{
-                    marginLeft: 12, fontSize: 12, padding: '2px 10px', borderRadius: 20, fontWeight: 500,
-                    background: exp.status === 'RUNNING' ? '#166534' : exp.status === 'PAUSED' ? '#92400e' : '#1e40af',
-                    color: exp.status === 'RUNNING' ? '#4ade80' : exp.status === 'PAUSED' ? '#fbbf24' : '#93c5fd',
+                    marginLeft: 10, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 500,
+                    background: exp.status === 'RUNNING' ? '#dcfce7' : exp.status === 'PAUSED' ? '#fef3c7' : '#dbeafe',
+                    color: exp.status === 'RUNNING' ? '#166534' : exp.status === 'PAUSED' ? '#92400e' : '#1e40af',
                   }}>{exp.status}</span>
                 </h3>
-                <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 13 }}>
-                  Slot: {exp.slot} &middot; Started: {new Date(exp.startedAt).toLocaleDateString()} &middot; Max: {exp.maxDays}d &middot; {exp.totalVisitors} visitors
+                <p style={{ color: '#9ca3af', margin: '4px 0 0', fontSize: 12 }}>
+                  Slot: {exp.slot} \u00b7 Started: {new Date(exp.startedAt).toLocaleDateString()} \u00b7 Max: {exp.maxDays}d \u00b7 {exp.totalVisitors} visitors
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setPreviewExp(previewExp === exp.id ? null : exp.id)}
+                  style={{ padding: '6px 14px', background: previewExp === exp.id ? '#ede9fe' : '#f3f4f6', color: previewExp === exp.id ? '#7c3aed' : '#6b7280', border: '1px solid ' + (previewExp === exp.id ? '#c4b5fd' : '#e5e7eb'), borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>
+                  {previewExp === exp.id ? 'Hide Preview' : 'Preview'}
+                </button>
                 {exp.status === 'RUNNING' && (
                   <button onClick={() => act(exp.id, 'pause')}
-                    style={{ padding: '6px 14px', background: '#92400e', color: '#fbbf24', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
-                    Pause
-                  </button>
+                    style={{ padding: '6px 14px', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>Pause</button>
                 )}
                 {exp.status === 'PAUSED' && (
                   <button onClick={() => act(exp.id, 'resume')}
-                    style={{ padding: '6px 14px', background: '#166534', color: '#4ade80', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
-                    Resume
-                  </button>
+                    style={{ padding: '6px 14px', background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>Resume</button>
                 )}
                 {(exp.status === 'RUNNING' || exp.status === 'PAUSED') && (
-                  <button onClick={() => {
-                    const w = prompt('Winner variant ID (e.g. variant-b) or empty:');
-                    act(exp.id, 'end', w ? { winner: w } : {});
-                  }}
-                    style={{ padding: '6px 14px', background: '#7f1d1d', color: '#fca5a5', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
-                    End Test
-                  </button>
+                  <button onClick={() => { const w = prompt('Winner variant ID (e.g. variant-b) or empty:'); act(exp.id, 'end', w ? { winner: w } : {}); }}
+                    style={{ padding: '6px 14px', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>End Test</button>
                 )}
               </div>
             </div>
 
-            {/* Variant Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+            {/* Side-by-Side Feature Preview */}
+            {previewExp === exp.id && (
+              <div style={{ marginBottom: 14, padding: 16, background: '#fafafa', borderRadius: 8, border: '1px solid #f3f4f6' }}>
+                <h4 style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: '0 0 12px' }}>A/B Test Comparison</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, justifyItems: 'center' }}>
+                  {exp.variantStats.map(v => (
+                    <CartPreview key={v.id} variant={v.id} features={v.features || {}} label={v.name} color={v.id === 'control' ? '#6b7280' : '#7c3aed'} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Variant Stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
               {exp.variantStats.map(v => (
-                <div key={v.id} style={{ background: '#0f172a', borderRadius: 8, padding: 12, border: '1px solid #1e293b' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: v.id === 'control' ? '#94a3b8' : '#60a5fa', marginBottom: 8 }}>
-                    {v.name} {exp.winnerVariantId === v.id && <span style={{ color: '#4ade80' }}> Winner!</span>}
+                <div key={v.id} style={{ background: '#fafafa', borderRadius: 8, padding: 12, border: '1px solid #f3f4f6' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: v.id === 'control' ? '#6b7280' : '#7c3aed', marginBottom: 6 }}>
+                    {v.name} {exp.winnerVariantId === v.id && <span style={{ color: '#16a34a' }}> \u2714 Winner!</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
-                    Features: {Object.entries(v.features || {}).filter(([, val]) => val).map(([k]) => k).join(', ') || 'None (baseline)'}
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
+                    {Object.entries(v.features || {}).filter(([, val]) => val).map(([k]) => k).join(', ') || 'No features (baseline)'}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, textAlign: 'center' as const }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, textAlign: 'center' as const }}>
                     {[
                       { l: 'Visitors', val: v.visitors },
                       { l: 'Cart Opens', val: v.cartOpens },
@@ -245,8 +303,8 @@ export default function Dashboard() {
                       { l: 'Orders', val: v.orders },
                     ].map((m, i) => (
                       <div key={i}>
-                        <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase' as const }}>{m.l}</div>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: '#f1f5f9' }}>{m.val}</div>
+                        <div style={{ fontSize: 9, color: '#9ca3af', textTransform: 'uppercase' as const, fontWeight: 500 }}>{m.l}</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#111827' }}>{m.val}</div>
                       </div>
                     ))}
                   </div>
@@ -254,13 +312,13 @@ export default function Dashboard() {
               ))}
             </div>
 
-            <div style={{ fontSize: 12, color: '#64748b' }}>
+            <div style={{ fontSize: 11, color: '#d1d5db' }}>
               Traffic: {Object.entries(exp.trafficSplit).map(([k, v]) => k + ': ' + (Number(v) * 100).toFixed(0) + '%').join(' / ')}
             </div>
           </div>
         ))}
 
-        <div style={{ marginTop: 32, padding: 16, textAlign: 'center' as const, color: '#475569', fontSize: 12 }}>
+        <div style={{ marginTop: 32, padding: 16, textAlign: 'center' as const, color: '#d1d5db', fontSize: 11 }}>
           Eliminai Cart Optimizer
         </div>
       </div>
