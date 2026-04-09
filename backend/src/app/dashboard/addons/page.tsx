@@ -647,7 +647,7 @@ export default function AddonsPage() {
                   borderRadius: 12,
                   border: borderWidth + 'px solid ' + borderColor,
                   padding: 16,
-                  opacity: addon.enabled ? 1 : 0.6,
+                  opacity: 1,
                   boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                   transition: 'all 0.2s',
                 }}
