@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import CartPreview from './cart-preview';
 
 const STORE_ID = 'cmnriegez0000jc70ro9nltw2';
 const API = '';
@@ -22,12 +23,12 @@ interface Stats {
 }
 
 const FEATS = [
-  { key: 'showTrustBadges', label: 'Trust Badges', desc: 'Secure checkout, money-back guarantee' },
-  { key: 'showScarcityTimer', label: 'Scarcity Timer', desc: 'Countdown creating urgency' },
-  { key: 'showProgressBar', label: 'Free Shipping Bar', desc: 'Visual progress to free shipping' },
-  { key: 'showUpsells', label: 'Upsell Recommendations', desc: 'Product suggestions in cart' },
-  { key: 'stickyCheckout', label: 'Sticky Checkout', desc: 'Checkout button stays visible' },
-  { key: 'showSocialProof', label: 'Social Proof', desc: 'X people viewing / recent purchases' },
+  { key: 'showTrustBadges', label: 'Trust Badges', desc: 'Payment icons + secure checkout text below checkout button' },
+  { key: 'showScarcityTimer', label: 'Scarcity Timer', desc: 'Countdown timer above checkout \u2014 "Cart reserved for 14:59"' },
+  { key: 'showProgressBar', label: 'Free Shipping Bar', desc: 'Visual bar showing distance to free shipping threshold' },
+  { key: 'showUpsells', label: 'Upsell Recommendations', desc: '"You might also like" product suggestion in cart' },
+  { key: 'stickyCheckout', label: 'Sticky Checkout', desc: 'Checkout button stays pinned when scrolling cart items' },
+  { key: 'showSocialProof', label: 'Social Proof', desc: '"23 people viewing right now" live indicator' },
 ];
 
 export default function Dashboard() {
@@ -41,6 +42,7 @@ export default function Dashboard() {
   const [ctrlF, setCtrlF] = useState<Record<string, boolean>>({});
   const [varF, setVarF] = useState<Record<string, boolean>>({});
   const [days, setDays] = useState(14);
+  const [previewExp, setPreviewExp] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {

@@ -1,3 +1,9 @@
+import AppBridgeProvider from './app-bridge-provider';
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <AppBridgeProvider>
+      {children}
+    </AppBridgeProvider>
+  );
 }
