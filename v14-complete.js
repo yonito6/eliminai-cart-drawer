@@ -39,6 +39,27 @@
         drawer.style.setProperty('max-width', 'calc(100vw - 16px)', 'important');
       }
     },
+
+    showScarcityToast: function(msg) {
+      // Works on ANY page (product page, collection, cart drawer)
+      var toastId = 'ccd-scarcity-toast';
+      var existing = document.getElementById(toastId);
+      if (existing) { existing.remove(); }
+      var toast = document.createElement('div');
+      toast.id = toastId;
+      toast.textContent = msg || 'Only 1 left!';
+      toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);z-index:2147483647;background:#1a1a2e;color:#fff;padding:14px 28px;border-radius:12px;font-size:14px;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,0.3);opacity:0;transition:opacity 0.3s ease,transform 0.3s ease;pointer-events:none;max-width:90vw;text-align:center;';
+      document.body.appendChild(toast);
+      // Force reflow then animate in
+      toast.offsetHeight;
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateX(-50%) translateY(0)';
+      setTimeout(function() {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(20px)';
+        setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 350);
+      }, 3000);
+    },
     init: function() {
       this.fixMobileWidth();
       this.bindEvents();
@@ -188,6 +209,19 @@
           CCD.toggleProtection(e.target.checked);
         }
       });
+
+      // Track checkout clicks for experiment analytics
+      var checkoutBtn = document.querySelector('.ccd-checkout-btn');
+      if (checkoutBtn) {
+        checkoutBtn.addEventListener('click', function() {
+          var cart = null;
+          try { cart = JSON.parse(sessionStorage.getItem('ecart_last_cart')); } catch(e) {}
+          CCD.sendEvent('CHECKOUT_CLICKED', {
+            cartTotal: cart ? cart.total_price : 0,
+            itemCount: cart ? cart.item_count : 0
+          });
+        });
+      }
     },
 
     changeQty: function(key, qty, btnEl) {
@@ -309,6 +343,27 @@
     },
 
     interceptAddToCart: function() {
+      // Form-level scarcity block: prevent submit BEFORE theme shows loading
+      document.addEventListener("submit", function(e) {
+        var form = e.target;
+        if (!form || !form.action || form.action.indexOf("/cart/add") === -1) return;
+        if (CFG.scarcityEnabled === false) return;
+        // Read fresh from sessionStorage every time (not stale closure)
+        var sVid = null;
+        try { sVid = sessionStorage.getItem("ccd_scarcity_vid"); } catch(ex) {}
+        if (!sVid) return;
+        // Extract variant ID from form
+        var vidInput = form.querySelector("input[name=id], select[name=id]");
+        var formVid = vidInput ? String(vidInput.value) : null;
+        if (!formVid) return;
+        if (formVid === sVid) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          CCD.showScarcityToast(CFG.scarcityToastMsg || CFG.scarcityText || "Only 1 left — already in your cart!");
+          return;
+        }
+      }, true); // useCapture=true to fire BEFORE theme handlers
+
       var origFetch = window.fetch;
       window.fetch = function(url, opts) {
         if (typeof url === 'string' && url.indexOf('/cart/add') !== -1 && opts && opts.method && opts.method.toUpperCase() === 'POST') {
@@ -325,6 +380,8 @@
           } catch(ex) {}
 
           // Scarcity check: block adding more of the locked item
+          // Read fresh from sessionStorage (not stale closure variable)
+          try { scarcityVariantId = sessionStorage.getItem("ccd_scarcity_vid"); } catch(svEx) {}
           if (CFG.scarcityEnabled !== false && scarcityVariantId) {
             var scBlocked = false;
             try {
@@ -393,7 +450,8 @@
     };
     xhrProto.send = function(body) {
       if (this._ccdMethod && this._ccdMethod.toUpperCase() === 'POST' && this._ccdUrl && this._ccdUrl.indexOf('/cart/add') !== -1) {
-        if (CFG.scarcityEnabled !== false && scarcityVariantId && body) {
+        try { scarcityVariantId = sessionStorage.getItem("ccd_scarcity_vid"); } catch(svEx2) {}
+          if (CFG.scarcityEnabled !== false && scarcityVariantId && body) {
           var xhrBlocked = false;
           try {
             if (typeof body === 'string') {
@@ -1013,6 +1071,11 @@
     },
 
     refreshOnOpen: function() {
+      var self = this;
+      this.loadExperiment(function(config) {
+        if (config) self.applyExperimentFeatures(config);
+        self.sendEvent('CART_OPENED', {});
+      });
       CCD.fixMobileWidth();
       fetch('/cart.js')
       .then(function(r) { return r.json(); })
@@ -1046,6 +1109,129 @@
       var c = parseInt(cents, 10);
       if (isNaN(c) || c < 0) c = 0;
       return String.fromCharCode(36) + (c / 100).toFixed(2);
+    },
+
+    /* ── Experiment-aware config loading ── */
+
+    getSessionToken: function() {
+      var STORAGE_KEY = 'ecart_session';
+      var token = null;
+      try { token = sessionStorage.getItem(STORAGE_KEY); } catch(e) {}
+      if (token) return { token: token, isReturning: false };
+      var isReturning = false;
+      try {
+        var prev = localStorage.getItem(STORAGE_KEY);
+        if (prev) isReturning = true;
+      } catch(e) {}
+      token = 'ecart_' + Math.random().toString(36).substr(2) + Date.now().toString(36);
+      try {
+        sessionStorage.setItem(STORAGE_KEY, token);
+        localStorage.setItem(STORAGE_KEY, token);
+      } catch(e) {}
+      return { token: token, isReturning: isReturning };
+    },
+
+    getDeviceType: function() {
+      var w = window.innerWidth;
+      if (w < 768) return 'MOBILE';
+      if (w < 1024) return 'TABLET';
+      return 'DESKTOP';
+    },
+
+    loadExperiment: function(callback) {
+      var cached = null;
+      try { cached = JSON.parse(sessionStorage.getItem('ecart_config')); } catch(e) {}
+      if (cached) { callback(cached); return; }
+
+      var sess = this.getSessionToken();
+      var self = this;
+
+      fetch('/apps/eliminai-cart/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionToken: sess.token,
+          deviceType: self.getDeviceType(),
+          isReturning: sess.isReturning,
+          referralSource: document.referrer || 'direct',
+          country: window.Shopify && window.Shopify.country ? window.Shopify.country : null
+        })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        try { sessionStorage.setItem('ecart_config', JSON.stringify(data)); } catch(e) {}
+        callback(data);
+        self.writeCartAttributes(sess.token, data);
+      })
+      .catch(function(err) {
+        callback(null);
+      });
+    },
+
+    writeCartAttributes: function(sessionToken, config) {
+      if (!config || !config.experiment) return;
+      fetch('/cart/update.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attributes: {
+            _eliminai_session: sessionToken,
+            _eliminai_variant: config.experiment.variant,
+            _eliminai_experiment: config.experiment.id
+          }
+        })
+      }).catch(function() {});
+    },
+
+    sendEvent: function(eventType, metadata) {
+      var cached = null;
+      try { cached = JSON.parse(sessionStorage.getItem('ecart_config')); } catch(e) {}
+      var sess = this.getSessionToken();
+      var now = new Date();
+
+      fetch('/apps/eliminai-cart/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionToken: sess.token,
+          experimentId: cached && cached.experiment ? cached.experiment.id : null,
+          variantId: cached && cached.experiment ? cached.experiment.variant : null,
+          eventType: eventType,
+          hourOfDay: now.getHours(),
+          dayOfWeek: now.getDay(),
+          metadata: metadata || {}
+        })
+      }).catch(function() {});
+    },
+
+    applyExperimentFeatures: function(config) {
+      if (!config || !config.experiment) return;
+      var features = config.experiment.features || {};
+      if (features.showTrustBadges) {
+        this.injectTrustBadges();
+      }
+    },
+
+    injectTrustBadges: function() {
+      var checkout = document.querySelector('.ccd-checkout-btn');
+      if (!checkout || document.getElementById('ccd-trust-badges')) return;
+
+      var row = document.createElement('div');
+      row.id = 'ccd-trust-badges';
+      row.className = 'ccd-trust-badges';
+      row.innerHTML = '<div class="ccd-trust-icons">'
+        + '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#1A1F71" d="M9.5 2l2.5 5h5.5l-4 3.5 1.5 5.5-4.5-3-4.5 3 1.5-5.5-4-3.5h5.5z"/></svg>'
+        + '<span class="ccd-trust-label">Visa</span>'
+        + '<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="9" cy="12" r="7" fill="#EB001B" opacity="0.8"/><circle cx="15" cy="12" r="7" fill="#F79E1B" opacity="0.8"/></svg>'
+        + '<span class="ccd-trust-label">Mastercard</span>'
+        + '<svg viewBox="0 0 24 24" width="20" height="20"><rect x="2" y="6" width="20" height="12" rx="2" fill="#006FCF"/><text x="12" y="14" text-anchor="middle" fill="white" font-size="6" font-weight="bold">AMEX</text></svg>'
+        + '<span class="ccd-trust-label">Amex</span>'
+        + '<svg viewBox="0 0 24 24" width="20" height="20"><rect x="2" y="6" width="20" height="12" rx="2" fill="#003087"/><text x="12" y="14" text-anchor="middle" fill="white" font-size="5" font-weight="bold">PayPal</text></svg>'
+        + '<span class="ccd-trust-label">PayPal</span>'
+        + '</div>'
+        + '<div class="ccd-trust-text"><svg viewBox="0 0 16 16" width="12" height="12" style="vertical-align:-1px"><path fill="#22c55e" d="M8 1a5 5 0 0 0-5 5v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V6a5 5 0 0 0-5-5zm0 2a3 3 0 0 1 3 3v3H5V6a3 3 0 0 1 3-3z"/></svg> Secure Checkout &middot; Money-Back Guarantee</div>';
+
+      checkout.parentNode.insertBefore(row, checkout.nextSibling);
     }
   };
 
