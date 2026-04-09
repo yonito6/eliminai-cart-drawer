@@ -1,0 +1,31 @@
+{
+  "name": "eliminai-cart-optimizer-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@shopify/app-bridge-react": "^4.1.6",
+    "@shopify/polaris": "^13.9.5",
+    "jstat": "^1.9.6",
+    "next": "14.2.29",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.29",
+    "prisma": "^5.22.0",
+    "typescript": "^5",
+    "vitest": "^1.6.0"
+  }
+}
