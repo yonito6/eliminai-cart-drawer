@@ -51,18 +51,21 @@ interface AddonState {
 
 function ModeToggle({
   mode,
+  enabled,
   onModeChange,
   disabled,
 }: {
   mode: string;
+  enabled?: boolean;
   onModeChange: (m: string) => void;
   disabled?: boolean;
 }) {
-  const segments: { key: string; label: string; color: string }[] = [
+  const allSegments: { key: string; label: string; color: string }[] = [
     { key: 'off', label: 'Off', color: '#6b7280' },
     { key: 'auto-optimize', label: 'Optimize', color: '#22c55e' },
     { key: 'locked', label: 'Lock', color: '#3b82f6' },
   ];
+  const segments = enabled ? allSegments : allSegments.filter(s => s.key !== 'auto-optimize');
 
   return (
     <div
@@ -727,8 +730,7 @@ export default function AddonsPage() {
 
                   {/* 3-way toggle */}
                   <ModeToggle
-                    mode={addon.mode}
-                    onModeChange={(m) => handleModeChange(def.key, m)}
+                    mode={addon.mode} enabled={addon.enabled} onModeChange={(m) => handleModeChange(def.key, m)}
                     disabled={isSaving}
                   />
                 </div>
