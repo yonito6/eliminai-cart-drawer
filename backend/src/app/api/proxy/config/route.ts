@@ -3,7 +3,7 @@ import { verifyAppProxySignature } from '@/lib/hmac';
 import { assignVariant } from '@/lib/variant-assign';
 import { prisma } from '@/lib/prisma';
 
-export async function POST(req: NextRequest) {
+async function handleRequest(req: NextRequest) {
   // 1. Extract Shopify signature params from query string
   const url = new URL(req.url);
   const query: Record<string, string> = {};
@@ -12,20 +12,21 @@ export async function POST(req: NextRequest) {
   // 2. Verify HMAC
   const secret = process.env.SHOPIFY_API_SECRET!;
   if (!verifyAppProxySignature(query, secret)) {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+    console.log('[proxy/config] HMAC failed. Query params:', JSON.stringify(query));
+    return NextResponse.json({ error: 'Invalid signature', debug: { params: Object.keys(query) } }, { status: 401 });
   }
 
-  // 3. Parse request body
-  const body = await req.json().catch(() => ({}));
+  // 3. Parse request body (for POST) or use defaults (for GET)
+  const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
   const shopDomain = query.shop;
-  const sessionToken = body.sessionToken;
+  const sessionToken = body.sessionToken || query.session_token || `anon-${Date.now()}`;
   const deviceType = body.deviceType || 'DESKTOP';
   const isReturning = body.isReturning || false;
   const referralSource = body.referralSource;
   const country = body.country;
 
-  if (!shopDomain || !sessionToken) {
-    return NextResponse.json({ error: 'Missing shop or sessionToken' }, { status: 400 });
+  if (!shopDomain) {
+    return NextResponse.json({ error: 'Missing shop' }, { status: 400 });
   }
 
   // 4. Find store
@@ -62,4 +63,12 @@ export async function POST(req: NextRequest) {
   }, {
     headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
   });
+}
+
+export async function POST(req: NextRequest) {
+  return handleRequest(req);
+}
+
+export async function GET(req: NextRequest) {
+  return handleRequest(req);
 }
