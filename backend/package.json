@@ -14,7 +14,7 @@
     "@shopify/app-bridge-react": "^4.1.6",
     "@shopify/polaris": "^13.9.5",
     "jstat": "^1.9.6",
-    "next": "14.2.29",
+    "next": "^14.2.35",
     "react": "^18",
     "react-dom": "^18"
   },
