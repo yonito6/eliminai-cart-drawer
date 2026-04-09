@@ -49,57 +49,46 @@ interface AddonState {
 
 // ─── ModeToggle Component ───────────────────────────────────────────────────
 
-function ModeToggle({
-  mode,
-  enabled,
-  onModeChange,
+function CapsuleToggle({
+  on,
+  onChange,
   disabled,
 }: {
-  mode: string;
-  enabled?: boolean;
-  onModeChange: (m: string) => void;
+  on: boolean;
+  onChange: (on: boolean) => void;
   disabled?: boolean;
 }) {
-  const allSegments: { key: string; label: string; color: string }[] = [
-    { key: 'off', label: 'Off', color: '#6b7280' },
-    { key: 'auto-optimize', label: 'Optimize', color: '#22c55e' },
-    { key: 'locked', label: 'Lock', color: '#3b82f6' },
-  ];
-  const segments = enabled ? allSegments : allSegments.filter(s => s.key !== 'auto-optimize');
-
   return (
-    <div
+    <button
+      onClick={() => !disabled && onChange(!on)}
       style={{
-        display: 'inline-flex',
-        border: '1px solid #e5e7eb',
-        borderRadius: 8,
-        overflow: 'hidden',
+        position: 'relative',
+        width: 44,
+        height: 24,
+        borderRadius: 12,
+        border: 'none',
+        background: on ? '#22c55e' : '#d1d5db',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background 0.2s',
+        flexShrink: 0,
         opacity: disabled ? 0.5 : 1,
-        pointerEvents: disabled ? 'none' : 'auto',
+        padding: 0,
       }}
     >
-      {segments.map((seg) => {
-        const active = mode === seg.key;
-        return (
-          <button
-            key={seg.key}
-            onClick={() => onModeChange(seg.key)}
-            style={{
-              padding: '6px 14px',
-              fontSize: 12,
-              fontWeight: 600,
-              border: 'none',
-              cursor: 'pointer',
-              background: active ? seg.color : '#f3f4f6',
-              color: active ? '#fff' : '#9ca3af',
-              transition: 'all 0.15s',
-            }}
-          >
-            {seg.label}
-          </button>
-        );
-      })}
-    </div>
+      <div
+        style={{
+          position: 'absolute',
+          top: 2,
+          left: on ? 22 : 2,
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          background: '#fff',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          transition: 'left 0.2s',
+        }}
+      />
+    </button>
   );
 }
 
@@ -729,8 +718,9 @@ export default function AddonsPage() {
                   </button>
 
                   {/* 3-way toggle */}
-                  <ModeToggle
-                    mode={addon.mode} enabled={addon.enabled} onModeChange={(m) => handleModeChange(def.key, m)}
+                  <CapsuleToggle
+                    on={addon.enabled}
+                    onChange={(on) => handleModeChange(def.key, on ? 'locked' : 'off')}
                     disabled={isSaving}
                   />
                 </div>
