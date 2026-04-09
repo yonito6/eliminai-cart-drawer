@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import AddonPreview from './addon-preview';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -744,23 +745,12 @@ export default function AddonsPage() {
                       gap: 24,
                     }}
                   >
-                    {/* Left: Preview placeholder */}
-                    <div
-                      style={{
-                        background: '#f9fafb',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: 10,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minHeight: 220,
-                        color: '#9ca3af',
-                        fontSize: 14,
-                        fontWeight: 500,
-                      }}
-                    >
-                      Preview
-                    </div>
+                    {/* Left: Cart Preview */}
+                    <AddonPreview
+                      addonKey={def.key}
+                      addonConfig={addon.config ?? {}}
+                      mode="focused"
+                    />
 
                     {/* Right: Edit controls */}
                     <div>
