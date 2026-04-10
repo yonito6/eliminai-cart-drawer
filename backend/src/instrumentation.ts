@@ -7,7 +7,7 @@ export async function register() {
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : 'http://localhost:3000';
 
-    async function triggerCron(path: string, label: string) {
+    const triggerCron = async (path: string, label: string) => {
       try {
         const res = await fetch(`${HOST}${path}`, {
           method: 'POST',

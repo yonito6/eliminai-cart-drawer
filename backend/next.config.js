@@ -2,6 +2,7 @@
 const nextConfig = {
   experimental: {
     instrumentationHook: true,
+    missingSuspenseWithCSRBailout: false,
   },
   async headers() {
     return [

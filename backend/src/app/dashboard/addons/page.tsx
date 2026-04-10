@@ -186,7 +186,7 @@ export default function AddonsPage() {
   const [storeStats, setStoreStats] = useState<{ dailyCartOpens: number; checkoutRate: number } | null>(null);
 
   // ── Experiment data for timeline notes ──────────────────────────────────
-  const [experiments, setExperiments] = useState<any[]>([]);
+  const [experiments, setExperiments] = useState<Record<string, any>>({});
   const [logEventInput, setLogEventInput] = useState<Record<string, string>>({});
   const [showLogEvent, setShowLogEvent] = useState<Record<string, boolean>>({});
 
@@ -1449,7 +1449,7 @@ export default function AddonsPage() {
 
                       {/* Variant cards with previews */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-                        {(exp.variantStats || []).map((v, vi) => {
+                        {(exp.variantStats || []).map((v: any, vi: number) => {
                           const isWinnerV = exp.winnerVariantId === v.id;
                           const trafficPct = exp.trafficSplit ? Math.round((exp.trafficSplit[v.id] ?? 0) * 100) : 0;
                           return (

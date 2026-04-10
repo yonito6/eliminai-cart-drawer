@@ -4,9 +4,10 @@ import React, { useEffect, useState } from "react";
 import { REAL_CART_CSS, CONTROL_HTML, TRUST_BADGES_HTML } from "./cart-constants";
 
 interface CartPreviewProps {
-  variant: "control" | "variant";
+  variant: string;
   label: string;
   features?: Record<string, any>;
+  color?: string;
 }
 
 export default function CartPreview({ variant, label, features }: CartPreviewProps) {

@@ -132,14 +132,14 @@ export default function Dashboard() {
                   This is your real store. Add products to cart to see how the cart drawer looks with active experiments.
                 </p>
               </div>
-              <a href={'https://' + STORE_DOMAIN} target="_blank" rel="noopener noreferrer"
+              <a href={'https://' + (stats?.store?.shopDomain || '')} target="_blank" rel="noopener noreferrer"
                 style={{ fontSize: 12, color: '#7c3aed', textDecoration: 'none', fontWeight: 500 }}>
                 Open in new tab \u2197
               </a>
             </div>
             <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb', height: 700 }}>
               <iframe
-                src={'https://' + STORE_DOMAIN + '/collections/all'}
+                src={'https://' + (stats?.store?.shopDomain || '') + '/collections/all'}
                 style={{ width: '100%', height: '100%', border: 'none' }}
                 title="Live Store Preview"
               />
