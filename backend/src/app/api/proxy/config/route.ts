@@ -25,6 +25,7 @@ async function handleRequest(req: NextRequest) {
     const isReturning = body.isReturning || false;
     const referralSource = body.referralSource;
     const country = body.country;
+    const prefetch = body.prefetch === true; // Pre-fetch on page load — assign variant but skip CART_OPENED
 
     if (!shopDomain) {
       return NextResponse.json({ error: 'Missing shop' }, { status: 400 });
@@ -42,38 +43,39 @@ async function handleRequest(req: NextRequest) {
     );
 
     // 6. Track CART_OPENED event server-side (guaranteed — no client race)
-    if (assignment.experiment && assignment.sessionId) {
-      // Only track for NEW assignments — returning visitors already counted
-      if (assignment.isNew) {
-        const variantAssignment = await prisma.variantAssignment.findUnique({
-          where: {
-            experimentId_sessionId: {
-              experimentId: assignment.experiment.id,
-              sessionId: assignment.sessionId,
-            },
-          },
-        });
-        if (variantAssignment) {
-          const now = new Date();
-          await prisma.event.create({
-            data: {
-              storeId: store.id,
-              sessionId: assignment.sessionId,
-              assignmentId: variantAssignment.id,
-              eventType: 'CART_OPENED',
-              hourOfDay: now.getUTCHours(),
-              dayOfWeek: now.getUTCDay(),
-              metadata: { deviceType, isReturning, source: 'server' },
+    // Skip if this is a pre-fetch (page load) — CART_OPENED sent via /event when cart actually opens
+    if (!prefetch) {
+      if (assignment.experiment && assignment.sessionId) {
+        if (assignment.isNew) {
+          const variantAssignment = await prisma.variantAssignment.findUnique({
+            where: {
+              experimentId_sessionId: {
+                experimentId: assignment.experiment.id,
+                sessionId: assignment.sessionId,
+              },
             },
           });
+          if (variantAssignment) {
+            const now = new Date();
+            await prisma.event.create({
+              data: {
+                storeId: store.id,
+                sessionId: assignment.sessionId,
+                assignmentId: variantAssignment.id,
+                eventType: 'CART_OPENED',
+                hourOfDay: now.getUTCHours(),
+                dayOfWeek: now.getUTCDay(),
+                metadata: { deviceType, isReturning, source: 'server' },
+              },
+            });
+          }
         }
+      } else {
+        await prisma.store.update({
+          where: { id: store.id },
+          data: { baselineCartOpens: { increment: 1 } },
+        });
       }
-    } else {
-      // No experiment — track baseline
-      await prisma.store.update({
-        where: { id: store.id },
-        data: { baselineCartOpens: { increment: 1 } },
-      });
     }
 
     // 7. Return config + experiment assignment
