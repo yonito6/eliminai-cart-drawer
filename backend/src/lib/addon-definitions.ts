@@ -33,7 +33,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
   {
     key: 'trustBadges',
     label: 'Trust Badges',
-    icon: '🛡',
+    icon: '🛡️',
     description:
       'Display payment provider icons and security badges to reduce purchase anxiety.',
     estimatedImpact: '+2-10% conversion',
@@ -85,7 +85,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
   {
     key: 'scarcityTimer',
     label: 'Scarcity Timer',
-    icon: '⏱',
+    icon: '⏱️',
     description:
       'Add a countdown timer to create urgency and encourage faster checkout.',
     estimatedImpact: '+2-8% conversion',
