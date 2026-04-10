@@ -77,14 +77,38 @@ export async function assignVariant(
   const trafficSplit = experiment.trafficSplit as Record<string, number>;
   const variantId = pickVariant(trafficSplit);
 
-  await prisma.variantAssignment.create({
-    data: {
-      storeId,
-      experimentId: experiment.id,
-      sessionId: session.id,
-      variantId,
-    },
-  });
+  try {
+    await prisma.variantAssignment.create({
+      data: {
+        storeId,
+        experimentId: experiment.id,
+        sessionId: session.id,
+        variantId,
+      },
+    });
+  } catch (e: any) {
+    // Race condition: another request already assigned this session
+    if (e.code === 'P2002') {
+      const raceWinner = await prisma.variantAssignment.findUnique({
+        where: {
+          experimentId_sessionId: {
+            experimentId: experiment.id,
+            sessionId: session.id,
+          },
+        },
+      });
+      if (raceWinner) {
+        const rv = (experiment.variants as any[]).find((v: any) => v.id === raceWinner.variantId);
+        return {
+          experiment: { id: experiment.id, features: rv?.features || {} },
+          variant: raceWinner.variantId,
+          isNew: false,
+          sessionId: session.id,
+        };
+      }
+    }
+    throw e;
+  }
 
   const variants = experiment.variants as any[];
   const variantData = variants.find((v: any) => v.id === variantId);
