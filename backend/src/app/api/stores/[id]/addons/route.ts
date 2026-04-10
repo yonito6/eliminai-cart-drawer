@@ -5,6 +5,7 @@ import {
   getDefaultAddonsConfig,
   getAddonDefinition,
 } from '@/lib/addon-definitions';
+import { classifyChangeRisk, addExperimentNote } from '@/lib/test-safety';
 
 // --- Helpers -----------------------------------------------------------
 
@@ -72,6 +73,30 @@ export async function PATCH(
     mode?: 'off' | 'locked' | 'auto-optimize';
     config?: Record<string, any>;
   };
+
+  // Check for running experiments — return risk level
+  const runningExperiments = await prisma.experiment.findMany({
+    where: { storeId: params.id, status: 'RUNNING' },
+    select: { id: true, slot: true, status: true, notes: true },
+  });
+  const changeRisk = classifyChangeRisk(addonKey, runningExperiments);
+
+  // If client sent dryRun=true, just return the risk level
+  if (body.dryRun) {
+    return NextResponse.json({ changeRisk, runningExperiments: runningExperiments.map(e => ({ id: e.id, slot: e.slot })) });
+  }
+
+  // Add note to running experiments about settings change
+  if (changeRisk === 'medium' && runningExperiments.length > 0) {
+    for (const exp of runningExperiments) {
+      const notes = addExperimentNote(
+        (exp.notes as any[]) || [],
+        'settings_changed',
+        `Other settings changed during test: ${addonKey}`
+      );
+      await prisma.experiment.update({ where: { id: exp.id }, data: { notes } });
+    }
+  }
 
   if (!addonKey) {
     return NextResponse.json(
@@ -154,5 +179,5 @@ export async function PATCH(
 
   const optimizeQueue = buildOptimizeQueue(addons);
 
-  return NextResponse.json({ addons, optimizeQueue });
+  return NextResponse.json({ addons, optimizeQueue, changeRisk });
 }
