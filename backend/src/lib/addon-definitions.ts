@@ -38,26 +38,13 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       'Display payment provider icons and security badges to reduce purchase anxiety.',
     estimatedImpact: '+2-10% conversion',
     impactMetric: 'conversion',
-    dimensions: [
-      {
-        key: 'style',
-        label: 'Badge Style',
-        type: 'select',
-        testable: true,
-        options: [
-          { value: 'icons-labels', label: 'Icons + Labels' },
-          { value: 'icons-only', label: 'Icons Only' },
-          { value: 'compact-strip', label: 'Compact Strip' },
-        ],
-        default: 'icons-labels',
-      },
-      {
+    dimensions: [      {
         key: 'text',
         label: 'Badge Text',
         type: 'text',
         testable: true,
-        default: 'Secure checkout powered by Shopify',
-        placeholder: 'e.g. 100% Secure Payment',
+        default: '',
+        placeholder: 'e.g. ',
       },
       {
         key: 'position',
@@ -83,11 +70,16 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
           { value: 'paypal', label: 'PayPal' },
           { value: 'apple-pay', label: 'Apple Pay' },
           { value: 'google-pay', label: 'Google Pay' },
+          { value: 'shop-pay', label: 'Shop Pay' },
+          { value: 'discover', label: 'Discover' },
+          { value: 'klarna', label: 'Klarna' },
+          { value: 'afterpay', label: 'Afterpay' },
+          { value: 'stripe', label: 'Stripe' },
         ],
         default: ['visa', 'mastercard', 'amex', 'paypal'],
       },
     ],
-    defaultConfig: { style: 'icons-labels', text: 'Secure checkout powered by Shopify', position: 'below-checkout', icons: ['visa', 'mastercard', 'amex', 'paypal'] },
+    defaultConfig: { text: '', position: 'below-checkout', icons: ['visa', 'mastercard', 'amex', 'paypal'] },
   },
 
   {
@@ -419,8 +411,4 @@ export function getDefaultAddonsConfig(): {
   }
 
   return { addons, optimizeQueue: [] };
-}
-
-export function getAddonDefinitions() {
-  return ADDON_DEFINITIONS;
 }
