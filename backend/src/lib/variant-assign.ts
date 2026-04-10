@@ -22,19 +22,30 @@ export async function assignVariant(
     orderBy: { startedAt: 'desc' },
   });
 
-  // 2. Find or create visitor session (upsert to handle race conditions)
-  const session = await prisma.visitorSession.upsert({
-    where: { sessionToken },
-    update: {},
-    create: {
-      storeId,
-      sessionToken,
-      deviceType,
-      isReturning,
-      referralSource,
-      country,
-    },
-  });
+  // 2. Find or create visitor session (retry on unique constraint race)
+  let session;
+  try {
+    session = await prisma.visitorSession.upsert({
+      where: { sessionToken },
+      update: {},
+      create: {
+        storeId,
+        sessionToken,
+        deviceType,
+        isReturning,
+        referralSource,
+        country,
+      },
+    });
+  } catch (e: any) {
+    // Race condition: another request created the same session — just find it
+    if (e.code === 'P2002') {
+      session = await prisma.visitorSession.findUnique({ where: { sessionToken } });
+      if (!session) throw e;
+    } else {
+      throw e;
+    }
+  }
 
   // 3. No active experiment = baseline phase
   if (!experiment) {

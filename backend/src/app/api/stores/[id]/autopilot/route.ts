@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { buildOptimizeQueue } from '@/lib/autopilot';
-import { getAddonDefinitions } from '@/lib/addon-definitions';
+import { ADDON_DEFINITIONS } from '@/lib/addon-definitions';
 
 // GET /api/stores/[id]/autopilot — get autopilot state
 export async function GET(
@@ -58,7 +58,7 @@ export async function PATCH(
       }
     }
 
-    const addonDefs = getAddonDefinitions();
+    const addonDefs = ADDON_DEFINITIONS;
     const queue = body.queue || buildOptimizeQueue(addonDefs as any, testedSlots, winners);
 
     config.autopilot = {

@@ -24,6 +24,39 @@ export async function exchangeToken(shop: string, code: string): Promise<string>
   return data.access_token;
 }
 
+/**
+ * Register required webhooks for a store after install/re-auth.
+ * Idempotent — Shopify deduplicates by topic+address.
+ */
+export async function registerWebhooks(shop: string, accessToken: string): Promise<void> {
+  const host = process.env.HOST || process.env.SHOPIFY_APP_URL;
+  if (!host) return;
+
+  const webhooks = [
+    { topic: 'orders/create', address: `${host}/api/proxy/webhook` },
+    { topic: 'app/uninstalled', address: `${host}/api/webhooks/uninstalled` },
+  ];
+
+  for (const wh of webhooks) {
+    try {
+      const res = await fetch(`https://${shop}/admin/api/2025-01/webhooks.json`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': accessToken,
+        },
+        body: JSON.stringify({ webhook: { ...wh, format: 'json' } }),
+      });
+      // 422 = already exists (idempotent), anything else that's not 2xx log but don't fail install
+      if (!res.ok && res.status !== 422) {
+        console.error(`Webhook registration failed for ${wh.topic}:`, res.status, await res.text());
+      }
+    } catch (err) {
+      console.error(`Webhook registration error for ${wh.topic}:`, err);
+    }
+  }
+}
+
 export function verifyHmac(query: Record<string, string>): boolean {
   const { hmac, ...params } = query;
   if (!hmac) return false;

@@ -58,6 +58,7 @@ model Experiment {
   variants        Json
   winnerVariantId String?
   confidence      Float             @default(0)
+  expectedLoss    Float?
   liftPercent     Float?
   trafficSplit    Json              @default("{}")
   startedAt       DateTime          @default(now())

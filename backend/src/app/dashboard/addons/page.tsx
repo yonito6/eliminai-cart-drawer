@@ -85,6 +85,14 @@ function CapsuleToggle({
   onChange: (on: boolean) => void;
   disabled?: boolean;
 }) {
+  // Inject spinner keyframes
+  if (typeof document !== 'undefined' && !document.getElementById('smart-optimize-styles')) {
+    const style = document.createElement('style');
+    style.id = 'smart-optimize-styles';
+    style.textContent = '@keyframes spin { to { transform: rotate(360deg) } }';
+    document.head.appendChild(style);
+  }
+
   return (
     <button
       onClick={() => !disabled && onChange(!on)}
@@ -151,6 +159,7 @@ export default function AddonsPage() {
     experimentId: string;
     experimentName: string;
     slot: string;
+    expectedLoss: number | null;
     liftPercent: number;
     winnerLabel: string;
   } | null>(null);
@@ -295,6 +304,18 @@ export default function AddonsPage() {
     fetchStoreStats();
   }, [load, loadAutopilot, loadExperiments, fetchStoreStats]);
 
+  // ── Restore edit view from URL param on mount ──────────────────────────
+  useEffect(() => {
+    const editKey = searchParams.get('edit');
+    if (editKey && definitions.length > 0) {
+      const def = definitions.find(d => d.key === editKey);
+      if (def) {
+        setExpanded(editKey);
+        setExpandedView('edit');
+      }
+    }
+  }, [searchParams, definitions]);
+
   // ── Early returns (MUST be after all hooks) ────────────────────────────
   if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
   if (storeError || !STORE_ID) return <div style={{padding: 40, textAlign: 'center', color: '#ef4444'}}>Store not found. Please install the app from Shopify.</div>;
@@ -369,11 +390,16 @@ export default function AddonsPage() {
       });
       if (res.ok) {
         await fetchExperiments();
+        // Auto-switch to results view to show the running test
+        setExpanded(addonKey);
+        setExpandedView('results');
+        window.history.replaceState({}, '', window.location.pathname);
       }
     } catch (e) {
       console.error('Failed to start test', e);
     } finally {
-      setStartingTest(s => ({ ...s, [addonKey]: false }));
+      // Small delay so the animation completes smoothly
+      setTimeout(() => setStartingTest(s => ({ ...s, [addonKey]: false })), 300);
     }
   }
 
@@ -937,8 +963,8 @@ export default function AddonsPage() {
                 </div>
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                   {autopilot?.enabled
-                    ? `Testing automatically. ${autopilot.completedCount || 0} done, +${((autopilot.totalLift || 0)).toFixed(1)}% cumulative lift`
-                    : 'AI smart-optimizes each addon automatically, one after another'}
+                    ? `Running — ${autopilot.completedCount || 0} tests done, +${((autopilot.totalLift || 0)).toFixed(1)}% total improvement so far`
+                    : 'Automatically tests each feature for quick wins, then fine-tunes the winners'}
                 </div>
               </div>
             </div>
@@ -958,29 +984,85 @@ export default function AddonsPage() {
               />
             </div>
           </div>
-          {autopilot?.enabled && autopilot.queue && autopilot.queue.length > 0 && (
+          {autopilot?.enabled && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #bbf7d0' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
-                Up Next
+              {/* Phase indicator */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '3px 10px', borderRadius: 8 }}>
+                  Phase 1: Quick Sweep
+                </div>
+                <div style={{ fontSize: 11, color: '#6b7280' }}>
+                  Testing each feature ON vs OFF for fast wins
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
-                {autopilot.queue.slice(0, 5).map((item: string, idx: number) => (
-                  <span key={item} style={{
-                    fontSize: 11, padding: '3px 10px', borderRadius: 8,
-                    background: idx === 0 ? '#dcfce7' : '#f9fafb',
-                    border: '1px solid ' + (idx === 0 ? '#86efac' : '#e5e7eb'),
-                    color: idx === 0 ? '#166534' : '#6b7280',
-                    fontWeight: idx === 0 ? 600 : 400,
-                  }}>
-                    {idx === 0 ? '▶ ' : ''}{item.replace(':', ' → ')}
-                  </span>
-                ))}
-                {autopilot.queue.length > 5 && (
-                  <span style={{ fontSize: 11, color: '#9ca3af', padding: '3px 6px' }}>
-                    +{autopilot.queue.length - 5} more
-                  </span>
+
+              {/* Optimization roadmap */}
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                {/* Currently testing */}
+                {autopilot.queue && autopilot.queue.length > 0 && (() => {
+                  const current = autopilot.queue[0];
+                  const parts = current.split(':');
+                  const addonKey = parts[0];
+                  const dim = parts[1] || 'enabled';
+                  const def = definitions.find((d: any) => d.key === addonKey);
+                  const exp = experiments[addonKey];
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8 }}>
+                      <span style={{ fontSize: 14 }}>{def?.icon || '🔬'}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#166534' }}>
+                          Now testing: {def?.label || addonKey} {dim === 'enabled' ? 'ON vs OFF' : dim}
+                        </div>
+                        {exp && (
+                          <div style={{ fontSize: 11, color: '#16a34a', marginTop: 2 }}>
+                            {exp.totalVisitors} visitors · {Math.round((exp.confidence || 0) * 100)}% confidence
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ width: 60, height: 4, background: '#bbf7d0', borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: Math.max(Math.round((exp?.confidence || 0) * 100), 5) + '%', background: '#16a34a', borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Up next items */}
+                {autopilot.queue && autopilot.queue.slice(1, 4).map((item: string, idx: number) => {
+                  const parts = item.split(':');
+                  const addonKey = parts[0];
+                  const dim = parts[1] || 'enabled';
+                  const def = definitions.find((d: any) => d.key === addonKey);
+                  return (
+                    <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8 }}>
+                      <span style={{ fontSize: 14, opacity: 0.5 }}>{def?.icon || '🔬'}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: '#6b7280' }}>
+                          {def?.label || addonKey} {dim === 'enabled' ? 'ON vs OFF' : dim}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#9ca3af' }}>
+                          Expected impact: {def?.estimatedImpact || 'TBD'}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>#{idx + 2}</span>
+                    </div>
+                  );
+                })}
+
+                {autopilot.queue && autopilot.queue.length > 4 && (
+                  <div style={{ fontSize: 11, color: '#9ca3af', padding: '4px 12px' }}>
+                    +{autopilot.queue.length - 4} more tests queued
+                  </div>
                 )}
               </div>
+
+              {/* Completed tests summary */}
+              {autopilot.completedCount > 0 && (
+                <div style={{ marginTop: 10, padding: '8px 12px', background: '#faf5ff', border: '1px solid #d8b4fe', borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed' }}>
+                    Results so far: {autopilot.completedCount} tests completed → +{(autopilot.totalLift || 0).toFixed(1)}% total improvement
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1008,7 +1090,7 @@ export default function AddonsPage() {
               addon.mode === 'auto-optimize'
                 ? '#22c55e'
                 : addon.mode === 'locked'
-                  ? '#3b82f6'
+                  ? '#111827'
                   : '#e5e7eb';
             const borderWidth =
               addon.mode === 'auto-optimize' || addon.mode === 'locked'
@@ -1018,7 +1100,7 @@ export default function AddonsPage() {
             const activeExp = experiments[def.key];
             const isTesting = activeExp?.status === 'RUNNING';
             const hasWinner = activeExp?.status === 'WINNER_FOUND';
-            const badgeColor = isTesting ? '#7c3aed' : hasWinner ? '#16a34a' : addon.enabled ? '#3b82f6' : '#9ca3af';
+            const badgeColor = isTesting ? '#7c3aed' : hasWinner ? '#16a34a' : addon.enabled ? '#7c3aed' : '#9ca3af';
             const badgeLabel = isTesting ? 'Smart Optimizing' : hasWinner ? 'Winner Found' : addon.enabled ? 'Active' : 'Off';
 
             return (
@@ -1122,7 +1204,7 @@ export default function AddonsPage() {
                       }}
                       style={{
                         background: 'none', border: 'none', cursor: 'pointer',
-                        fontSize: 13, fontWeight: 500, color: '#3b82f6',
+                        fontSize: 13, fontWeight: 500, color: '#6b7280',
                         padding: '4px 8px',
                       }}
                     >
@@ -1217,20 +1299,10 @@ export default function AddonsPage() {
                               What this optimization will do:
                             </div>
                             <div style={{ fontSize: 12, color: '#7c3aed', lineHeight: 1.5 }}>
-                              Our engine will compare <strong>{def.label} ON</strong> vs <strong>OFF</strong>, learn which version converts better, and automatically send more traffic to the winner.
-                              {(() => {
-                                if (!storeStats || storeStats.dailyCartOpens <= 0) return null;
-                                if (storeStats.dailyCartOpens >= 100) {
-                                  return <> Based on your traffic (~{storeStats.dailyCartOpens} cart opens/day), results typically appear within <strong>3–7 days</strong>.</>;
-                                } else if (storeStats.dailyCartOpens >= 30) {
-                                  return <> Based on your traffic (~{storeStats.dailyCartOpens} cart opens/day), results typically appear within <strong>7–14 days</strong>.</>;
-                                } else {
-                                  return <> Your traffic is still building. The engine adapts as data comes in — larger effects are detected faster.</>;
-                                }
-                              })()}
+                              Our AI will find whether <strong>{def.label}</strong> increases your checkout rate. Results appear automatically — the more visitors, the faster.
                             </div>
                             <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 6 }}>
-                              After this, you can optimize individual dimensions: {def.dimensions.filter(d => d.testable).map(d => d.label).join(', ')}
+                              Once complete, our AI can fine-tune individual settings for even more lift.
                             </div>
                           </div>
                           <button
@@ -1238,15 +1310,37 @@ export default function AddonsPage() {
                             disabled={!!startingTest[def.key]}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 8,
-                              padding: '10px 20px', background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+                              padding: '12px 20px',
+                              background: startingTest[def.key]
+                                ? 'linear-gradient(135deg, #a78bfa, #8b5cf6)'
+                                : 'linear-gradient(135deg, #7c3aed, #6d28d9)',
                               color: '#fff', border: 'none', borderRadius: 10,
                               cursor: startingTest[def.key] ? 'default' : 'pointer',
-                              fontWeight: 600, fontSize: 13, width: '100%', justifyContent: 'center',
-                              opacity: startingTest[def.key] ? 0.7 : 1,
-                              boxShadow: '0 2px 8px rgba(124,58,237,0.3)',
+                              fontWeight: 600, fontSize: 14, width: '100%', justifyContent: 'center',
+                              boxShadow: startingTest[def.key]
+                                ? '0 2px 12px rgba(124,58,237,0.4)'
+                                : '0 2px 8px rgba(124,58,237,0.3)',
+                              transition: 'all 0.3s ease',
+                              transform: startingTest[def.key] ? 'scale(0.98)' : 'scale(1)',
                             }}
                           >
-                            {startingTest[def.key] ? 'Starting...' : 'Smart Optimize'}
+                            {startingTest[def.key] ? (
+                              <>
+                                <span style={{
+                                  display: 'inline-block', width: 16, height: 16,
+                                  border: '2px solid rgba(255,255,255,0.3)',
+                                  borderTopColor: '#fff',
+                                  borderRadius: '50%',
+                                  animation: 'spin 0.6s linear infinite',
+                                }} />
+                                Setting up optimization…
+                              </>
+                            ) : (
+                              <>
+                                <span style={{ fontSize: 16 }}>✨</span>
+                                Smart Optimize
+                              </>
+                            )}
                           </button>
                         </div>
                       )}
@@ -1339,16 +1433,16 @@ export default function AddonsPage() {
                           <div style={{ height: '100%', width: Math.max(confidence, 2) + '%', background: confidence >= 95 ? '#16a34a' : '#7c3aed', borderRadius: 4, transition: 'width 0.5s ease' }} />
                         </div>
                         <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-                          {confidence >= 95 ? 'Statistical significance reached!' : confidence >= 80 ? 'Almost there — keep collecting data' : testing ? 'Collecting visitor data...' : 'Optimization ended'}
+                          {confidence >= 95 ? (winner ? 'Winner confirmed with high confidence!' : 'High confidence — no meaningful difference detected') : confidence >= 80 ? 'Almost there — the engine is narrowing it down' : testing ? 'Learning from your visitors’ behavior…' : 'Optimization ended'}
                         </div>
                       </div>
 
                       {/* What's being tested */}
-                      <div style={{ marginBottom: 16, padding: 14, background: '#f0f4ff', border: '1px solid #bfdbfe', borderRadius: 10 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#1e40af' }}>
+                      <div style={{ marginBottom: 16, padding: 14, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
                           What we're testing
                         </div>
-                        <div style={{ fontSize: 13, color: '#3b82f6', marginTop: 4 }}>
+                        <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
                           Each visitor sees one of these {(exp.variantStats || []).length} versions. The system automatically sends more traffic to the version that converts best.
                         </div>
                       </div>
@@ -1384,6 +1478,12 @@ export default function AddonsPage() {
                                   <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{v.checkoutRate}%</div>
                                   <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Checkout Rate</div>
                                 </div>
+                                {v.purchaseRate !== undefined && (
+                                  <div>
+                                    <div style={{ fontSize: 20, fontWeight: 700, color: '#7c3aed' }}>{v.purchaseRate}%</div>
+                                    <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Purchase Rate</div>
+                                  </div>
+                                )}
                                 <div>
                                   <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{v.visitors}</div>
                                   <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Visitors</div>
@@ -1396,6 +1496,12 @@ export default function AddonsPage() {
                                   <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{v.checkoutClicks}</div>
                                   <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Checkouts</div>
                                 </div>
+                                {v.orders !== undefined && v.orders > 0 && (
+                                  <div>
+                                    <div style={{ fontSize: 20, fontWeight: 700, color: '#7c3aed' }}>{v.orders}</div>
+                                    <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Orders</div>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Preview of this variant */}
@@ -1413,6 +1519,21 @@ export default function AddonsPage() {
                           );
                         })}
                       </div>
+
+                      {/* Expected loss & status */}
+                      {testing && exp.expectedLoss != null && (
+                        <div style={{ marginBottom: 12, padding: 10, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16 }}>{exp.expectedLoss <= 0.05 ? '✅' : exp.expectedLoss <= 0.15 ? '⚠️' : '⏳'}</span>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
+                              Risk if we chose now: {exp.expectedLoss.toFixed(3)}pp
+                            </div>
+                            <div style={{ fontSize: 11, color: '#6b7280' }}>
+                              {exp.expectedLoss <= 0.05 ? 'Very low risk — winner almost certain' : exp.expectedLoss <= 0.15 ? 'Moderate risk — collecting more data to be sure' : 'Still learning — need more visitor data'}
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Lift summary */}
                       {(winner || (exp.liftPercent && exp.liftPercent > 0)) && (

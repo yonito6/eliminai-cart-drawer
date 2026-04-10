@@ -239,12 +239,12 @@ export default function Dashboard() {
         )}
 
         {/* Experiments List */}
-        <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 14px' }}>Experiments</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 14px' }}>Active Optimizations</h2>
         {exps.length === 0 ? (
           <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center' as const, border: '1px solid #e5e7eb' }}>
-            <p style={{ color: '#9ca3af', margin: 0 }}>No experiments yet. Create one above.</p>
+            <p style={{ color: '#9ca3af', margin: 0 }}>No active optimizations running.</p>
           </div>
-        ) : exps.map(exp => (
+        ) : exps.filter(exp => exp.status === 'RUNNING').map(exp => (
           <div key={exp.id} style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 14, border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
@@ -257,7 +257,7 @@ export default function Dashboard() {
                   }}>{exp.status}</span>
                 </h3>
                 <p style={{ color: '#9ca3af', margin: '4px 0 0', fontSize: 12 }}>
-                  Slot: {exp.slot} \u00b7 Started: {new Date(exp.startedAt).toLocaleDateString()} \u00b7 Max: {exp.maxDays}d \u00b7 {exp.totalVisitors} visitors
+                  Started {new Date(exp.startedAt).toLocaleDateString()} · {exp.totalVisitors} visitors
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>

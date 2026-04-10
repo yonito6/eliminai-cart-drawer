@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { exchangeToken, verifyHmac } from '@/lib/shopify-auth';
+import { exchangeToken, verifyHmac, registerWebhooks } from '@/lib/shopify-auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
       isActive: true,
     },
   });
+
+  // Register webhooks (orders/create for purchase tracking)
+  await registerWebhooks(shop, accessToken);
 
   // Redirect to dashboard
   return NextResponse.redirect(`${process.env.HOST}/dashboard?shop=${shop}`);

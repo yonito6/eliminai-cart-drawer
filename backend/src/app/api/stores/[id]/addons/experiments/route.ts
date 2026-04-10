@@ -38,12 +38,21 @@ export async function GET(
               eventType: 'CHECKOUT_CLICKED',
             },
           })).length;
+          const orders = (await prisma.event.groupBy({
+            by: ['sessionId'],
+            where: {
+              assignment: { experimentId: exp.id, variantId: v.id },
+              eventType: 'ORDER_COMPLETED',
+            },
+          })).length;
           return {
             ...v,
             visitors,
             cartOpens,
             checkoutClicks,
             checkoutRate: cartOpens > 0 ? +(checkoutClicks / cartOpens * 100).toFixed(1) : 0,
+            orders,
+            purchaseRate: cartOpens > 0 ? +(orders / cartOpens * 100).toFixed(1) : 0,
           };
         })
       );
@@ -53,6 +62,7 @@ export async function GET(
         slot: exp.slot,
         status: exp.status,
         confidence: exp.confidence,
+        expectedLoss: (exp as any).expectedLoss ?? null,
         liftPercent: exp.liftPercent ?? 0,
         winnerVariantId: exp.winnerVariantId,
         trafficSplit: exp.trafficSplit,

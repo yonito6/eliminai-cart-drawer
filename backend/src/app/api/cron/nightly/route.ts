@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { calculateThompsonSampling } from '@/lib/thompson';
-import { applyWinner, pickNextTest } from '@/lib/autopilot';
-import { addExperimentNote } from '@/lib/test-safety';
-import { getAddonDefinitions } from '@/lib/addon-definitions';
+import { calculateThompsonSampling, buildCrossStorePriors } from '@/lib/thompson';
 
 export async function POST(req: NextRequest) {
   // Verify cron secret
@@ -20,9 +17,24 @@ export async function POST(req: NextRequest) {
     include: { store: true },
   });
 
+  // Pre-fetch cross-store priors from ALL completed experiments
+  const completedExperiments = await prisma.experiment.findMany({
+    where: { status: { in: ['WINNER_FOUND', 'NO_DIFFERENCE'] } },
+    select: { slot: true, variants: true },
+  });
+  const crossStoreData = (completedExperiments as any[]).map(e => ({
+    slot: e.slot,
+    variants: (e.variants as any[]).map((v: any) => ({
+      id: v.id,
+      successes: v.successes ?? 0,
+      failures: v.failures ?? 0,
+    })),
+  }));
+
   for (const exp of experiments) {
     const variants = exp.variants as any[];
     const variantStats = [];
+    const purchaseStats = [];
 
     for (const v of variants) {
       // Count UNIQUE sessions (not raw events) — one user = one data point
@@ -44,31 +56,69 @@ export async function POST(req: NextRequest) {
 
       const uniqueOpens = uniqueCartSessions.length;
       const uniqueCheckouts = uniqueCheckoutSessions.length;
+      const uniqueOrderSessions = await prisma.event.groupBy({
+        by: ["sessionId"],
+        where: {
+          assignment: { experimentId: exp.id, variantId: v.id },
+          eventType: "ORDER_COMPLETED",
+        },
+      });
+      const uniqueOrders = uniqueOrderSessions.length;
 
       variantStats.push({
         id: v.id,
         successes: uniqueCheckouts,
         failures: Math.max(0, uniqueOpens - uniqueCheckouts),
       });
+      purchaseStats.push({
+        id: v.id,
+        orders: uniqueOrders,
+        checkouts: uniqueCheckouts,
+      });
     }
 
-    // Run Thompson Sampling
-    const ts = calculateThompsonSampling(variantStats);
+    // Estimate daily traffic for this store (last 7 days unique cart opens / 7)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+    const recentCartSessions = await prisma.event.groupBy({
+      by: ['sessionId'],
+      where: { storeId: exp.storeId, eventType: 'CART_OPENED', createdAt: { gte: sevenDaysAgo } },
+    });
+    const dailyTraffic = Math.max(1, Math.round(recentCartSessions.length / 7));
+
+    // Determine traffic tier for cross-store prior scaling
+    const trafficTier = dailyTraffic >= 500 ? 'high' as const
+      : dailyTraffic >= 50 ? 'medium' as const
+      : 'low' as const;
+
+    // Build cross-store priors for this addon slot
+    const priors = buildCrossStorePriors(crossStoreData, exp.slot, trafficTier);
+
     const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
 
-    // Decision logic
+    // Run Thompson Sampling with full options
+    const ts = calculateThompsonSampling(variantStats, {
+      priors,
+      dailyTraffic,
+      purchaseStats,
+      minDaysRunning: daysRunning,
+    });
+
+    // Decision logic — Thompson now handles winner declaration internally
+    // We just need to map its output to experiment status
     let newStatus = exp.status;
     let winnerVariantId = exp.winnerVariantId;
     let endedAt = exp.endedAt;
 
-    if (ts.confidence >= 0.95 && ts.liftPercent > 1) {
+    if (ts.winnerId) {
       newStatus = 'WINNER_FOUND';
       winnerVariantId = ts.winnerId;
       endedAt = new Date();
-    } else if (ts.confidence >= 0.95 && ts.liftPercent <= 1) {
+    } else if (ts.confidence >= 0.95 && Math.abs(ts.liftPercent) <= 1) {
+      // Thompson flagged no meaningful difference
       newStatus = 'NO_DIFFERENCE';
       endedAt = new Date();
     } else if (daysRunning >= exp.maxDays && ts.confidence < 0.80) {
+      // Ran out of time with low confidence
       newStatus = 'NO_DIFFERENCE';
       endedAt = new Date();
     }
@@ -98,6 +148,7 @@ export async function POST(req: NextRequest) {
       where: { id: exp.id },
       data: {
         confidence: ts.confidence,
+        expectedLoss: ts.expectedLoss,
         liftPercent: ts.liftPercent,
         trafficSplit: ts.trafficSplit,
         status: newStatus as any,
@@ -109,10 +160,18 @@ export async function POST(req: NextRequest) {
     results.push({
       experimentId: exp.id,
       store: exp.store.shopDomain,
+      slot: exp.slot,
       confidence: ts.confidence,
+      expectedLoss: ts.expectedLoss,
       liftPercent: ts.liftPercent,
       status: newStatus,
+      reason: ts.reason,
       trafficSplit: ts.trafficSplit,
+      dailyTraffic,
+      crossStorePriors: Object.keys(priors).length > 0,
+      checkoutRates: ts.checkoutRates,
+      purchaseRates: ts.purchaseRates,
+      compositeScores: ts.compositeScores,
     });
   }
 
@@ -141,6 +200,15 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      const dailyOrderSessions = await prisma.event.groupBy({
+        by: ['sessionId'],
+        where: {
+          assignment: { experimentId: exp.id, variantId: v.id },
+          eventType: 'ORDER_COMPLETED',
+          createdAt: { gte: yesterday, lt: today },
+        },
+      });
+
       await prisma.dailySummary.upsert({
         where: {
           experimentId_variantId_date: {
@@ -157,10 +225,12 @@ export async function POST(req: NextRequest) {
           currency: exp.store.currency,
           cartOpens: dailyOpenSessions.length,
           checkoutClicks: dailyCheckoutSessions.length,
+          ordersCompleted: dailyOrderSessions.length,
         },
         update: {
           cartOpens: dailyOpenSessions.length,
           checkoutClicks: dailyCheckoutSessions.length,
+          ordersCompleted: dailyOrderSessions.length,
         },
       });
     }

@@ -59,6 +59,7 @@ console.log("JS:", js.length, "CSS:", css.length, "Liquid:", liquid.length, "Car
   var token = await getToken(env.SHOPIFY_CLIENT_ID, env.SHOPIFY_CLIENT_SECRET);
   console.log("Uploading to " + label + "...");
   await upload(token, "assets/custom-cart-drawer.js", js);
+  await upload(token, "assets/v14-complete.js", js);
   await upload(token, "assets/custom-cart-drawer.css", css);
   await upload(token, "snippets/cart-drawer.liquid", liquid);
   await upload(token, "snippets/cart-item.liquid", cartItem);
