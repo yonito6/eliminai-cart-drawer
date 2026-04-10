@@ -420,3 +420,7 @@ export function getDefaultAddonsConfig(): {
 
   return { addons, optimizeQueue: [] };
 }
+
+export function getAddonDefinitions() {
+  return ADDON_DEFINITIONS;
+}
