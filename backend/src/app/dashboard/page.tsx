@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useStore } from '@/lib/hooks/use-store';
 import CartPreview from './cart-preview';
 
-const STORE_ID = 'cmnriegez0000jc70ro9nltw2';
-const STORE_DOMAIN = 'eleganto-3011.myshopify.com';
+// STORE_ID resolved dynamically via useStore()
+// STORE_DOMAIN resolved dynamically via useStore()
 const API = '';
 
 interface VS {
@@ -33,6 +34,11 @@ const FEATS = [
 ];
 
 export default function Dashboard() {
+  const { storeId: STORE_ID, store: storeInfo, loading: storeLoading, error: storeError } = useStore();
+
+  if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
+  if (storeError || !STORE_ID) return <div style={{padding: 40, textAlign: 'center', color: '#ef4444'}}>Store not found. Please install the app from Shopify.</div>;
+
   const [stats, setStats] = useState<Stats | null>(null);
   const [exps, setExps] = useState<Exp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,7 +62,7 @@ export default function Dashboard() {
       if (e.ok) setExps(await e.json());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, []);
+  }, [STORE_ID]);
 
   useEffect(() => { load(); const i = setInterval(load, 15000); return () => clearInterval(i); }, [load]);
 

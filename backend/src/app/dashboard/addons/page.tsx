@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AddonPreview from './addon-preview';
+import { useStore } from '@/lib/hooks/use-store';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const STORE_ID = 'cmnriegez0000jc70ro9nltw2';
+// STORE_ID is now resolved dynamically via useStore() hook
 const API = '';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -95,6 +96,11 @@ function CapsuleToggle({
 // ─── Main Page Component ────────────────────────────────────────────────────
 
 export default function AddonsPage() {
+  const { storeId: STORE_ID, loading: storeLoading, error: storeError } = useStore();
+
+  if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
+  if (storeError || !STORE_ID) return <div style={{padding: 40, textAlign: 'center', color: '#ef4444'}}>Store not found. Please install the app from Shopify.</div>;
+
   const [addons, setAddons] = useState<Record<string, AddonState>>({});
   const [definitions, setDefinitions] = useState<AddonDefinition[]>([]);
   const [optimizeQueue, setOptimizeQueue] = useState<string[]>([]);
@@ -107,7 +113,7 @@ export default function AddonsPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch(
-        API + '/api/stores/' + STORE_ID + '/addons',
+        API + '`/api/stores/${STORE_ID}/addons',
       );
       if (res.ok) {
         const json = await res.json();
