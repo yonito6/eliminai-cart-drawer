@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AddonPreview from './addon-preview';
 import { useStore } from '@/lib/hooks/use-store';
@@ -129,7 +129,15 @@ function CapsuleToggle({
 
 // ─── Main Page Component ────────────────────────────────────────────────────
 
-export default function AddonsPage() {
+export default function AddonsPageWrapper() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb' }}><div style={{ fontSize: 16, color: '#6b7280' }}>Loading addons...</div></div>}>
+      <AddonsPage />
+    </Suspense>
+  );
+}
+
+function AddonsPage() {
   const { storeId: STORE_ID, loading: storeLoading, error: storeError } = useStore();
   const searchParams = useSearchParams();
   const router = useRouter();
