@@ -162,7 +162,7 @@ export default function ResultsPage() {
               <span>{new Date(exp.startedAt).toLocaleDateString()} — {exp.endedAt ? new Date(exp.endedAt).toLocaleDateString() : 'ongoing'}</span>
               <span>{exp.durationDays}d</span>
               <span>{exp.totalVisitors} visitors</span>
-              {exp.confidence > 0 && <span>{(exp.confidence * 100).toFixed(0)}% confidence</span>}
+              {exp.confidence > 0.5 && <span>{Math.round(Math.max(0, (exp.confidence - 0.5) / 0.5) * 100)}% confidence</span>}
               {exp.liftPercent !== null && (
                 <span style={{ color: exp.liftPercent > 0 ? '#22c55e' : '#ef4444', fontWeight: 600 }}>
                   {exp.liftPercent > 0 ? '+' : ''}{exp.liftPercent.toFixed(1)}% lift

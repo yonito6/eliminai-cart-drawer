@@ -1015,12 +1015,12 @@ export default function AddonsPage() {
                         </div>
                         {exp && (
                           <div style={{ fontSize: 11, color: '#16a34a', marginTop: 2 }}>
-                            {exp.totalVisitors} visitors · {Math.round((exp.confidence || 0) * 100)}% confidence
+                            {exp.totalVisitors} visitors · {Math.round(Math.max(0, ((exp.confidence || 0) - 0.5) / 0.5) * 100)}% confidence
                           </div>
                         )}
                       </div>
                       <div style={{ width: 60, height: 4, background: '#bbf7d0', borderRadius: 2, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: Math.max(Math.round((exp?.confidence || 0) * 100), 5) + '%', background: '#16a34a', borderRadius: 2 }} />
+                        <div style={{ height: '100%', width: Math.max(Math.round(Math.max(0, ((exp?.confidence || 0) - 0.5) / 0.5) * 100), 2) + '%', background: '#16a34a', borderRadius: 2 }} />
                       </div>
                     </div>
                   );
@@ -1387,7 +1387,9 @@ export default function AddonsPage() {
                 {isExpanded && expandedView === 'results' && (() => {
                   const exp = experiments[def.key];
                   if (!exp) return null;
-                  const confidence = Math.round((exp.confidence ?? 0) * 100);
+                  // Transform raw Bayesian confidence (50%=no data, 100%=certain) to user-friendly 0-100% scale
+                  const rawConf = exp.confidence ?? 0;
+                  const confidence = Math.round(Math.max(0, (rawConf - 0.5) / 0.5) * 100);
                   const testing = exp.status === 'RUNNING';
                   const winner = exp.status === 'WINNER_FOUND';
                   const noDiff = exp.status === 'NO_DIFFERENCE';
@@ -1430,10 +1432,10 @@ export default function AddonsPage() {
                           <span style={{ fontWeight: 700 }}>{confidence}%</span>
                         </div>
                         <div style={{ height: 8, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: Math.max(confidence, 2) + '%', background: confidence >= 95 ? '#16a34a' : '#7c3aed', borderRadius: 4, transition: 'width 0.5s ease' }} />
+                          <div style={{ height: ‘100%’, width: Math.max(confidence, 2) + ‘%’, background: confidence >= 90 ? ‘#16a34a’ : ‘#7c3aed’, borderRadius: 4, transition: ‘width 0.5s ease’ }} />
                         </div>
-                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-                          {confidence >= 95 ? (winner ? 'Winner confirmed with high confidence!' : 'High confidence — no meaningful difference detected') : confidence >= 80 ? 'Almost there — the engine is narrowing it down' : testing ? 'Learning from your visitors’ behavior…' : 'Optimization ended'}
+                        <div style={{ fontSize: 11, color: ‘#6b7280’, marginTop: 4 }}>
+                          {confidence >= 90 ? (winner ? ‘Winner confirmed with high confidence!’ : ‘High confidence — no meaningful difference detected’) : confidence >= 60 ? ‘Almost there — the engine is narrowing it down’ : confidence === 0 ? (testing ? ‘Waiting for visitor data...’ : ‘No data collected’) : testing ? "Learning from your visitors’ behavior..." : ‘Optimization ended’}
                         </div>
                       </div>
 
