@@ -113,8 +113,8 @@ export async function POST(req: NextRequest) {
       newStatus = 'WINNER_FOUND';
       winnerVariantId = ts.winnerId;
       endedAt = new Date();
-    } else if (ts.confidence >= 0.95 && Math.abs(ts.liftPercent) <= 1) {
-      // Thompson flagged no meaningful difference
+    } else if (ts.reason?.includes('No meaningful difference') || ts.reason?.includes('Low impact detected')) {
+      // Thompson flagged no meaningful difference or early low-impact stop
       newStatus = 'NO_DIFFERENCE';
       endedAt = new Date();
     } else if (daysRunning >= exp.maxDays && ts.confidence < 0.80) {

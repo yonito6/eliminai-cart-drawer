@@ -170,6 +170,10 @@ export function calculateThompsonSampling(
       // High confidence but no meaningful difference
       winnerId = null; // will be marked NO_DIFFERENCE by cron
       reason = `No meaningful difference (lift ${liftPercent.toFixed(1)}% with ${(confidence * 100).toFixed(1)}% confidence)`;
+    } else if (minObsPerArm >= 50 && Math.abs(liftPercent) < 3 && confidence >= 0.60) {
+      // Early stop: enough data to see there's no meaningful impact — move on to next test
+      winnerId = null; // will be marked NO_DIFFERENCE by cron
+      reason = `Low impact detected early (lift ${liftPercent.toFixed(1)}%, ${minObsPerArm} visitors/variant) — move on to next test`;
     } else {
       reason = `Collecting data: confidence ${(confidence * 100).toFixed(1)}%, expected loss ${expectedLoss.toFixed(3)}pp, lift ${liftPercent.toFixed(1)}%`;
     }
