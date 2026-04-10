@@ -1215,6 +1215,12 @@ export default function AddonsPage() {
                                 const totalNeeded = neededPerVariant * 2;
                                 const days = Math.ceil(totalNeeded / storeStats.dailyCartOpens);
                                 const minDays = Math.max(days, 3);
+                                if (storeStats.dailyCartOpens < 10) {
+                                  return <> Your store is still building traffic (~{storeStats.dailyCartOpens} cart opens/day). The engine needs more visitors to find a winner — results improve as traffic grows.</>;
+                                }
+                                if (minDays > 90) {
+                                  return <> Based on your current traffic (~{storeStats.dailyCartOpens} cart opens/day), this may take a while. Results get faster as your traffic grows.</>;
+                                }
                                 return <> Based on your traffic (~{storeStats.dailyCartOpens} cart opens/day), estimated <strong>~{minDays} days</strong> to find a winner.</>;
                               })() : null}
                             </div>
