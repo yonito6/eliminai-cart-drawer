@@ -387,57 +387,16 @@
           if (_rc === 0) {
             setTimeout(function() { window.__ccd_block_rebuild = false; CCD.refresh(cart); }, 50);
           } else {
-            // Silent data sync — update attributes only, no morphDOM, no visual change
+            // After removing items, always do a full refresh from server.
+            // Shopify discount engine (Buy X Get Y) recalculates line items
+            // after removes — /cart/change.js can return stale allocations.
+            // Delayed /cart.js + full server HTML re-render ensures correct prices.
             window.__ccd_block_rebuild = false;
-            var cie = document.querySelector('#CartDrawer .cart__items');
-            if (cie) {
-              cie.setAttribute('data-real-count', CCD.getRealCount(cart));
-              cie.setAttribute('data-unique-count', CCD.getUniqueVariants(cart));
-              cie.setAttribute('data-cart-subtotal', cart.total_price);
-            }
-            // Sync line item keys/qtys in the DOM with server cart
-            // Match by variant_id (not key — keys change after remove!)
-            if (cart.items) {
-              cart.items.forEach(function(ci) {
-                var ciVid = String(ci.variant_id);
-                var inputs = document.querySelectorAll('.ccd-qty__input');
-                inputs.forEach(function(inp) {
-                  var inpVid = String(inp.dataset.id).split(':')[0];
-                  if (inpVid === ciVid) {
-                    // Update key to fresh server key
-                    inp.dataset.id = ci.key;
-                    inp.value = ci.quantity;
-                  }
-                });
-                // Update line item wrapper key + prices
-                var allItems = document.querySelectorAll('.ccd-item:not(.ccd-item--removing)');
-                allItems.forEach(function(lineItem) {
-                  var lInp = lineItem.querySelector('.ccd-qty__input');
-                  var lVid = lInp ? String(lInp.dataset.id).split(':')[0] : '';
-                  if (lVid === ciVid) {
-                    // Update data-key on wrapper
-                    lineItem.setAttribute('data-key', ci.key);
-                    // Update remove button key
-                    var rmBtn = lineItem.querySelector('.ccd-item__remove');
-                    if (rmBtn) rmBtn.setAttribute('data-key', ci.key);
-                    // Update price
-                    var priceEl = lineItem.querySelector('.ccd-item__price');
-                    if (priceEl) {
-                      var newPrice = CCD.fmt(ci.final_line_price);
-                      if (priceEl.textContent !== newPrice) priceEl.textContent = newPrice;
-                    }
-                  }
-                });
+            setTimeout(function() {
+              fetch("/cart.js").then(function(r) { return r.json(); }).then(function(freshCart) {
+                CCD.refresh(freshCart);
               });
-            }
-            // Handle discount row and other non-item elements
-            CCD.rebuildDiscountRow(cart);
-            // Sync protection toggle
-            var protItem = cart.items.find(function(i) { return i.handle === PROT; });
-            CCD._protKey = protItem ? protItem.key : null;
-            CCD.setToggleNoTransition(!!protItem);
-            // Check watch case
-            CCD.checkWatchCase(cart);
+            }, 350);
           }
         } else {
           CCD.refresh(cart);
@@ -1513,11 +1472,49 @@
       }).catch(function() {});
     },
 
+    // Addon key → inject/remove handlers. Add new addons here — everything else is automatic.
+    _addonHandlers: {
+      trustBadges:          { inject: function(c) { CCD.injectTrustBadges(c); },    remove: function() { var e = document.getElementById('ccd-trust-badges'); if (e) e.remove(); } },
+      scarcityTimer:        { inject: function(c) { CCD.injectScarcityTimer(c); },  remove: function() { var e = document.getElementById('ccd-scarcity-timer'); if (e) e.remove(); } },
+      freeShippingBar:      { inject: function(c) { CCD.injectFreeShippingBar(c); },remove: function() { var e = document.getElementById('ccd-free-shipping-bar'); if (e) e.remove(); } },
+      socialProof:          { inject: function(c) { CCD.injectSocialProof(c); },    remove: function() { var e = document.getElementById('ccd-social-proof'); if (e) e.remove(); } },
+      upsellRecommendations:{ inject: function(c) { CCD.injectUpsells(c); },        remove: function() { var e = document.getElementById('ccd-upsells'); if (e) e.remove(); } }
+    },
+
     applyExperimentFeatures: function(config) {
-      if (!config || !config.experiment) return;
-      var features = config.experiment.features || {};
-      if (features.showTrustBadges) {
-        this.injectTrustBadges();
+      if (!config) return;
+      var addons = config.cartConfig && config.cartConfig.addons ? config.cartConfig.addons : {};
+      var self = this;
+      var show = {};
+
+      // 1. Always-on addons (enabled + NOT being A/B tested)
+      for (var k in addons) {
+        if (addons[k] && addons[k].enabled && addons[k].mode !== 'locked') {
+          show[k] = addons[k].config || {};
+        }
+      }
+
+      // 2. A/B tested addons (mode === 'locked') — show ONLY if experiment says _enabled: true
+      if (config.experiment && config.experiment.features) {
+        var feat = config.experiment.features;
+        for (var ak in addons) {
+          if (addons[ak] && addons[ak].mode === 'locked') {
+            if (feat._enabled) { show[ak] = addons[ak].config || {}; }
+            else { delete show[ak]; }
+          }
+        }
+        // Legacy feature flags
+        if (feat.showTrustBadges) show.trustBadges = {};
+        if (feat.showScarcityTimer) show.scarcityTimer = {};
+        if (feat.showProgressBar) show.freeShippingBar = {};
+        if (feat.showUpsells) show.upsellRecommendations = {};
+        if (feat.showSocialProof) show.socialProof = {};
+      }
+
+      // 3. Inject shown addons, remove hidden ones
+      for (var hk in self._addonHandlers) {
+        if (show[hk]) { self._addonHandlers[hk].inject(show[hk]); }
+        else { self._addonHandlers[hk].remove(); }
       }
     },
 
@@ -1542,6 +1539,24 @@
 
       checkout.parentNode.insertBefore(row, checkout.nextSibling);
     }
+  };
+
+  // ── Future addon stubs — implement visuals when ready ──
+  CCD.injectScarcityTimer = function(cfg) {
+    if (document.getElementById('ccd-scarcity-timer')) return;
+    // TODO: implement scarcity countdown timer
+  };
+  CCD.injectFreeShippingBar = function(cfg) {
+    if (document.getElementById('ccd-free-shipping-bar')) return;
+    // TODO: implement free shipping progress bar
+  };
+  CCD.injectSocialProof = function(cfg) {
+    if (document.getElementById('ccd-social-proof')) return;
+    // TODO: implement social proof indicator
+  };
+  CCD.injectUpsells = function(cfg) {
+    if (document.getElementById('ccd-upsells')) return;
+    // TODO: implement upsell recommendations
   };
 
   if (document.readyState === 'loading') {
