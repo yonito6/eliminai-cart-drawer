@@ -1572,8 +1572,8 @@ function AddonsPage() {
 
 
 
-                      {/* Lift summary */}
-                      {(winner || (exp.liftPercent && exp.liftPercent > 0)) && (
+                      {/* Lift summary — only show when data is meaningful */}
+                      {(winner || (exp.liftPercent && exp.liftPercent > 0 && confidence >= 60 && totalV >= 60)) && (
                         <div style={{ marginTop: 16, padding: 12, background: winner ? '#f0fdf4' : '#faf5ff', border: '1px solid ' + (winner ? '#bbf7d0' : '#d8b4fe'), borderRadius: 8, textAlign: 'center' }}>
                           <span style={{ fontSize: 13, fontWeight: 600, color: winner ? '#16a34a' : '#7c3aed' }}>
                             {winner ? 'Winner' : 'Leading variant'}: +{(exp.liftPercent ?? 0).toFixed(1)}% conversion lift

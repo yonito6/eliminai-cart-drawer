@@ -11,54 +11,37 @@ interface StoreInfo {
 
 export function useStore() {
   const searchParams = useSearchParams();
-  const [store, setStore] = useState<StoreInfo | null>(null);
+  const [store, setStore] = useState<StoreInfo | null>(() => {
+    // Pre-fill from cache for instant render (will be validated by fetch)
+    try {
+      const cached = localStorage.getItem('ccd_store');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return null;
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const shop = searchParams.get('shop');
+    const url = shop
+      ? '/api/stores/resolve?shop=' + encodeURIComponent(shop)
+      : '/api/stores/resolve';
 
-    if (shop) {
-      // Production path: resolve by shop domain
-      fetch('/api/stores/resolve?shop=' + encodeURIComponent(shop))
-        .then(r => r.json())
-        .then(data => {
-          if (data.store) {
-            setStore(data.store);
-            try { localStorage.setItem('ccd_store', JSON.stringify(data.store)); } catch {}
-          } else {
-            setError(data.error || 'Store not found');
-          }
-        })
-        .catch(() => setError('Failed to resolve store'))
-        .finally(() => setLoading(false));
-      return;
-    }
-
-    // No ?shop= param — try localStorage cache first
-    try {
-      const cached = localStorage.getItem('ccd_store');
-      if (cached) {
-        setStore(JSON.parse(cached));
-        setLoading(false);
-        return;
-      }
-    } catch {}
-
-    // Dev fallback: resolve the first store in the DB
-    fetch('/api/stores/resolve')
+    fetch(url)
       .then(r => r.json())
       .then(data => {
         if (data.store) {
           setStore(data.store);
           try { localStorage.setItem('ccd_store', JSON.stringify(data.store)); } catch {}
         } else {
-          setError('No store found. Install the app from Shopify first.');
+          setError(data.error || 'Store not found');
         }
       })
       .catch(() => setError('Failed to resolve store'))
       .finally(() => setLoading(false));
   }, [searchParams]);
 
-  return { store, storeId: store?.id || null, loading, error };
+  // If we have a cached store, don't show loading
+  return { store, storeId: store?.id || null, loading: store ? false : loading, error };
 }
