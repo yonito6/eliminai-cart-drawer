@@ -173,6 +173,9 @@ export default function AddonsPage() {
     currentSamples: number;
   }>>({});
 
+  // ── Store traffic stats (for pre-test time estimates) ─────────────────
+  const [storeStats, setStoreStats] = useState<{ dailyCartOpens: number; checkoutRate: number } | null>(null);
+
   // ── Experiment data for timeline notes ──────────────────────────────────
   const [experiments, setExperiments] = useState<any[]>([]);
   const [logEventInput, setLogEventInput] = useState<Record<string, string>>({});
@@ -263,11 +266,25 @@ export default function AddonsPage() {
   }, [STORE_ID]);
 
 
+  const fetchStoreStats = useCallback(async () => {
+    if (!STORE_ID) return;
+    try {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/stats');
+      if (res.ok) {
+        const json = await res.json();
+        const weeklyOpens = json.last7Days?.cartOpens ?? 0;
+        const rate = parseFloat(json.last7Days?.checkoutRate ?? '0') / 100;
+        setStoreStats({ dailyCartOpens: Math.round(weeklyOpens / 7), checkoutRate: rate });
+      }
+    } catch (e) { console.error('Failed to fetch store stats', e); }
+  }, [STORE_ID]);
+
   useEffect(() => {
     load();
     loadAutopilot();
     loadExperiments();
-  }, [load, loadAutopilot, loadExperiments]);
+    fetchStoreStats();
+  }, [load, loadAutopilot, loadExperiments, fetchStoreStats]);
 
   // ── Early returns (MUST be after all hooks) ────────────────────────────
   if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
@@ -1192,7 +1209,14 @@ export default function AddonsPage() {
                             </div>
                             <div style={{ fontSize: 12, color: '#7c3aed', lineHeight: 1.5 }}>
                               50% of visitors will see <strong>{def.label} ON</strong>, 50% will see <strong>{def.label} OFF</strong>.
-                              The test runs until we have enough data to declare a winner (depends on your store’s traffic).
+                              {storeStats && storeStats.dailyCartOpens > 0 ? (() => {
+                                const rate = Math.max(storeStats.checkoutRate, 0.02);
+                                const neededPerVariant = Math.ceil(380 / rate);
+                                const totalNeeded = neededPerVariant * 2;
+                                const days = Math.ceil(totalNeeded / storeStats.dailyCartOpens);
+                                const minDays = Math.max(days, 3);
+                                return <> Based on your traffic (~{storeStats.dailyCartOpens} cart opens/day), this should take <strong>~{minDays} days</strong> to reach statistical significance.</>;
+                              })() : <> The test runs until we have enough data to declare a winner.</>}
                             </div>
                             <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 6 }}>
                               After this, you can test individual dimensions: {def.dimensions.filter(d => d.testable).map(d => d.label).join(', ')}
