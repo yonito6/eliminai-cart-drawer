@@ -25,6 +25,8 @@
 | `src/app/api/stores/[id]/addons/test/tournament/route.ts` | POST start tournament, GET bracket status |
 | `src/app/api/stores/[id]/addons/test/apply-winner/route.ts` | POST apply winner config + save rollback |
 | `src/app/dashboard/results/page.tsx` | Results history page |
+| `src/lib/hooks/use-store.ts` | React hook: resolve shop domain to storeId dynamically |
+| `src/app/api/stores/resolve/route.ts` | GET resolve shop domain to store record |
 | `src/__tests__/time-estimate.test.ts` | Tests for time estimate calculations |
 | `src/__tests__/autopilot.test.ts` | Tests for autopilot queue + next-test logic |
 | `src/__tests__/test-safety.test.ts` | Tests for change risk classification |
@@ -38,7 +40,139 @@
 | `src/app/api/stores/[id]/addons/experiments/route.ts` | Add time estimate to response |
 | `src/app/api/stores/[id]/addons/route.ts` | Add change-risk check on PATCH, save `previousConfig` on config changes |
 | `src/app/api/stores/[id]/addons/test/route.ts` | Support tournament bracket (advance to next round) |
-| `src/app/dashboard/addons/page.tsx` | Autopilot toggle, post-winner UI, edit-triggers-test modal, tournament UI (via Node.js scripts) |
+| `src/app/dashboard/addons/page.tsx` + remove hardcoded STORE_ID, use useStore hook |
+| `src/app/dashboard/page.tsx` | Remove hardcoded STORE_ID, use useStore hook | Autopilot toggle, post-winner UI, edit-triggers-test modal, tournament UI (via Node.js scripts) |
+
+---
+
+## Chunk 0: Remove Hardcoded STORE_ID — SaaS Prerequisite
+
+### Task 0: Dynamic Store Resolution Hook
+
+**Files:**
+- Create: `src/lib/hooks/use-store.ts`
+- Modify: `src/app/dashboard/addons/page.tsx` (via Node.js script)
+- Modify: `src/app/dashboard/page.tsx` (via Node.js script)
+
+**Problem:** Both dashboard pages have `const STORE_ID = 'cmnriegez0000jc70ro9nltw2'` hardcoded.
+After Shopify OAuth, the app redirects to `/dashboard?shop=store.myshopify.com`.
+We need to resolve `shop` param → store DB record → `storeId` dynamically.
+
+- [ ] **Step 1: Create the API route to resolve shop domain to store ID**
+
+```typescript
+// src/app/api/stores/resolve/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET(req: NextRequest) {
+  const shop = req.nextUrl.searchParams.get('shop');
+  if (!shop) return NextResponse.json({ error: 'shop required' }, { status: 400 });
+
+  const store = await prisma.store.findUnique({
+    where: { shopDomain: shop },
+    select: { id: true, shopName: true, shopDomain: true, currency: true },
+  });
+
+  if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 });
+  return NextResponse.json({ store });
+}
+```
+
+- [ ] **Step 2: Create the useStore hook**
+
+```typescript
+// src/lib/hooks/use-store.ts
+'use client';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+
+interface StoreInfo {
+  id: string;
+  shopName: string;
+  shopDomain: string;
+  currency: string;
+}
+
+export function useStore() {
+  const searchParams = useSearchParams();
+  const [store, setStore] = useState<StoreInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const shop = searchParams.get('shop');
+    if (!shop) {
+      // Fallback: try localStorage (for page refreshes without ?shop=)
+      const cached = localStorage.getItem('ccd_store');
+      if (cached) {
+        setStore(JSON.parse(cached));
+        setLoading(false);
+        return;
+      }
+      setError('No shop parameter');
+      setLoading(false);
+      return;
+    }
+
+    fetch('/api/stores/resolve?shop=' + encodeURIComponent(shop))
+      .then(r => r.json())
+      .then(data => {
+        if (data.store) {
+          setStore(data.store);
+          localStorage.setItem('ccd_store', JSON.stringify(data.store));
+        } else {
+          setError(data.error || 'Store not found');
+        }
+      })
+      .catch(() => setError('Failed to resolve store'))
+      .finally(() => setLoading(false));
+  }, [searchParams]);
+
+  return { store, storeId: store?.id || null, loading, error };
+}
+```
+
+- [ ] **Step 3: Replace hardcoded STORE_ID in addons/page.tsx**
+
+Via Node.js script: replace `const STORE_ID = 'cmnriegez0000jc70ro9nltw2'` with:
+```typescript
+// Remove hardcoded STORE_ID, use useStore hook
+import { useStore } from '@/lib/hooks/use-store';
+// Inside the component:
+const { storeId: STORE_ID, loading: storeLoading, error: storeError } = useStore();
+```
+
+Also add early return while loading:
+```tsx
+if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
+if (storeError || !STORE_ID) return <div style={{padding: 40, textAlign: 'center', color: '#ef4444'}}>Store not found. Please install the app from Shopify.</div>;
+```
+
+- [ ] **Step 4: Replace hardcoded STORE_ID in dashboard/page.tsx**
+
+Same pattern as step 3.
+
+- [ ] **Step 5: Fix the inline hardcoded ID**
+
+In addons/page.tsx line 176, replace:
+`fetch('/api/stores/cmnriegez0000jc70ro9nltw2/theme-settings')`
+with:
+`fetch('/api/stores/' + STORE_ID + '/theme-settings')`
+
+- [ ] **Step 6: Verify all pages work with dynamic store**
+
+Start dev server, navigate to `/dashboard?shop=test.myshopify.com`, verify pages load correctly.
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd "C:/Projects/eliminai-cart-drawer/backend"
+git add src/app/api/stores/resolve/route.ts src/lib/hooks/use-store.ts
+git commit -m "feat: dynamic store resolution — remove hardcoded STORE_ID, use useStore hook"
+```
+
+**IMPORTANT:** All new pages (results page, any future dashboard pages) MUST use `useStore()` hook instead of hardcoded STORE_ID. This is a SaaS app — every store gets its own data.
 
 ---
 
