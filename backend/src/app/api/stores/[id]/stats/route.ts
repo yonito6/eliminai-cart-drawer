@@ -68,7 +68,9 @@ export async function GET(
       if (shopRes.ok) {
         const { count } = await shopRes.json();
         const dailyOrders = Math.round(count / 30);
-        const estimatedDailyCartOpens = Math.round(dailyOrders / 0.04);
+        // Cart openers are high-intent — ~8-12% convert to orders
+        // Using 0.10 to avoid overestimating cart opens
+        const estimatedDailyCartOpens = Math.round(dailyOrders / 0.10);
         shopifyEstimate = {
           dailyCartOpens: Math.max(estimatedDailyCartOpens, dailyOrders),
           dailyOrders,
