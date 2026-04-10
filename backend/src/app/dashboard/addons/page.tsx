@@ -58,28 +58,6 @@ interface AddonDefinition {
   estimatedImpact: string;
   impactMetric: string;
   dimensions: AddonDimension[];
-
-interface AddonDimension {
-  key: string;
-  label: string;
-  type: 'select' | 'text' | 'number' | 'checkboxes' | 'toggle';
-  testable: boolean;
-  options?: { value: string; label: string }[];
-  checkboxOptions?: { value: string; label: string }[];
-  default: any;
-  min?: number;
-  max?: number;
-  placeholder?: string;
-}
-
-interface AddonDefinition {
-  key: string;
-  label: string;
-  icon: string;
-  description: string;
-  estimatedImpact: string;
-  impactMetric: string;
-  dimensions: AddonDimension[];
   defaultConfig: Record<string, any>;
 }
 
@@ -975,7 +953,11 @@ export default function AddonsPage() {
                   <span style={{ fontSize: 11, color: '#9ca3af', padding: '3px 6px' }}>
                     +{autopilot.queue.length - 5} more
                   </span>
-        )}
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ── Addon Cards ──────────────────────────────────────────── */}
         <div
@@ -1378,8 +1360,8 @@ export default function AddonsPage() {
                   );
                 })()}
               </div>
-            </div>
-          )}
+            );
+          })}
         </div>
 
         {/* ── Optimization Queue ───────────────────────────────────── */}
@@ -1461,278 +1443,6 @@ export default function AddonsPage() {
           </div>
         )}
 
-        {/* ── Addon Cards ──────────────────────────────────────────── */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column' as const,
-            gap: 12,
-          }}
-        >
-          {sortedDefs.map((def) => {
-            const addon: AddonState = addons[def.key] ?? {
-              enabled: false,
-              mode: 'off',
-              config: { ...def.defaultConfig },
-              optimizeState: null,
-              results: null,
-            };
-            const isExpanded = expanded === def.key;
-            const isSaving = saving[def.key] ?? false;
-
-            const borderColor =
-              addon.mode === 'auto-optimize'
-                ? '#22c55e'
-                : addon.mode === 'locked'
-                  ? '#3b82f6'
-                  : '#e5e7eb';
-            const borderWidth =
-              addon.mode === 'auto-optimize' || addon.mode === 'locked'
-                ? 2
-                : 1;
-
-            const badgeColor =
-              addon.mode === 'auto-optimize'
-                ? '#22c55e'
-                : addon.mode === 'locked'
-                  ? '#3b82f6'
-                  : '#9ca3af';
-            const badgeLabel =
-              addon.mode === 'auto-optimize'
-                ? 'Auto-Optimize'
-                : addon.mode === 'locked'
-                  ? 'Locked'
-                  : 'Off';
-
-            return (
-              <div
-                key={def.key}
-                style={{
-                  background: '#fff',
-                  borderRadius: 12,
-                  border: borderWidth + 'px solid ' + borderColor,
-                  padding: 16,
-                  opacity: 1,
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                  transition: 'all 0.2s',
-                }}
-              >
-                {/* ── Collapsed Row ──────────────────────────────── */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14,
-                  }}
-                >
-                  {/* Icon */}
-                  <span style={{ fontSize: 24, flexShrink: 0 }}>
-                    {def.icon}
-                  </span>
-
-                  {/* Name + badge + impact */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 600,
-                          color: '#111827',
-                        }}
-                      >
-                        {def.label}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 600,
-                          padding: '2px 8px',
-                          borderRadius: 12,
-                          background: badgeColor + '18',
-                          color: badgeColor,
-                          textTransform: 'uppercase' as const,
-                          letterSpacing: 0.3,
-                        }}
-                      >
-                        {badgeLabel}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: '#9ca3af',
-                        marginTop: 2,
-                      }}
-                    >
-                      {def.estimatedImpact}
-                    </div>
-                  </div>
-
-                  {/* Edit link */}
-                  <button
-                    onClick={() =>
-                      setExpanded(isExpanded ? null : def.key)
-                    }
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: '#3b82f6',
-                      padding: '4px 8px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {isExpanded ? 'Collapse' : 'Edit'}
-                  </button>
-
-                  {/* 3-way toggle */}
-                  <CapsuleToggle
-                    on={addon.enabled}
-                    onChange={(on) => handleModeChange(def.key, on ? 'locked' : 'off')}
-                    disabled={isSaving}
-                  />
-                </div>
-
-                {/* ── Expanded Section ───────────────────────────── */}
-                {isExpanded && (
-                  <div
-                    style={{
-                      marginTop: 16,
-                      paddingTop: 16,
-                      borderTop: '1px solid #f3f4f6',
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: 24,
-                    }}
-                  >
-                    {/* Left: Cart Preview */}
-                    <AddonPreview
-                      addonKey={def.key}
-                      addonConfig={addon.config ?? {}}
-                      mode="focused"
-                    />
-
-                    {/* Right: Edit controls */}
-                    <div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column' as const,
-                          gap: 14,
-                        }}
-                      >
-                        {def.dimensions.map((dim) => (
-                          <div key={dim.key}>
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                marginBottom: 4,
-                              }}
-                            >
-                              <label
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: 500,
-                                  color: '#374151',
-                                }}
-                              >
-                                {dim.label}
-                              </label>
-                              {!dim.testable && (
-                                <span
-                                  style={{
-                                    fontSize: 10,
-                                    padding: '1px 6px',
-                                    borderRadius: 8,
-                                    background: '#fef3c7',
-                                    color: '#92400e',
-                                    fontWeight: 500,
-                                  }}
-                                >
-                                  Never A/B tested
-                                </span>
-                              )}
-                            </div>
-                            {renderDimensionControl(
-                              def.key,
-                              dim,
-                              addon.config,
-                            )}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Mode buttons at bottom */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: 8,
-                          marginTop: 20,
-                        }}
-                      >
-                        <button
-                          onClick={() =>
-                            handleModeChange(def.key, 'auto-optimize')
-                          }
-                          disabled={isSaving}
-                          style={{
-                            padding: '8px 18px',
-                            background:
-                              addon.mode === 'auto-optimize'
-                                ? '#16a34a'
-                                : '#22c55e',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 8,
-                            cursor: isSaving ? 'default' : 'pointer',
-                            fontWeight: 600,
-                            fontSize: 13,
-                            opacity:
-                              addon.mode === 'auto-optimize' ? 0.7 : 1,
-                          }}
-                        >
-                          Auto-Optimize
-                        </button>
-                        <button
-                          onClick={() =>
-                            handleModeChange(def.key, 'locked')
-                          }
-                          disabled={isSaving}
-                          style={{
-                            padding: '8px 18px',
-                            background:
-                              addon.mode === 'locked'
-                                ? '#2563eb'
-                                : '#3b82f6',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 8,
-                            cursor: isSaving ? 'default' : 'pointer',
-                            fontWeight: 600,
-                            fontSize: 13,
-                            opacity: addon.mode === 'locked' ? 0.7 : 1,
-                          }}
-                        >
-                          Lock
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
 
         <div
           style={{
