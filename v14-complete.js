@@ -1342,7 +1342,7 @@
       var self = this;
       this.loadExperiment(function(config) {
         if (config) self.applyExperimentFeatures(config);
-        self.sendEvent('CART_OPENED', {});
+        // CART_OPENED is tracked server-side in /api/proxy/config for accuracy
       });
       CCD.fixMobileWidth();
       fetch('/cart.js')
