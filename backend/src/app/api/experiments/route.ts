@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { calculateRequiredSamples, estimateDaysRemaining } from '@/lib/time-estimate';
 
 // GET /api/experiments?storeId=xxx — list experiments
 export async function GET(req: NextRequest) {
