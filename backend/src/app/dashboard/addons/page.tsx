@@ -1218,20 +1218,16 @@ export default function AddonsPage() {
                             </div>
                             <div style={{ fontSize: 12, color: '#7c3aed', lineHeight: 1.5 }}>
                               Our engine will compare <strong>{def.label} ON</strong> vs <strong>OFF</strong>, learn which version converts better, and automatically send more traffic to the winner.
-                              {storeStats && storeStats.dailyCartOpens > 0 ? (() => {
+                              {(() => {
+                                if (!storeStats || storeStats.dailyCartOpens <= 0) return null;
                                 const rate = Math.max(storeStats.checkoutRate, 0.02);
                                 const neededPerVariant = Math.ceil(380 / rate);
                                 const totalNeeded = neededPerVariant * 2;
                                 const days = Math.ceil(totalNeeded / storeStats.dailyCartOpens);
                                 const minDays = Math.max(days, 3);
-                                if (storeStats.dailyCartOpens < 10) {
-                                  return <> Your store is still building traffic (~{storeStats.dailyCartOpens} cart opens/day). The engine needs more visitors to find a winner — results improve as traffic grows.</>;
-                                }
-                                if (minDays > 90) {
-                                  return <> Based on your current traffic (~{storeStats.dailyCartOpens} cart opens/day), this may take a while. Results get faster as your traffic grows.</>;
-                                }
-                                return <> Based on your traffic (~{storeStats.dailyCartOpens} cart opens/day), estimated <strong>~{minDays} days</strong> to find a winner.</>;
-                              })() : null}
+                                if (minDays > 14) return null;
+                                return <> Based on your traffic, estimated <strong>~{minDays} days</strong> to find a winner.</>;
+                              })()}
                             </div>
                             <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 6 }}>
                               After this, you can optimize individual dimensions: {def.dimensions.filter(d => d.testable).map(d => d.label).join(', ')}
