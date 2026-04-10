@@ -166,7 +166,7 @@ export default function AddonsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [STORE_ID]);
 
   // ── Fetch autopilot state ───────────────────────────────────────────────
   const loadAutopilot = useCallback(async () => {
