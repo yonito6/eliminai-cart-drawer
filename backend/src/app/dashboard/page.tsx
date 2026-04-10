@@ -36,8 +36,6 @@ const FEATS = [
 export default function Dashboard() {
   const { storeId: STORE_ID, store: storeInfo, loading: storeLoading, error: storeError } = useStore();
 
-  if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
-  if (storeError || !STORE_ID) return <div style={{padding: 40, textAlign: 'center', color: '#ef4444'}}>Store not found. Please install the app from Shopify.</div>;
 
   const [stats, setStats] = useState<Stats | null>(null);
   const [exps, setExps] = useState<Exp[]>([]);
@@ -65,6 +63,10 @@ export default function Dashboard() {
   }, [STORE_ID]);
 
   useEffect(() => { load(); const i = setInterval(load, 15000); return () => clearInterval(i); }, [load]);
+
+  // ── Early returns (MUST be after all hooks) ──
+  if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
+  if (storeError || !STORE_ID) return <div style={{padding: 40, textAlign: 'center', color: '#ef4444'}}>Store not found. Please install the app from Shopify.</div>;
 
   async function createExp(e: React.FormEvent) {
     e.preventDefault(); setCreating(true);
