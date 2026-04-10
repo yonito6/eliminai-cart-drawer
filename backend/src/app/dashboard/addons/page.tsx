@@ -347,7 +347,7 @@ export default function AddonsPage() {
 
   // ── Edit-triggers-test: intercept save ─────────────────────────────────
 
-  // ── Start/stop A/B test ────────────────────────────────────────────────
+  // ── Start/stop optimization ────────────────────────────────────────────────
 
   async function startTest(addonKey: string, dimensionKey?: string) {
     if (!STORE_ID) return;
@@ -929,7 +929,7 @@ export default function AddonsPage() {
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                   {autopilot?.enabled
                     ? `Testing automatically. ${autopilot.completedCount || 0} done, +${((autopilot.totalLift || 0)).toFixed(1)}% cumulative lift`
-                    : 'Let AI run tests automatically, one after another'}
+                    : 'AI smart-optimizes each addon automatically, one after another'}
                 </div>
               </div>
             </div>
@@ -1010,7 +1010,7 @@ export default function AddonsPage() {
             const isTesting = activeExp?.status === 'RUNNING';
             const hasWinner = activeExp?.status === 'WINNER_FOUND';
             const badgeColor = isTesting ? '#7c3aed' : hasWinner ? '#16a34a' : addon.enabled ? '#3b82f6' : '#9ca3af';
-            const badgeLabel = isTesting ? 'A/B Testing' : hasWinner ? 'Winner Found' : addon.enabled ? 'Active' : 'Off';
+            const badgeLabel = isTesting ? 'Smart Optimizing' : hasWinner ? 'Winner Found' : addon.enabled ? 'Active' : 'Off';
 
             return (
               <div
@@ -1187,7 +1187,7 @@ export default function AddonsPage() {
                                     fontWeight: 500,
                                   }}
                                 >
-                                  Never A/B tested
+                                  Never optimized
                                 </span>
                               )}
                             </div>
@@ -1200,26 +1200,26 @@ export default function AddonsPage() {
                         ))}
                       </div>
 
-                      {/* Start Testing button — with clear description */}
+                      {/* Start Optimize button — with clear description */}
                       {addon.enabled && !experiments[def.key]?.status && def.dimensions.some(d => d.testable) && (
                         <div style={{ marginTop: 20 }}>
                           <div style={{ padding: 14, background: '#f5f3ff', border: '1px solid #e9d5ff', borderRadius: 10, marginBottom: 12 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: '#6d28d9', marginBottom: 6 }}>
-                              What this test will do:
+                              What this optimization will do:
                             </div>
                             <div style={{ fontSize: 12, color: '#7c3aed', lineHeight: 1.5 }}>
-                              50% of visitors will see <strong>{def.label} ON</strong>, 50% will see <strong>{def.label} OFF</strong>.
+                              Our engine will compare <strong>{def.label} ON</strong> vs <strong>OFF</strong>, learn which version converts better, and automatically send more traffic to the winner.
                               {storeStats && storeStats.dailyCartOpens > 0 ? (() => {
                                 const rate = Math.max(storeStats.checkoutRate, 0.02);
                                 const neededPerVariant = Math.ceil(380 / rate);
                                 const totalNeeded = neededPerVariant * 2;
                                 const days = Math.ceil(totalNeeded / storeStats.dailyCartOpens);
                                 const minDays = Math.max(days, 3);
-                                return <> Based on your traffic (~{storeStats.dailyCartOpens} cart opens/day), this should take <strong>~{minDays} days</strong> to reach statistical significance.</>;
-                              })() : <> The test runs until we have enough data to declare a winner.</>}
+                                return <> Based on your traffic (~{storeStats.dailyCartOpens} cart opens/day), estimated <strong>~{minDays} days</strong> to find a winner.</>;
+                              })() : null}
                             </div>
                             <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 6 }}>
-                              After this, you can test individual dimensions: {def.dimensions.filter(d => d.testable).map(d => d.label).join(', ')}
+                              After this, you can optimize individual dimensions: {def.dimensions.filter(d => d.testable).map(d => d.label).join(', ')}
                             </div>
                           </div>
                           <button
@@ -1235,7 +1235,7 @@ export default function AddonsPage() {
                               boxShadow: '0 2px 8px rgba(124,58,237,0.3)',
                             }}
                           >
-                            {startingTest[def.key] ? 'Starting...' : 'Start A/B Test'}
+                            {startingTest[def.key] ? 'Starting...' : 'Smart Optimize'}
                           </button>
                         </div>
                       )}
@@ -1244,11 +1244,11 @@ export default function AddonsPage() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                             <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#7c3aed', animation: 'pulse 2s infinite' }} />
                             <div style={{ fontSize: 13, color: '#6d28d9', fontWeight: 600 }}>
-                              A/B Test Running
+                              Smart Optimizing…
                             </div>
                           </div>
                           <div style={{ fontSize: 12, color: '#7c3aed', marginBottom: 12 }}>
-                            Testing {def.label} ON vs OFF · {experiments[def.key]?.totalVisitors ?? 0} visitors so far
+                            {def.label} ON vs OFF · {experiments[def.key]?.totalVisitors ?? 0} visitors so far
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <button
@@ -1328,7 +1328,7 @@ export default function AddonsPage() {
                           <div style={{ height: '100%', width: Math.max(confidence, 2) + '%', background: confidence >= 95 ? '#16a34a' : '#7c3aed', borderRadius: 4, transition: 'width 0.5s ease' }} />
                         </div>
                         <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-                          {confidence >= 95 ? 'Statistical significance reached!' : confidence >= 80 ? 'Almost there — keep collecting data' : testing ? 'Collecting visitor data...' : 'Test ended'}
+                          {confidence >= 95 ? 'Statistical significance reached!' : confidence >= 80 ? 'Almost there — keep collecting data' : testing ? 'Collecting visitor data...' : 'Optimization ended'}
                         </div>
                       </div>
 
@@ -1489,7 +1489,7 @@ export default function AddonsPage() {
                         borderRadius: 12,
                       }}
                     >
-                      {idx === 0 ? 'Testing now' : 'Queue #' + (idx + 1)}
+                      {idx === 0 ? 'Smart Optimizing' : 'Queue #' + (idx + 1)}
                     </span>
                   </div>
                 );
