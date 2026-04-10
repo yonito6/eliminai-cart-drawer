@@ -1426,20 +1426,20 @@ export default function AddonsPage() {
                       </div>
 
                       {/* Confidence bar + status */}
-                      <div style={{ marginBottom: 20, padding: 14, background: ‘#f9fafb’, borderRadius: 10 }}>
-                        <div style={{ display: ‘flex’, justifyContent: ‘space-between’, fontSize: 12, color: ‘#374151’, marginBottom: 6 }}>
+                      <div style={{ marginBottom: 20, padding: 14, background: '#f9fafb', borderRadius: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#374151', marginBottom: 6 }}>
                           <span style={{ fontWeight: 500 }}>Confidence Level</span>
                           <span style={{ fontWeight: 700 }}>{confidence}%</span>
                         </div>
-                        <div style={{ height: 8, background: ‘#e5e7eb’, borderRadius: 4, overflow: ‘hidden’ }}>
-                          <div style={{ height: ‘100%’, width: Math.max(confidence, 2) + ‘%’, background: confidence >= 90 ? ‘#16a34a’ : ‘#7c3aed’, borderRadius: 4, transition: ‘width 0.5s ease’ }} />
+                        <div style={{ height: 8, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: Math.max(confidence, 2) + '%', background: confidence >= 90 ? '#16a34a' : '#7c3aed', borderRadius: 4, transition: 'width 0.5s ease' }} />
                         </div>
-                        <div style={{ fontSize: 11, color: ‘#6b7280’, marginTop: 4 }}>
+                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
                           {confidence >= 90
-                            ? (winner ? ‘Winner confirmed with high confidence!’ : ‘High confidence — no meaningful difference detected’)
-                            : confidence >= 60 ? ‘Almost there — the engine is narrowing it down’
-                            : confidence === 0 ? (testing ? ‘Waiting for visitor data...’ : ‘No data collected’)
-                            : testing ? "Learning from your visitors’ behavior..." : ‘Optimization ended’}
+                            ? (winner ? 'Winner confirmed with high confidence!' : 'High confidence — no meaningful difference detected')
+                            : confidence >= 60 ? 'Almost there — the engine is narrowing it down'
+                            : confidence === 0 ? (testing ? 'Waiting for visitor data...' : 'No data collected')
+                            : testing ? "Learning from your visitors' behavior..." : 'Optimization ended'}
                         </div>
 
                         {/* Status timeline */}
@@ -1448,29 +1448,29 @@ export default function AddonsPage() {
                           const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
                           const liftAbs = Math.abs(exp.liftPercent ?? 0);
                           const steps = [
-                            { label: ‘Collecting visitors’, detail: totalV + ‘/60 visitors (30 per variant)’, done: totalV >= 60, active: totalV < 60 },
-                            { label: ‘3-day minimum’, detail: daysRunning + ‘/3 days (weekday + weekend patterns)’, done: daysRunning >= 3, active: totalV >= 60 && daysRunning < 3 },
-                            { label: ‘Detecting impact’, detail: liftAbs > 0 ? (liftAbs.toFixed(1) + ‘% difference so far’) : ‘Measuring...’, done: confidence >= 60 || (totalV >= 100 && liftAbs < 3), active: daysRunning >= 3 && confidence < 60 && !(totalV >= 100 && liftAbs < 3) },
-                            { label: ‘Conclusion’, detail: confidence >= 90 ? ‘Clear winner found!’ : (totalV >= 100 && liftAbs < 3) ? ‘Low impact — ready to move on’ : ‘Need more data’, done: confidence >= 90 || winner || noDiff, active: confidence >= 60 && confidence < 90 },
+                            { label: 'Collecting visitors', detail: totalV + '/60 visitors (30 per variant)', done: totalV >= 60, active: totalV < 60 },
+                            { label: '3-day minimum', detail: daysRunning + '/3 days (weekday + weekend patterns)', done: daysRunning >= 3, active: totalV >= 60 && daysRunning < 3 },
+                            { label: 'Detecting impact', detail: liftAbs > 0 ? (liftAbs.toFixed(1) + '% difference so far') : 'Measuring...', done: confidence >= 60 || (totalV >= 100 && liftAbs < 3), active: daysRunning >= 3 && confidence < 60 && !(totalV >= 100 && liftAbs < 3) },
+                            { label: 'Conclusion', detail: confidence >= 90 ? 'Clear winner found!' : (totalV >= 100 && liftAbs < 3) ? 'Low impact — ready to move on' : 'Need more data', done: confidence >= 90 || winner || noDiff, active: confidence >= 60 && confidence < 90 },
                           ];
                           return (
-                            <div style={{ marginTop: 12, borderTop: ‘1px solid #e5e7eb’, paddingTop: 12 }}>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: ‘#374151’, marginBottom: 8 }}>Test Progress</div>
+                            <div style={{ marginTop: 12, borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Test Progress</div>
                               {steps.map((step, si) => (
-                                <div key={si} style={{ display: ‘flex’, alignItems: ‘flex-start’, gap: 8, marginBottom: si < steps.length - 1 ? 6 : 0 }}>
-                                  <div style={{ width: 18, height: 18, borderRadius: ‘50%’, border: ‘2px solid ‘ + (step.done ? ‘#16a34a’ : step.active ? ‘#7c3aed’ : ‘#d1d5db’), background: step.done ? ‘#16a34a’ : ‘transparent’, display: ‘flex’, alignItems: ‘center’, justifyContent: ‘center’, flexShrink: 0, marginTop: 1 }}>
-                                    {step.done && <span style={{ color: ‘#fff’, fontSize: 10, fontWeight: 700 }}>{‘✓’}</span>}
-                                    {step.active && <div style={{ width: 6, height: 6, borderRadius: ‘50%’, background: ‘#7c3aed’ }} />}
+                                <div key={si} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: si < steps.length - 1 ? 6 : 0 }}>
+                                  <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid ' + (step.done ? '#16a34a' : step.active ? '#7c3aed' : '#d1d5db'), background: step.done ? '#16a34a' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                                    {step.done && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>{'✓'}</span>}
+                                    {step.active && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#7c3aed' }} />}
                                   </div>
                                   <div>
-                                    <div style={{ fontSize: 12, fontWeight: step.active ? 600 : 500, color: step.done ? ‘#16a34a’ : step.active ? ‘#111827’ : ‘#9ca3af’ }}>{step.label}</div>
-                                    <div style={{ fontSize: 10, color: ‘#9ca3af’ }}>{step.detail}</div>
+                                    <div style={{ fontSize: 12, fontWeight: step.active ? 600 : 500, color: step.done ? '#16a34a' : step.active ? '#111827' : '#9ca3af' }}>{step.label}</div>
+                                    <div style={{ fontSize: 10, color: '#9ca3af' }}>{step.detail}</div>
                                   </div>
                                 </div>
                               ))}
                               {totalV >= 100 && liftAbs < 3 && (
-                                <div style={{ marginTop: 8, padding: 8, background: ‘#fef3c7’, borderRadius: 6, fontSize: 11, color: ‘#92400e’ }}>
-                                  {‘This feature shows less than 3% impact. The engine will auto-conclude soon so we can test the next dimension.’}
+                                <div style={{ marginTop: 8, padding: 8, background: '#fef3c7', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
+                                  {'This feature shows less than 3% impact. The engine will auto-conclude soon so we can test the next dimension.'}
                                 </div>
                               )}
                             </div>
