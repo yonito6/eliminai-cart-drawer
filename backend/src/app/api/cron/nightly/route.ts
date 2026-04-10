@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { calculateThompsonSampling } from '@/lib/thompson';
+import { applyWinner, pickNextTest } from '@/lib/autopilot';
+import { addExperimentNote } from '@/lib/test-safety';
+import { getAddonDefinitions } from '@/lib/addon-definitions';
 
 export async function POST(req: NextRequest) {
   // Verify cron secret
