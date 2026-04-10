@@ -1220,13 +1220,13 @@ export default function AddonsPage() {
                               Our engine will compare <strong>{def.label} ON</strong> vs <strong>OFF</strong>, learn which version converts better, and automatically send more traffic to the winner.
                               {(() => {
                                 if (!storeStats || storeStats.dailyCartOpens <= 0) return null;
-                                const rate = Math.max(storeStats.checkoutRate, 0.02);
-                                const neededPerVariant = Math.ceil(100 / rate);
-                                const totalNeeded = neededPerVariant * 2;
-                                const days = Math.ceil(totalNeeded / storeStats.dailyCartOpens);
-                                const minDays = Math.max(days, 3);
-                                if (minDays > 30) return null;
-                                return <> Based on your traffic, estimated <strong>~{minDays} days</strong> to find a winner.</>;
+                                if (storeStats.dailyCartOpens >= 100) {
+                                  return <> Based on your traffic (~{storeStats.dailyCartOpens} cart opens/day), results typically appear within <strong>3–7 days</strong>.</>;
+                                } else if (storeStats.dailyCartOpens >= 30) {
+                                  return <> Based on your traffic (~{storeStats.dailyCartOpens} cart opens/day), results typically appear within <strong>7–14 days</strong>.</>;
+                                } else {
+                                  return <> Your traffic is still building. The engine adapts as data comes in — larger effects are detected faster.</>;
+                                }
                               })()}
                             </div>
                             <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 6 }}>
