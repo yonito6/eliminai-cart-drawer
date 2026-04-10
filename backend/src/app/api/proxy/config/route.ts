@@ -41,8 +41,33 @@ async function handleRequest(req: NextRequest) {
       store.id, sessionToken, deviceType, isReturning, referralSource, country
     );
 
-    // 6. Track baseline cart open (if no experiment)
-    if (!assignment.experiment) {
+    // 6. Track CART_OPENED event server-side (guaranteed — no client race)
+    if (assignment.experiment && assignment.sessionId) {
+      // Find the assignment record to link the event
+      const variantAssignment = await prisma.variantAssignment.findUnique({
+        where: {
+          experimentId_sessionId: {
+            experimentId: assignment.experiment.id,
+            sessionId: assignment.sessionId,
+          },
+        },
+      });
+      if (variantAssignment) {
+        const now = new Date();
+        await prisma.event.create({
+          data: {
+            storeId: store.id,
+            sessionId: assignment.sessionId,
+            assignmentId: variantAssignment.id,
+            eventType: 'CART_OPENED',
+            hourOfDay: now.getUTCHours(),
+            dayOfWeek: now.getUTCDay(),
+            metadata: { deviceType, isReturning, source: 'server' },
+          },
+        });
+      }
+    } else {
+      // No experiment — track baseline
       await prisma.store.update({
         where: { id: store.id },
         data: { baselineCartOpens: { increment: 1 } },
