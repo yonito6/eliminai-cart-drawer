@@ -108,6 +108,48 @@ export default function AddonsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
 
+  // ── Autopilot state ──────────────────────────────────────────────────────
+  const [autopilot, setAutopilot] = useState<{
+    enabled: boolean;
+    queue: string[];
+    completedCount: number;
+    totalLift: number;
+    currentTestSlot?: string;
+  } | null>(null);
+  const [autopilotLoading, setAutopilotLoading] = useState(false);
+
+  // ── Post-winner modal state ──────────────────────────────────────────────
+  const [winnerModal, setWinnerModal] = useState<{
+    experimentId: string;
+    experimentName: string;
+    slot: string;
+    liftPercent: number;
+    winnerLabel: string;
+  } | null>(null);
+  const [winnerActionLoading, setWinnerActionLoading] = useState(false);
+
+  // ── Edit-triggers-test modal state ───────────────────────────────────────
+  const [editTestModal, setEditTestModal] = useState<{
+    type: 'suggest-test' | 'hard-block';
+    addonKey: string;
+    addonLabel: string;
+    runningTestName?: string;
+    pendingData?: any;
+  } | null>(null);
+
+  // ── Time estimate state (per experiment) ────────────────────────────────
+  const [timeEstimates, setTimeEstimates] = useState<Record<string, {
+    estimatedDaysRemaining: number;
+    dailyEventRate: number;
+    requiredSamples: number;
+    currentSamples: number;
+  }>>({});
+
+  // ── Experiment data for timeline notes ──────────────────────────────────
+  const [experiments, setExperiments] = useState<any[]>([]);
+  const [logEventInput, setLogEventInput] = useState<Record<string, string>>({});
+  const [showLogEvent, setShowLogEvent] = useState<Record<string, boolean>>({});
+
   // ── Data fetching ───────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
@@ -128,9 +170,158 @@ export default function AddonsPage() {
     }
   }, []);
 
+  // ── Fetch autopilot state ───────────────────────────────────────────────
+  const loadAutopilot = useCallback(async () => {
+    if (!STORE_ID) return;
+    try {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/autopilot');
+      if (res.ok) {
+        const json = await res.json();
+        setAutopilot(json.autopilot);
+      }
+    } catch (e) { console.error('Failed to load autopilot', e); }
+  }, [STORE_ID]);
+
+  // ── Fetch experiments for time estimates + timeline ──────────────────────
+  const loadExperiments = useCallback(async () => {
+    if (!STORE_ID) return;
+    try {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons/experiments');
+      if (res.ok) {
+        const json = await res.json();
+        const exps = json.experiments || [];
+        setExperiments(exps);
+        const estimates: Record<string, any> = {};
+        for (const exp of exps) {
+          if (exp.estimatedDaysRemaining != null) {
+            estimates[exp.id] = {
+              estimatedDaysRemaining: exp.estimatedDaysRemaining,
+              dailyEventRate: exp.dailyEventRate || 0,
+              requiredSamples: exp.requiredSamples || 0,
+              currentSamples: exp.currentSamples || 0,
+            };
+          }
+        }
+        setTimeEstimates(estimates);
+      }
+    } catch (e) { console.error('Failed to load experiments', e); }
+  }, [STORE_ID]);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadAutopilot();
+    loadExperiments();
+  }, [load, loadAutopilot, loadExperiments]);
+
+  // ── Autopilot toggle ────────────────────────────────────────────────────
+
+  async function toggleAutopilot(enabled: boolean) {
+    if (!STORE_ID) return;
+    setAutopilotLoading(true);
+    try {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/autopilot', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setAutopilot(json.autopilot);
+      }
+    } catch (e) { console.error('Failed to toggle autopilot', e); }
+    finally { setAutopilotLoading(false); }
+  }
+
+  // ── Post-winner actions ────────────────────────────────────────────────
+
+  async function applyWinner(experimentId: string) {
+    if (!STORE_ID) return;
+    setWinnerActionLoading(true);
+    try {
+      await fetch(API + '/api/stores/' + STORE_ID + '/addons/test/apply-winner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ experimentId }),
+      });
+      setWinnerModal(null);
+      load();
+      loadExperiments();
+    } catch (e) { console.error('Failed to apply winner', e); }
+    finally { setWinnerActionLoading(false); }
+  }
+
+  // ── Log user event to experiment timeline ──────────────────────────────
+
+  async function logUserEvent(experimentId: string) {
+    if (!STORE_ID) return;
+    const note = logEventInput[experimentId]?.trim();
+    if (!note) return;
+    try {
+      await fetch(API + '/api/stores/' + STORE_ID + '/experiments/' + experimentId + '/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note }),
+      });
+      setLogEventInput(prev => ({ ...prev, [experimentId]: '' }));
+      setShowLogEvent(prev => ({ ...prev, [experimentId]: false }));
+      loadExperiments();
+    } catch (e) { console.error('Failed to log event', e); }
+  }
+
+  // ── Edit-triggers-test: intercept save ─────────────────────────────────
+
+  async function patchAddonWithSafety(key: string, data: any) {
+    if (!STORE_ID) return;
+    // First try a dry-run to check risk
+    const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ addonKey: key, ...data }),
+    });
+    if (res.status === 409) {
+      // Hard block — active test on same slot
+      const json = await res.json();
+      const def = definitions.find(d => d.key === key);
+      setEditTestModal({
+        type: 'hard-block',
+        addonKey: key,
+        addonLabel: def?.label || key,
+        runningTestName: json.runningTest,
+        pendingData: data,
+      });
+      return;
+    }
+    const json = await res.json();
+    if (json.changeRisk === 'medium') {
+      // Soft warning — show but proceed
+      console.log('Medium risk change applied:', json);
+    }
+    setAddons(json.addons ?? {});
+    setOptimizeQueue(json.optimizeQueue ?? []);
+    loadExperiments();
+  }
+
+  async function forceAddonSave(key: string, data: any, options?: { pauseTest?: boolean; resetTest?: boolean }) {
+    if (!STORE_ID) return;
+    setSaving(s => ({ ...s, [key]: true }));
+    try {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          addonKey: key, ...data, force: true,
+          pauseTest: options?.pauseTest,
+          resetTest: options?.resetTest,
+        }),
+      });
+      const json = await res.json();
+      setAddons(json.addons ?? {});
+      setOptimizeQueue(json.optimizeQueue ?? []);
+      setEditTestModal(null);
+      loadExperiments();
+    } catch (e) { console.error('Failed to force save', e); }
+    finally { setSaving(s => ({ ...s, [key]: false })); }
+  }
 
   // ── API helpers ─────────────────────────────────────────────────────────
 
@@ -511,6 +702,74 @@ export default function AddonsPage() {
             </button>
           </div>
         )}
+
+        {/* ── Autopilot Banner ───────────────────────────────────── */}
+        <div
+          style={{
+            background: autopilot?.enabled ? 'linear-gradient(135deg, #f0fdf4, #ecfdf5)' : '#fff',
+            borderRadius: 12,
+            padding: 16,
+            marginBottom: 20,
+            border: '1px solid ' + (autopilot?.enabled ? '#86efac' : '#e5e7eb'),
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 20 }}>{autopilot?.enabled ? '🤖' : '🔄'}</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>
+                  Autopilot Mode
+                </div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                  {autopilot?.enabled
+                    ? `Testing automatically. ${autopilot.completedCount || 0} done, +${((autopilot.totalLift || 0)).toFixed(1)}% cumulative lift`
+                    : 'Let AI run tests automatically, one after another'}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {autopilot?.enabled && autopilot.queue && autopilot.queue.length > 0 && (
+                <span style={{
+                  fontSize: 11, fontWeight: 500, color: '#6b7280',
+                  background: '#f3f4f6', padding: '3px 10px', borderRadius: 12,
+                }}>
+                  {autopilot.queue.length} tests queued
+                </span>
+              )}
+              <CapsuleToggle
+                on={!!autopilot?.enabled}
+                onChange={(on) => toggleAutopilot(on)}
+                disabled={autopilotLoading}
+              />
+            </div>
+          </div>
+          {autopilot?.enabled && autopilot.queue && autopilot.queue.length > 0 && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #bbf7d0' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
+                Up Next
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                {autopilot.queue.slice(0, 5).map((item: string, idx: number) => (
+                  <span key={item} style={{
+                    fontSize: 11, padding: '3px 10px', borderRadius: 8,
+                    background: idx === 0 ? '#dcfce7' : '#f9fafb',
+                    border: '1px solid ' + (idx === 0 ? '#86efac' : '#e5e7eb'),
+                    color: idx === 0 ? '#166534' : '#6b7280',
+                    fontWeight: idx === 0 ? 600 : 400,
+                  }}>
+                    {idx === 0 ? '▶ ' : ''}{item.replace(':', ' → ')}
+                  </span>
+                ))}
+                {autopilot.queue.length > 5 && (
+                  <span style={{ fontSize: 11, color: '#9ca3af', padding: '3px 6px' }}>
+                    +{autopilot.queue.length - 5} more
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ── Optimization Queue ───────────────────────────────────── */}
         {optimizeQueue.length > 0 && (

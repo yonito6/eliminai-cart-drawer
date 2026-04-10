@@ -94,7 +94,7 @@ export async function PATCH(
         'settings_changed',
         `Other settings changed during test: ${addonKey}`
       );
-      await prisma.experiment.update({ where: { id: exp.id }, data: { notes } });
+      await prisma.experiment.update({ where: { id: exp.id }, data: { notes: notes as any } });
     }
   }
 

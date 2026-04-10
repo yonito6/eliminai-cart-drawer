@@ -45,8 +45,8 @@ export async function POST(
       status: 'RUNNING',
       variants: matchVariants,
       trafficSplit: { [firstMatch.variantA]: 0.5, [firstMatch.variantB]: 0.5 },
-      tournament: bracket,
-      notes,
+      tournament: bracket as any,
+      notes: notes as any,
     },
   });
 

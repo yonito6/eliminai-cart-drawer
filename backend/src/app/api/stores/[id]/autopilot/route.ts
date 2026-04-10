@@ -59,7 +59,7 @@ export async function PATCH(
     }
 
     const addonDefs = getAddonDefinitions();
-    const queue = body.queue || buildOptimizeQueue(addonDefs, testedSlots, winners);
+    const queue = body.queue || buildOptimizeQueue(addonDefs as any, testedSlots, winners);
 
     config.autopilot = {
       enabled: true,

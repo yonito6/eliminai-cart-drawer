@@ -30,7 +30,7 @@ export async function POST(
 
   await prisma.experiment.update({
     where: { id: params.expId },
-    data: { notes: updatedNotes },
+    data: { notes: updatedNotes as any },
   });
 
   return NextResponse.json({ notes: updatedNotes });

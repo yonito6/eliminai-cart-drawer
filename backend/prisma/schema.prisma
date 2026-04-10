@@ -64,6 +64,9 @@ model Experiment {
   endedAt         DateTime?
   maxDays         Int               @default(14)
 
+  notes           Json?
+  tournament      Json?
+
   assignments     VariantAssignment[]
   dailySummaries  DailySummary[]
 
