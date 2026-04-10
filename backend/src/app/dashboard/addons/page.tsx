@@ -153,7 +153,7 @@ export default function AddonsPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch(
-        API + '`/api/stores/${STORE_ID}/addons',
+        API + '/api/stores/' + STORE_ID + '/addons',
       );
       if (res.ok) {
         const json = await res.json();
