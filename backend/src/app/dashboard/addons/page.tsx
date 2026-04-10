@@ -1221,11 +1221,11 @@ export default function AddonsPage() {
                               {(() => {
                                 if (!storeStats || storeStats.dailyCartOpens <= 0) return null;
                                 const rate = Math.max(storeStats.checkoutRate, 0.02);
-                                const neededPerVariant = Math.ceil(380 / rate);
+                                const neededPerVariant = Math.ceil(100 / rate);
                                 const totalNeeded = neededPerVariant * 2;
                                 const days = Math.ceil(totalNeeded / storeStats.dailyCartOpens);
                                 const minDays = Math.max(days, 3);
-                                if (minDays > 14) return null;
+                                if (minDays > 30) return null;
                                 return <> Based on your traffic, estimated <strong>~{minDays} days</strong> to find a winner.</>;
                               })()}
                             </div>
