@@ -44,6 +44,37 @@ export async function GET(
     where: { storeId: store.id, eventType: 'CHECKOUT_CLICKED', createdAt: { gte: sevenDaysAgo } },
   });
 
+  // ── Shopify fallback: when our own data is thin, estimate from Shopify orders ──
+  let shopifyEstimate: { dailyCartOpens: number; dailyOrders: number; source: string } | null = null;
+
+  if (recentCartOpens < 50) {
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const apiVersion = '2025-01';
+      const countUrl = `https://${store.shopDomain}/admin/api/${apiVersion}/orders/count.json?created_at_min=${thirtyDaysAgo.toISOString()}&status=any`;
+
+      const shopRes = await fetch(countUrl, {
+        headers: { 'X-Shopify-Access-Token': store.accessToken },
+      });
+
+      if (shopRes.ok) {
+        const { count } = await shopRes.json();
+        const dailyOrders = Math.round(count / 30);
+        // Industry average: ~3-5% of cart opens become orders
+        // Using 4% as a middle estimate
+        const estimatedDailyCartOpens = Math.round(dailyOrders / 0.04);
+        shopifyEstimate = {
+          dailyCartOpens: Math.max(estimatedDailyCartOpens, dailyOrders),
+          dailyOrders,
+          source: 'shopify',
+        };
+      }
+    } catch (e) {
+      // Shopify API unavailable — skip fallback silently
+    }
+  }
+
   return NextResponse.json({
     store: {
       id: store.id,
@@ -70,5 +101,6 @@ export async function GET(
       checkouts: recentCheckouts,
       checkoutRate: recentCartOpens > 0 ? (recentCheckouts / recentCartOpens * 100).toFixed(1) : '0.0',
     },
+    shopifyEstimate,
   });
 }

@@ -273,8 +273,17 @@ export default function AddonsPage() {
       if (res.ok) {
         const json = await res.json();
         const weeklyOpens = json.last7Days?.cartOpens ?? 0;
+        const ownDaily = Math.round(weeklyOpens / 7);
         const rate = parseFloat(json.last7Days?.checkoutRate ?? '0') / 100;
-        setStoreStats({ dailyCartOpens: Math.round(weeklyOpens / 7), checkoutRate: rate });
+
+        // Use Shopify historical data when our own tracking is thin
+        if (ownDaily < 10 && json.shopifyEstimate?.dailyCartOpens > 0) {
+          const se = json.shopifyEstimate;
+          const shopifyRate = se.dailyOrders > 0 ? se.dailyOrders / se.dailyCartOpens : 0.04;
+          setStoreStats({ dailyCartOpens: se.dailyCartOpens, checkoutRate: shopifyRate });
+        } else {
+          setStoreStats({ dailyCartOpens: ownDaily, checkoutRate: rate });
+        }
       }
     } catch (e) { console.error('Failed to fetch store stats', e); }
   }, [STORE_ID]);
