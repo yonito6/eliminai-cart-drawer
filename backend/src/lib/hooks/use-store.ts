@@ -17,29 +17,43 @@ export function useStore() {
 
   useEffect(() => {
     const shop = searchParams.get('shop');
-    if (!shop) {
-      // Fallback: try localStorage (for page refreshes without ?shop=)
-      try {
-        const cached = localStorage.getItem('ccd_store');
-        if (cached) {
-          setStore(JSON.parse(cached));
-          setLoading(false);
-          return;
-        }
-      } catch {}
-      setError('No shop parameter');
-      setLoading(false);
+
+    if (shop) {
+      // Production path: resolve by shop domain
+      fetch('/api/stores/resolve?shop=' + encodeURIComponent(shop))
+        .then(r => r.json())
+        .then(data => {
+          if (data.store) {
+            setStore(data.store);
+            try { localStorage.setItem('ccd_store', JSON.stringify(data.store)); } catch {}
+          } else {
+            setError(data.error || 'Store not found');
+          }
+        })
+        .catch(() => setError('Failed to resolve store'))
+        .finally(() => setLoading(false));
       return;
     }
 
-    fetch('/api/stores/resolve?shop=' + encodeURIComponent(shop))
+    // No ?shop= param — try localStorage cache first
+    try {
+      const cached = localStorage.getItem('ccd_store');
+      if (cached) {
+        setStore(JSON.parse(cached));
+        setLoading(false);
+        return;
+      }
+    } catch {}
+
+    // Dev fallback: resolve the first store in the DB
+    fetch('/api/stores/resolve')
       .then(r => r.json())
       .then(data => {
         if (data.store) {
           setStore(data.store);
           try { localStorage.setItem('ccd_store', JSON.stringify(data.store)); } catch {}
         } else {
-          setError(data.error || 'Store not found');
+          setError('No store found. Install the app from Shopify first.');
         }
       })
       .catch(() => setError('Failed to resolve store'))
