@@ -1564,10 +1564,314 @@ Verify:
 3. `/dashboard/results` page shows history
 4. Starting a test and editing the same addon shows hard-block modal
 
-- [ ] **Step 4: Final commit**
+- [ ] **Step 4: Final commit for Chunk 5**
 
 ```bash
 cd "C:/Projects/eliminai-cart-drawer/backend"
 git add -A
 git commit -m "chore: final verification — all tests pass, types clean"
+```
+
+
+---
+
+## Chunk 6: External Factor Awareness
+
+### Task 18: Anomaly Detection in Nightly Cron
+
+**Files:**
+- Create: `src/lib/anomaly-detect.ts`
+- Test: `src/__tests__/anomaly-detect.test.ts`
+- Modify: `src/app/api/cron/nightly/route.ts`
+
+- [ ] **Step 1: Write the test**
+
+```typescript
+// src/__tests__/anomaly-detect.test.ts
+import { describe, it, expect } from 'vitest';
+import { detectTrafficAnomaly, detectConversionShift, detectSegmentDrift } from '../lib/anomaly-detect';
+
+describe('detectTrafficAnomaly', () => {
+  it('flags when today is 3x the average', () => {
+    const result = detectTrafficAnomaly(300, 100);
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('traffic_anomaly');
+    expect(result!.detail).toContain('+200%');
+  });
+
+  it('flags when today is less than half the average', () => {
+    const result = detectTrafficAnomaly(40, 100);
+    expect(result).not.toBeNull();
+    expect(result!.detail).toContain('-60%');
+  });
+
+  it('returns null for normal traffic', () => {
+    const result = detectTrafficAnomaly(110, 100);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when average is 0', () => {
+    const result = detectTrafficAnomaly(50, 0);
+    expect(result).toBeNull();
+  });
+});
+
+describe('detectConversionShift', () => {
+  it('flags when both variants shift up >30%', () => {
+    const result = detectConversionShift(
+      [{ id: 'a', todayRate: 0.26, avgRate: 0.20 }, { id: 'b', todayRate: 0.27, avgRate: 0.20 }]
+    );
+    expect(result).not.toBeNull();
+    expect(result!.detail).toContain('Both variants');
+  });
+
+  it('returns null when only one variant shifts', () => {
+    const result = detectConversionShift(
+      [{ id: 'a', todayRate: 0.30, avgRate: 0.20 }, { id: 'b', todayRate: 0.21, avgRate: 0.20 }]
+    );
+    expect(result).toBeNull();
+  });
+});
+
+describe('detectSegmentDrift', () => {
+  it('flags when new visitor ratio shifts >20pp', () => {
+    const result = detectSegmentDrift(0.75, 0.50);
+    expect(result).not.toBeNull();
+    expect(result!.detail).toContain('Visitor mix');
+  });
+
+  it('returns null for stable segments', () => {
+    const result = detectSegmentDrift(0.52, 0.50);
+    expect(result).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd "C:/Projects/eliminai-cart-drawer/backend" && npx vitest run src/__tests__/anomaly-detect.test.ts`
+Expected: FAIL
+
+- [ ] **Step 3: Implement anomaly-detect.ts**
+
+```typescript
+// src/lib/anomaly-detect.ts
+
+interface AnomalyNote {
+  timestamp: string;
+  type: 'traffic_anomaly' | 'conversion_shift' | 'segment_drift';
+  detail: string;
+}
+
+export function detectTrafficAnomaly(
+  todayCartOpens: number,
+  avgDailyCartOpens: number,
+): AnomalyNote | null {
+  if (avgDailyCartOpens <= 0) return null;
+
+  const ratio = todayCartOpens / avgDailyCartOpens;
+  if (ratio > 2 || ratio < 0.5) {
+    const pctChange = Math.round((ratio - 1) * 100);
+    const sign = pctChange > 0 ? '+' : '';
+    return {
+      timestamp: new Date().toISOString(),
+      type: 'traffic_anomaly',
+      detail: \`Traffic anomaly: \${sign}\${pctChange}% vs 7-day average (\${todayCartOpens} vs \${Math.round(avgDailyCartOpens)} avg)\`,
+    };
+  }
+  return null;
+}
+
+interface VariantRateInfo {
+  id: string;
+  todayRate: number;
+  avgRate: number;
+}
+
+export function detectConversionShift(
+  variants: VariantRateInfo[],
+): AnomalyNote | null {
+  if (variants.length < 2) return null;
+
+  const shifts = variants.map(v => {
+    if (v.avgRate <= 0) return 0;
+    return (v.todayRate - v.avgRate) / v.avgRate;
+  });
+
+  // Both variants shift >30% in same direction
+  const allUp = shifts.every(s => s > 0.3);
+  const allDown = shifts.every(s => s < -0.3);
+
+  if (allUp || allDown) {
+    const avgShift = Math.round((shifts.reduce((a, b) => a + b, 0) / shifts.length) * 100);
+    const sign = avgShift > 0 ? '+' : '';
+    return {
+      timestamp: new Date().toISOString(),
+      type: 'conversion_shift',
+      detail: \`Both variants saw \${sign}\${avgShift}% conversion shift. External factor likely. Results still valid.\`,
+    };
+  }
+  return null;
+}
+
+export function detectSegmentDrift(
+  todayNewRatio: number,
+  avgNewRatio: number,
+): AnomalyNote | null {
+  const drift = Math.abs(todayNewRatio - avgNewRatio);
+  if (drift > 0.20) {
+    return {
+      timestamp: new Date().toISOString(),
+      type: 'segment_drift',
+      detail: \`Visitor mix changed: \${Math.round(todayNewRatio * 100)}% new visitors today vs \${Math.round(avgNewRatio * 100)}% average.\`,
+    };
+  }
+  return null;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd "C:/Projects/eliminai-cart-drawer/backend" && npx vitest run src/__tests__/anomaly-detect.test.ts`
+Expected: PASS
+
+- [ ] **Step 5: Add anomaly checks to nightly cron**
+
+In the nightly cron, after Thompson Sampling + winner detection, add:
+1. Query today's cart opens vs 7-day average
+2. Query today's checkout rate per variant vs 7-day average
+3. Query today's new/returning ratio vs 7-day average
+4. Run all three detectors
+5. If any return a note, append to experiment.notes
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd "C:/Projects/eliminai-cart-drawer/backend"
+git add src/lib/anomaly-detect.ts src/__tests__/anomaly-detect.test.ts src/app/api/cron/nightly/route.ts
+git commit -m "feat: anomaly detection — traffic spikes, conversion shifts, segment drift"
+```
+
+---
+
+### Task 19: User Event Log API
+
+**Files:**
+- Create: `src/app/api/stores/[id]/experiments/[expId]/notes/route.ts`
+
+- [ ] **Step 1: Create the notes endpoint**
+
+```typescript
+// src/app/api/stores/[id]/experiments/[expId]/notes/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { addExperimentNote } from '@/lib/test-safety';
+
+// POST — add a user note to an experiment
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { id: string; expId: string } },
+) {
+  const experiment = await prisma.experiment.findUnique({
+    where: { id: params.expId },
+  });
+
+  if (!experiment || experiment.storeId !== params.id) {
+    return NextResponse.json({ error: 'Experiment not found' }, { status: 404 });
+  }
+
+  const body = await req.json();
+  const { note } = body;
+
+  if (!note || typeof note !== 'string') {
+    return NextResponse.json({ error: 'note required' }, { status: 400 });
+  }
+
+  const updatedNotes = addExperimentNote(
+    experiment.notes as any[] | null,
+    'user_event' as any,
+    note,
+  );
+
+  await prisma.experiment.update({
+    where: { id: params.expId },
+    data: { notes: updatedNotes },
+  });
+
+  return NextResponse.json({ notes: updatedNotes });
+}
+
+// GET — get all notes for an experiment
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { id: string; expId: string } },
+) {
+  const experiment = await prisma.experiment.findUnique({
+    where: { id: params.expId },
+    select: { notes: true, storeId: true },
+  });
+
+  if (!experiment || experiment.storeId !== params.id) {
+    return NextResponse.json({ error: 'Experiment not found' }, { status: 404 });
+  }
+
+  return NextResponse.json({ notes: experiment.notes || [] });
+}
+```
+
+- [ ] **Step 2: Update addExperimentNote to support user_event type**
+
+In `src/lib/test-safety.ts`, update the type union to include `'user_event' | 'external_event' | 'traffic_anomaly' | 'conversion_shift' | 'segment_drift'`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd "C:/Projects/eliminai-cart-drawer/backend"
+git add src/app/api/stores/[id]/experiments/[expId]/notes/route.ts src/lib/test-safety.ts
+git commit -m "feat: user event log API — add/get notes on experiments"
+```
+
+---
+
+### Task 20: Test Timeline UI in Track Results
+
+**Files:**
+- Modify: `src/app/dashboard/addons/page.tsx` (via Node.js script)
+
+- [ ] **Step 1: Add timeline display and "Log an Event" button**
+
+In the Track Results view, below the confidence bar:
+- Fetch notes from experiment data (already in the experiments response)
+- Render chronological timeline with icons by type
+- Add "Log an Event" button that opens an inline text input
+- On submit, POST to `/api/stores/${STORE_ID}/experiments/${expId}/notes`
+
+- [ ] **Step 2: Commit**
+
+```bash
+cd "C:/Projects/eliminai-cart-drawer/backend"
+git add src/app/dashboard/addons/page.tsx
+git commit -m "feat: test timeline UI with anomaly notes and user event logging"
+```
+
+---
+
+### Task 21: Final Full Test Suite + Verification
+
+- [ ] **Step 1: Run all tests**
+
+Run: `cd "C:/Projects/eliminai-cart-drawer/backend" && npx vitest run`
+Expected: All tests pass (existing + 5 new test files)
+
+- [ ] **Step 2: Type check**
+
+Run: `cd "C:/Projects/eliminai-cart-drawer/backend" && npx tsc --noEmit`
+Expected: No type errors
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd "C:/Projects/eliminai-cart-drawer/backend"
+git add -A
+git commit -m "chore: all tests pass, types clean — timeline + autopilot + tournament complete"
 ```
