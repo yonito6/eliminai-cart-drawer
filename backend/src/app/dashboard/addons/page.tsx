@@ -195,6 +195,7 @@ function AddonsPage() {
 
   // ── Experiment data for timeline notes ──────────────────────────────────
   const [experiments, setExperiments] = useState<Record<string, any>>({});
+  const [dailyTraffic, setDailyTraffic] = useState(0);
   const [logEventInput, setLogEventInput] = useState<Record<string, string>>({});
   const [showLogEvent, setShowLogEvent] = useState<Record<string, boolean>>({});
 
@@ -225,6 +226,7 @@ function AddonsPage() {
       if (res.ok) {
         const json = await res.json();
         setExperiments(json.experiments ?? {});
+        if (json.dailyTraffic) setDailyTraffic(json.dailyTraffic);
       }
     } catch (e) {
       console.error('Failed to load experiments', e);
@@ -1455,11 +1457,24 @@ function AddonsPage() {
                           const totalV = exp.totalVisitors ?? 0;
                           const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
                           const liftAbs = Math.abs(exp.liftPercent ?? 0);
+                          // Smart milestones based on real store traffic (dailyTraffic = unique cart opens/day from last 7 days)
+                          const minPerVariant = 30;
+                          const numVariants = (exp.variantStats || []).length || 2;
+                          const minVisitors = minPerVariant * numVariants; // statistical minimum
+                          // Time estimate: how many days to reach min visitors at current traffic rate
+                          const daysToMin = dailyTraffic > 0 ? Math.ceil(minVisitors / dailyTraffic) : 7;
+                          // For conclusion, we want ~3x minimum for strong confidence
+                          const strongTarget = minPerVariant * numVariants * 3;
+                          const daysToStrong = dailyTraffic > 0 ? Math.ceil(strongTarget / dailyTraffic) : 14;
+                          const etaLabel = dailyTraffic > 0
+                            ? (daysToMin <= 1 ? 'less than a day' : daysToMin + ' days')
+                            : 'estimating...';
+
                           const steps = [
-                            { label: 'Collecting visitors', detail: totalV + '/60 visitors (30 per variant)', done: totalV >= 60, active: totalV < 60 },
-                            { label: '3-day minimum', detail: daysRunning + '/3 days (weekday + weekend patterns)', done: daysRunning >= 3, active: totalV >= 60 && daysRunning < 3 },
-                            { label: 'Detecting impact', detail: liftAbs > 0 ? (liftAbs.toFixed(1) + '% difference so far') : 'Measuring...', done: confidence >= 60 || (totalV >= 100 && liftAbs < 3), active: daysRunning >= 3 && confidence < 60 && !(totalV >= 100 && liftAbs < 3) },
-                            { label: 'Conclusion', detail: confidence >= 90 ? 'Clear winner found!' : (totalV >= 100 && liftAbs < 3) ? 'Low impact — ready to move on' : 'Need more data', done: confidence >= 90 || winner || noDiff, active: confidence >= 60 && confidence < 90 },
+                            { label: 'Collecting visitors', detail: totalV + '/' + minVisitors + ' visitors (' + minPerVariant + ' per variant)' + (totalV < minVisitors && dailyTraffic > 0 ? ' · ~' + etaLabel + ' left' : ''), done: totalV >= minVisitors, active: totalV < minVisitors },
+                            { label: '3-day minimum', detail: daysRunning + '/3 days (weekday + weekend patterns)', done: daysRunning >= 3, active: totalV >= minVisitors && daysRunning < 3 },
+                            { label: 'Detecting impact', detail: liftAbs > 0 ? (liftAbs.toFixed(1) + '% difference so far') : 'Measuring...', done: confidence >= 60 || (totalV >= strongTarget && liftAbs < 3), active: daysRunning >= 3 && confidence < 60 && !(totalV >= strongTarget && liftAbs < 3) },
+                            { label: 'Conclusion', detail: confidence >= 90 ? 'Clear winner found!' : (totalV >= strongTarget && liftAbs < 3) ? 'Low impact — ready to move on' : (dailyTraffic > 0 && daysToStrong > daysRunning ? '~' + (daysToStrong - daysRunning) + ' days at current traffic' : 'Need more data'), done: confidence >= 90 || winner || noDiff, active: confidence >= 60 && confidence < 90 },
                           ];
                           return (
                             <div style={{ marginTop: 12, borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
@@ -1476,7 +1491,7 @@ function AddonsPage() {
                                   </div>
                                 </div>
                               ))}
-                              {totalV >= 100 && liftAbs < 3 && (
+                              {totalV >= strongTarget && liftAbs < 3 && (
                                 <div style={{ marginTop: 8, padding: 8, background: '#fef3c7', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
                                   {'This feature shows less than 3% impact. The engine will auto-conclude soon so we can test the next dimension.'}
                                 </div>

@@ -74,6 +74,14 @@ export async function GET(
     })
   );
 
+  // Calculate daily traffic from last 7 days (unique cart-open sessions)
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+  const recentCartSessions = await prisma.event.groupBy({
+    by: ['sessionId'],
+    where: { storeId: params.id, eventType: 'CART_OPENED', createdAt: { gte: sevenDaysAgo } },
+  });
+  const dailyTraffic = Math.max(1, Math.round(recentCartSessions.length / 7));
+
   // Group by slot (addon key) — return only the latest per slot
   const bySlot: Record<string, any> = {};
   for (const exp of enriched) {
@@ -82,5 +90,5 @@ export async function GET(
     }
   }
 
-  return NextResponse.json({ experiments: bySlot });
+  return NextResponse.json({ experiments: bySlot, dailyTraffic });
 }
