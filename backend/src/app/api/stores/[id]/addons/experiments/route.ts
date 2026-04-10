@@ -23,18 +23,21 @@ export async function GET(
           const visitors = await prisma.variantAssignment.count({
             where: { experimentId: exp.id, variantId: v.id },
           });
-          const cartOpens = await prisma.event.count({
+          // Unique sessions — 1 user = 1 count
+          const cartOpens = (await prisma.event.groupBy({
+            by: ['sessionId'],
             where: {
               assignment: { experimentId: exp.id, variantId: v.id },
               eventType: 'CART_OPENED',
             },
-          });
-          const checkoutClicks = await prisma.event.count({
+          })).length;
+          const checkoutClicks = (await prisma.event.groupBy({
+            by: ['sessionId'],
             where: {
               assignment: { experimentId: exp.id, variantId: v.id },
               eventType: 'CHECKOUT_CLICKED',
             },
-          });
+          })).length;
           return {
             ...v,
             visitors,

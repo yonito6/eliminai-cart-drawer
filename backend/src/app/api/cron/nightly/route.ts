@@ -25,22 +25,30 @@ export async function POST(req: NextRequest) {
     const variantStats = [];
 
     for (const v of variants) {
-      const cartOpens = await prisma.event.count({
+      // Count UNIQUE sessions (not raw events) — one user = one data point
+      // regardless of how many times they opened the cart
+      const uniqueCartSessions = await prisma.event.groupBy({
+        by: ['sessionId'],
         where: {
           assignment: { experimentId: exp.id, variantId: v.id },
           eventType: 'CART_OPENED',
         },
       });
-      const checkoutClicks = await prisma.event.count({
+      const uniqueCheckoutSessions = await prisma.event.groupBy({
+        by: ['sessionId'],
         where: {
           assignment: { experimentId: exp.id, variantId: v.id },
           eventType: 'CHECKOUT_CLICKED',
         },
       });
+
+      const uniqueOpens = uniqueCartSessions.length;
+      const uniqueCheckouts = uniqueCheckoutSessions.length;
+
       variantStats.push({
         id: v.id,
-        successes: checkoutClicks,
-        failures: Math.max(0, cartOpens - checkoutClicks),
+        successes: uniqueCheckouts,
+        failures: Math.max(0, uniqueOpens - uniqueCheckouts),
       });
     }
 
@@ -65,17 +73,19 @@ export async function POST(req: NextRequest) {
       endedAt = new Date();
     }
 
-    // Safety check: 48h rolling checkout rate
+    // Safety check: 48h rolling checkout rate (unique sessions)
     if (exp.store.baselineCheckoutRate && exp.store.baselineCheckoutRate > 0) {
       const since48h = new Date(Date.now() - 48 * 3600000);
-      const recentOpens = await prisma.event.count({
+      const recentOpenSessions = await prisma.event.groupBy({
+        by: ['sessionId'],
         where: { storeId: exp.storeId, eventType: 'CART_OPENED', createdAt: { gte: since48h } },
       });
-      const recentClicks = await prisma.event.count({
+      const recentCheckoutSessions = await prisma.event.groupBy({
+        by: ['sessionId'],
         where: { storeId: exp.storeId, eventType: 'CHECKOUT_CLICKED', createdAt: { gte: since48h } },
       });
-      if (recentOpens > 20) {
-        const recentRate = recentClicks / recentOpens;
+      if (recentOpenSessions.length > 20) {
+        const recentRate = recentCheckoutSessions.length / recentOpenSessions.length;
         if (recentRate < exp.store.baselineCheckoutRate * 0.95) {
           newStatus = 'REVERTED';
           endedAt = new Date();
@@ -106,7 +116,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 2. Aggregate daily summaries
+  // 2. Aggregate daily summaries (also unique sessions)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today.getTime() - 86400000);
@@ -114,14 +124,16 @@ export async function POST(req: NextRequest) {
   for (const exp of experiments) {
     const variants = exp.variants as any[];
     for (const v of variants) {
-      const cartOpens = await prisma.event.count({
+      const dailyOpenSessions = await prisma.event.groupBy({
+        by: ['sessionId'],
         where: {
           assignment: { experimentId: exp.id, variantId: v.id },
           eventType: 'CART_OPENED',
           createdAt: { gte: yesterday, lt: today },
         },
       });
-      const checkoutClicks = await prisma.event.count({
+      const dailyCheckoutSessions = await prisma.event.groupBy({
+        by: ['sessionId'],
         where: {
           assignment: { experimentId: exp.id, variantId: v.id },
           eventType: 'CHECKOUT_CLICKED',
@@ -143,10 +155,13 @@ export async function POST(req: NextRequest) {
           variantId: v.id,
           date: yesterday,
           currency: exp.store.currency,
-          cartOpens,
-          checkoutClicks,
+          cartOpens: dailyOpenSessions.length,
+          checkoutClicks: dailyCheckoutSessions.length,
         },
-        update: { cartOpens, checkoutClicks },
+        update: {
+          cartOpens: dailyOpenSessions.length,
+          checkoutClicks: dailyCheckoutSessions.length,
+        },
       });
     }
   }

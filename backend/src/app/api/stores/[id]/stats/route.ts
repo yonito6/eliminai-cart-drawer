@@ -13,15 +13,20 @@ export async function GET(
 
   const totalSessions = await prisma.visitorSession.count({ where: { storeId: store.id } });
   const totalEvents = await prisma.event.count({ where: { storeId: store.id } });
-  const totalCartOpens = await prisma.event.count({
+
+  // Count UNIQUE sessions per event type — 1 user = 1 count regardless of repeat opens
+  const totalCartOpens = (await prisma.event.groupBy({
+    by: ['sessionId'],
     where: { storeId: store.id, eventType: 'CART_OPENED' },
-  });
-  const totalCheckouts = await prisma.event.count({
+  })).length;
+  const totalCheckouts = (await prisma.event.groupBy({
+    by: ['sessionId'],
     where: { storeId: store.id, eventType: 'CHECKOUT_CLICKED' },
-  });
-  const totalOrders = await prisma.event.count({
+  })).length;
+  const totalOrders = (await prisma.event.groupBy({
+    by: ['sessionId'],
     where: { storeId: store.id, eventType: 'ORDER_COMPLETED' },
-  });
+  })).length;
 
   const activeExperiments = await prisma.experiment.count({
     where: { storeId: store.id, status: 'RUNNING' },
@@ -30,21 +35,23 @@ export async function GET(
     where: { storeId: store.id, status: { in: ['WINNER_FOUND', 'NO_DIFFERENCE'] } },
   });
 
-  // Last 7 days activity
+  // Last 7 days activity (unique sessions)
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
   const recentSessions = await prisma.visitorSession.count({
     where: { storeId: store.id, firstSeenAt: { gte: sevenDaysAgo } },
   });
-  const recentCartOpens = await prisma.event.count({
+  const recentCartOpens = (await prisma.event.groupBy({
+    by: ['sessionId'],
     where: { storeId: store.id, eventType: 'CART_OPENED', createdAt: { gte: sevenDaysAgo } },
-  });
-  const recentCheckouts = await prisma.event.count({
+  })).length;
+  const recentCheckouts = (await prisma.event.groupBy({
+    by: ['sessionId'],
     where: { storeId: store.id, eventType: 'CHECKOUT_CLICKED', createdAt: { gte: sevenDaysAgo } },
-  });
+  })).length;
 
-  // ── Shopify fallback: when our own data is thin, estimate from Shopify orders ──
+  // Shopify fallback: when our own data is thin, estimate from Shopify orders
   let shopifyEstimate: { dailyCartOpens: number; dailyOrders: number; source: string } | null = null;
 
   if (recentCartOpens < 50) {
@@ -61,8 +68,6 @@ export async function GET(
       if (shopRes.ok) {
         const { count } = await shopRes.json();
         const dailyOrders = Math.round(count / 30);
-        // Industry average: ~3-5% of cart opens become orders
-        // Using 4% as a middle estimate
         const estimatedDailyCartOpens = Math.round(dailyOrders / 0.04);
         shopifyEstimate = {
           dailyCartOpens: Math.max(estimatedDailyCartOpens, dailyOrders),
@@ -71,7 +76,7 @@ export async function GET(
         };
       }
     } catch (e) {
-      // Shopify API unavailable — skip fallback silently
+      // Shopify API unavailable
     }
   }
 
