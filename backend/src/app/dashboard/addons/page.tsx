@@ -223,11 +223,7 @@ export default function AddonsPage() {
     }
   }, [STORE_ID]);
 
-  useEffect(() => {
-    fetchExperiments();
-    const interval = setInterval(fetchExperiments, 30000);
-    return () => clearInterval(interval);
-  }, [fetchExperiments]);
+  // fetchExperiments runs inside the unified refresh below
 
   useEffect(() => {
     if (!STORE_ID) return;
@@ -297,12 +293,16 @@ export default function AddonsPage() {
     } catch (e) { console.error('Failed to fetch store stats', e); }
   }, [STORE_ID]);
 
+  // ── Unified refresh: load everything on mount + every 15s ────────────────
+  const refreshAll = useCallback(async () => {
+    await Promise.all([load(), loadAutopilot(), loadExperiments(), fetchExperiments(), fetchStoreStats()]);
+  }, [load, loadAutopilot, loadExperiments, fetchExperiments, fetchStoreStats]);
+
   useEffect(() => {
-    load();
-    loadAutopilot();
-    loadExperiments();
-    fetchStoreStats();
-  }, [load, loadAutopilot, loadExperiments, fetchStoreStats]);
+    refreshAll();
+    const interval = setInterval(refreshAll, 15000);
+    return () => clearInterval(interval);
+  }, [refreshAll]);
 
   // ── Restore edit view from URL param on mount ──────────────────────────
   useEffect(() => {
@@ -1520,16 +1520,27 @@ export default function AddonsPage() {
                         })}
                       </div>
 
-                      {/* Expected loss & status */}
-                      {testing && exp.expectedLoss != null && (
+                      {/* Test progress status */}
+                      {testing && (
                         <div style={{ marginBottom: 12, padding: 10, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 16 }}>{exp.expectedLoss <= 0.05 ? '✅' : exp.expectedLoss <= 0.15 ? '⚠️' : '⏳'}</span>
+                          <span style={{ fontSize: 16 }}>
+                            {(exp.totalVisitors ?? 0) < 20 ? '🔄' : exp.expectedLoss != null && exp.expectedLoss <= 0.05 ? '✅' : exp.expectedLoss != null && exp.expectedLoss <= 0.15 ? '⚠️' : '⏳'}
+                          </span>
                           <div>
                             <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
-                              Risk if we chose now: {exp.expectedLoss.toFixed(3)}pp
+                              {(exp.totalVisitors ?? 0) < 20
+                                ? 'Collecting data — ' + (exp.totalVisitors ?? 0) + ' visitors so far'
+                                : exp.expectedLoss != null
+                                  ? 'Decision confidence: ' + (100 - Math.min(exp.expectedLoss * 100, 100)).toFixed(0) + '%'
+                                  : 'Analyzing results...'
+                              }
                             </div>
                             <div style={{ fontSize: 11, color: '#6b7280' }}>
-                              {exp.expectedLoss <= 0.05 ? 'Very low risk — winner almost certain' : exp.expectedLoss <= 0.15 ? 'Moderate risk — collecting more data to be sure' : 'Still learning — need more visitor data'}
+                              {(exp.totalVisitors ?? 0) < 20
+                                ? 'Need at least 100+ visitors per variant for reliable results'
+                                : exp.expectedLoss != null && exp.expectedLoss <= 0.05 ? 'Very low risk — winner almost certain'
+                                : exp.expectedLoss != null && exp.expectedLoss <= 0.15 ? 'Moderate risk — collecting more data to be sure'
+                                : 'Still learning — need more visitor data'}
                             </div>
                           </div>
                         </div>
