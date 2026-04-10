@@ -1192,7 +1192,7 @@ export default function AddonsPage() {
                             </div>
                             <div style={{ fontSize: 12, color: '#7c3aed', lineHeight: 1.5 }}>
                               50% of visitors will see <strong>{def.label} ON</strong>, 50% will see <strong>{def.label} OFF</strong>.
-                              After enough data (~7-14 days), we’ll show you which version converts better.
+                              The test runs until we have enough data to declare a winner (depends on your store’s traffic).
                             </div>
                             <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 6 }}>
                               After this, you can test individual dimensions: {def.dimensions.filter(d => d.testable).map(d => d.label).join(', ')}
