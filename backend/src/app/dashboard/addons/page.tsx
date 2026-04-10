@@ -1183,9 +1183,21 @@ export default function AddonsPage() {
                         ))}
                       </div>
 
-                      {/* Start Testing button */}
+                      {/* Start Testing button — with clear description */}
                       {addon.enabled && !experiments[def.key]?.status && def.dimensions.some(d => d.testable) && (
                         <div style={{ marginTop: 20 }}>
+                          <div style={{ padding: 14, background: '#f5f3ff', border: '1px solid #e9d5ff', borderRadius: 10, marginBottom: 12 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#6d28d9', marginBottom: 6 }}>
+                              What this test will do:
+                            </div>
+                            <div style={{ fontSize: 12, color: '#7c3aed', lineHeight: 1.5 }}>
+                              50% of visitors will see <strong>{def.label} ON</strong>, 50% will see <strong>{def.label} OFF</strong>.
+                              After enough data (~7-14 days), we’ll show you which version converts better.
+                            </div>
+                            <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 6 }}>
+                              After this, you can test individual dimensions: {def.dimensions.filter(d => d.testable).map(d => d.label).join(', ')}
+                            </div>
+                          </div>
                           <button
                             onClick={() => startTest(def.key)}
                             disabled={!!startingTest[def.key]}
@@ -1199,24 +1211,43 @@ export default function AddonsPage() {
                               boxShadow: '0 2px 8px rgba(124,58,237,0.3)',
                             }}
                           >
-                            {startingTest[def.key] ? 'Starting...' : 'Start A/B Testing'}
+                            {startingTest[def.key] ? 'Starting...' : 'Start A/B Test'}
                           </button>
-                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6, textAlign: 'center' }}>
-                            Tests {def.dimensions.filter(d => d.testable).map(d => d.label).join(', ')} · ~7-14 days per dimension
-                          </div>
                         </div>
                       )}
                       {addon.enabled && experiments[def.key]?.status === 'RUNNING' && (
-                        <div style={{ marginTop: 16, padding: 12, background: '#faf5ff', border: '1px solid #d8b4fe', borderRadius: 8, textAlign: 'center' }}>
-                          <div style={{ fontSize: 12, color: '#6d28d9', fontWeight: 500 }}>
-                            A/B test is running · {experiments[def.key]?.totalVisitors ?? 0} visitors
+                        <div style={{ marginTop: 16, padding: 14, background: '#faf5ff', border: '1px solid #d8b4fe', borderRadius: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#7c3aed', animation: 'pulse 2s infinite' }} />
+                            <div style={{ fontSize: 13, color: '#6d28d9', fontWeight: 600 }}>
+                              A/B Test Running
+                            </div>
                           </div>
-                          <button
-                            onClick={() => { setExpandedView('results'); }}
-                            style={{ marginTop: 6, background: 'none', border: 'none', color: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
-                          >
-                            View Results
-                          </button>
+                          <div style={{ fontSize: 12, color: '#7c3aed', marginBottom: 12 }}>
+                            Testing {def.label} ON vs OFF · {experiments[def.key]?.totalVisitors ?? 0} visitors so far
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              onClick={() => stopTest(def.key)}
+                              style={{
+                                flex: 1, padding: '8px 16px', background: '#fff', color: '#dc2626',
+                                border: '1px solid #fca5a5', borderRadius: 8, fontSize: 12,
+                                fontWeight: 600, cursor: 'pointer',
+                              }}
+                            >
+                              Stop Test
+                            </button>
+                            <button
+                              onClick={() => { setExpandedView('results'); }}
+                              style={{
+                                flex: 1, padding: '8px 16px', background: '#7c3aed', color: '#fff',
+                                border: 'none', borderRadius: 8, fontSize: 12,
+                                fontWeight: 600, cursor: 'pointer',
+                              }}
+                            >
+                              View Results
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
