@@ -385,3 +385,110 @@ Every experiment, event, and rule is scoped to tenantId. When this becomes a Sho
 2. **Cross-store learning**: Every store learnings improve every other store
 3. **Compounding returns**: The system gets smarter every day. Competitors need months to catch up.
 4. **Full-stack integration**: We run the support AI too — correlate cart behavior with post-purchase support (returns, complaints) for true LTV optimization
+
+---
+
+## Git Workflow — MANDATORY (Prevents Lost Work)
+
+### 2026-04-10 INCIDENT: Stashed work silently lost
+A previous session stashed 954 lines of trust badges UI work, then a new session built 21 tasks of autopilot/timeline code on the OLD base without checking for stashes. The stashed work was invisible and effectively lost until manually recovered. **This must NEVER happen again.**
+
+### Session Start Checklist — BEFORE ANY CODE CHANGE
+Every new Claude session that will modify code MUST run these checks FIRST:
+
+```bash
+# 1. Check for stashed work (MOST COMMON cause of lost changes)
+git stash list
+
+# 2. Check for uncommitted changes
+git status
+
+# 3. Check for unmerged branches
+git branch --no-merged master
+```
+
+**If stashes exist**: Pop or apply them BEFORE starting new work. If the stash conflicts with your planned work, tell Yoni and resolve together — NEVER just ignore stashes.
+
+**If uncommitted changes exist**: Commit them or confirm with Yoni they should be discarded.
+
+**If unmerged branches exist**: Merge them first or ask Yoni.
+
+### NEVER Use git stash — Use Branches Instead
+
+**`git stash` is BANNED in this project.** Stashes are invisible, unnamed, and easily forgotten. Use branches instead:
+
+```bash
+# WRONG — stash is invisible and will be forgotten
+git stash
+
+# RIGHT — branch is visible and named
+git checkout -b wip/trust-badges-ui
+git add -A && git commit -m "WIP: trust badges editing UI (in progress)"
+git checkout master
+```
+
+Branches show up in `git branch`, `git log --all`, and deploy scripts. Stashes don't.
+
+### Feature Branch Workflow
+
+When implementing a new feature that touches files another feature may have changed:
+
+1. **Create a feature branch** from master:
+   ```bash
+   git checkout -b feat/autopilot-timeline
+   ```
+
+2. **Do ALL work on the branch** — commit frequently
+
+3. **Before merging to master**, check what's changed on master since you branched:
+   ```bash
+   git log master --oneline --not HEAD  # commits on master you don't have
+   git diff master -- src/app/dashboard/addons/  # files that diverged
+   ```
+
+4. **Merge with review**:
+   ```bash
+   git checkout master
+   git merge feat/autopilot-timeline
+   # If conflicts: resolve carefully, NEVER just take "ours" or "theirs" blindly
+   # After merge: run tsc + dev server to verify nothing broke
+   ```
+
+5. **After successful merge**: delete the branch
+   ```bash
+   git branch -d feat/autopilot-timeline
+   ```
+
+### Merge Conflict Rules
+
+When resolving merge conflicts:
+
+1. **NEVER blindly accept one side.** Always read BOTH sides and understand what each adds.
+2. **If both sides ADD code** (new functions, new UI sections, new imports) — keep BOTH.
+3. **If both sides MODIFY the same code differently** — ask Yoni which behavior wins.
+4. **After every merge**: run `npx tsc --noEmit` and check the dev server. Type errors = broken merge.
+5. **If a file changed significantly on both sides**: do the merge in a temporary file first, verify it compiles, THEN replace the original.
+
+### Pre-Commit Safety Check
+
+Before committing changes to files that are actively being developed (especially `page.tsx`, `addon-preview.tsx`):
+
+```bash
+# Verify no one else's work is pending
+git stash list                    # must be empty
+git branch --no-merged master     # should be empty or known
+git diff --stat HEAD              # review what you're about to commit
+```
+
+### Multi-Session Handoff
+
+When ending a session with unfinished work:
+- **COMMIT to a named branch** (never stash)
+- **Tell Yoni the branch name** and what's in it
+- **Next session**: the branch will be visible and easy to merge
+
+## Mistake Journal — Cart Drawer
+
+- 2026-04-10: Previous session stashed 954 lines of trust badges UI work (addon-preview.tsx, page.tsx, cart-constants.ts, addon-definitions.ts), then new session built autopilot code on old base. Stash was invisible — checked git status (clean), git log (no mention), git diff (nothing). NEVER USE GIT STASH — use named branches instead. ALWAYS run `git stash list` at session start.
+- 2026-04-10: 3-way merge of 1700+ line JSX file produced 5 conflicts. Agent resolved them but left duplicate code blocks and unclosed JSX tags. ALWAYS run `npx tsc --noEmit` after any merge and fix ALL errors before committing.
+- 2026-04-10: `load()` useCallback had empty dependency array `[]` — captured STORE_ID as undefined and never re-ran. ALL useCallback/useEffect that reference STORE_ID MUST include it in their dependency array.
