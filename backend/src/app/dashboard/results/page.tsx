@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useStore } from '@/lib/hooks/use-store';
 
 interface VariantStat {
@@ -66,7 +66,15 @@ const NOTE_ICONS: Record<string, string> = {
   segment_drift: '\u26A0',
 };
 
-export default function ResultsPage() {
+export default function ResultsPageWrapper() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#a3a3a3' }}>Loading results...</div>}>
+      <ResultsPage />
+    </Suspense>
+  );
+}
+
+function ResultsPage() {
   const { storeId, loading: storeLoading, error: storeError } = useStore();
   const [experiments, setExperiments] = useState<ExperimentRecord[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useStore } from '@/lib/hooks/use-store';
 import CartPreview from './cart-preview';
 
@@ -33,7 +33,15 @@ const FEATS = [
   { key: 'showSocialProof', label: 'Social Proof', desc: '"23 people viewing right now" live indicator' },
 ];
 
-export default function Dashboard() {
+export default function DashboardWrapper() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#a3a3a3' }}>Loading dashboard...</div>}>
+      <Dashboard />
+    </Suspense>
+  );
+}
+
+function Dashboard() {
   const { storeId: STORE_ID, store: storeInfo, loading: storeLoading, error: storeError } = useStore();
 
 
