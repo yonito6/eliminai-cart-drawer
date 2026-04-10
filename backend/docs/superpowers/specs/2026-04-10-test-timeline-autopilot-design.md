@@ -6,7 +6,7 @@
 
 ## Goal
 
-Extend the existing A/B testing system (Thompson Sampling, 2-variant tests, per-addon experiments) with time estimates, autopilot mode, a results history page, post-winner decision flow, edit-triggers-test functionality, and custom variant tournaments with bracket-style testing. The system is NOT addon-specific — it will expand to test checkout buttons, fonts, layouts, colors, and any other cart element.
+Extend the existing A/B testing system (Thompson Sampling, 2-variant tests, per-addon experiments) with time estimates, autopilot mode, a results history page, post-winner decision flow, edit-triggers-test functionality, custom variant tournaments with bracket-style testing, and mid-test change protection with tiered warnings. The system is NOT addon-specific — it will expand to test checkout buttons, fonts, layouts, colors, and any other cart element.
 
 ---
 
@@ -182,6 +182,72 @@ autopilot: {
 
 ---
 
+
+## Part 7: Test Safety — Mid-Test Change Protection
+
+**What:** Prevent users from accidentally corrupting A/B test data by changing cart settings while a test is running.
+
+**Tiered warning system:**
+
+| Change Type | Danger | Action |
+|---|---|---|
+| Change to the **addon being tested** | HIGH | Hard block — must choose: Pause & Save, Reset & Save, or Cancel |
+| Change to a **different addon** (cart-related) | MEDIUM | Soft warning — "This might affect your running test. Continue?" |
+| Change to **global cart settings** (layout, colors, checkout button) | MEDIUM | Soft warning |
+| Change to **unrelated settings** (store branding, logo) | LOW | Allow silently |
+
+**Hard block modal (same-slot changes):**
+When user tries to save a change to the same addon/slot being tested:
+
+> "You have an active A/B test running: [Test Name]
+> Changing these settings mid-test will invalidate your results.
+>
+> **[Pause Test & Save]** — pauses test, preserves data, you can resume later
+> **[Reset Test & Save]** — discards test data, saves change, can start fresh
+> **[Cancel]** — keep testing, discard your changes"
+
+**Pause & Save behavior:**
+- Experiment status → `PAUSED`
+- Data preserved up to pause point
+- Timeline shows "paused" marker with reason ("Settings changed by user")
+- User can resume — but data after resume is tracked separately (pre-pause vs post-pause segments)
+- If resumed, Thompson Sampling uses only post-pause data for winner detection (pre-pause data shown in history but not used for decisions)
+
+**Reset & Save behavior:**
+- Experiment status → `INVALIDATED`
+- All variant assignments cleared
+- Daily summaries archived (visible in history as "invalidated")
+- New config applied
+- User can start a new test manually or autopilot picks it up
+
+**Soft warning (different-slot changes):**
+> "You have an active A/B test for [Trust Badges]. Changing [Scarcity Timer] settings could indirectly affect conversion rates.
+> **[Save Anyway]** · **[Cancel]**"
+
+No data reset — just awareness. The test continues. A note is added to the experiment timeline: "Other settings changed during test: [what changed]"
+
+**Detection logic:**
+```ts
+function classifyChangeRisk(changingSlot: string, runningExperiments: Experiment[]): 'high' | 'medium' | 'low' {
+  const activeSlots = runningExperiments.map(e => e.slot);
+  if (activeSlots.includes(changingSlot)) return 'high';
+  // Cart-affecting slots (addons, layout, checkout)
+  const cartSlots = ['trustBadges', 'scarcityTimer', 'shippingProtection',
+    'freeShippingBar', 'upsellRecommendations', 'socialProof',
+    'checkout', 'layout', 'colors'];
+  if (cartSlots.includes(changingSlot)) return 'medium';
+  return 'low';
+}
+```
+
+**Experiment timeline events:**
+Add a `notes` JSON array to experiments for tracking mid-test events:
+```ts
+notes: Array<{ timestamp: string, type: 'paused' | 'resumed' | 'settings_changed' | 'invalidated', detail: string }>
+```
+
+---
+
 ## Architecture Notes
 
 ### Slot System (Beyond Addons)
@@ -223,3 +289,6 @@ All state is per-store (via `storeId`). Autopilot config lives in `store.config`
 7. Users can create custom variants and run tournament brackets
 8. AI generates additional variants when autopilot is ON
 9. Tournament bracket UI shows match progress and champion
+10. Same-slot edits during active test trigger hard block modal
+11. Different-slot edits show soft warning with option to continue
+12. Paused tests track pre/post-pause data segments separately
