@@ -98,8 +98,6 @@ function CapsuleToggle({
 export default function AddonsPage() {
   const { storeId: STORE_ID, loading: storeLoading, error: storeError } = useStore();
 
-  if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
-  if (storeError || !STORE_ID) return <div style={{padding: 40, textAlign: 'center', color: '#ef4444'}}>Store not found. Please install the app from Shopify.</div>;
 
   const [addons, setAddons] = useState<Record<string, AddonState>>({});
   const [definitions, setDefinitions] = useState<AddonDefinition[]>([]);
@@ -212,6 +210,10 @@ export default function AddonsPage() {
     loadAutopilot();
     loadExperiments();
   }, [load, loadAutopilot, loadExperiments]);
+
+  // ── Early returns (MUST be after all hooks) ────────────────────────────
+  if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
+  if (storeError || !STORE_ID) return <div style={{padding: 40, textAlign: 'center', color: '#ef4444'}}>Store not found. Please install the app from Shopify.</div>;
 
   // ── Autopilot toggle ────────────────────────────────────────────────────
 
