@@ -1,61 +1,72 @@
 'use client';
 
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState, Component, ErrorInfo } from 'react';
 
 interface Props { children: ReactNode; }
 
+// Error boundary to catch and DISPLAY React crashes
+class DashboardErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: string | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error: error.message + '\n' + error.stack };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Dashboard crash:', error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 20, fontFamily: 'system-ui', background: '#fef2f2', minHeight: '100vh' }}>
+          <h2 style={{ color: '#dc2626', fontSize: 16 }}>Dashboard Error</h2>
+          <pre style={{ fontSize: 11, color: '#991b1b', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+            {this.state.error}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function AppBridgeProvider({ children }: Props) {
-  const [ready, setReady] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const host = params.get('host');
-    const shop = params.get('shop');
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const host = params.get('host');
+      const shop = params.get('shop');
 
-    if (host && shop) {
-      (window as any).__shopifyHost = host;
-      (window as any).__shopifyShop = shop;
+      if (host && shop) {
+        (window as any).__shopifyHost = host;
+        (window as any).__shopifyShop = shop;
+      }
+    } catch (e) {
+      console.error('AppBridgeProvider init error:', e);
     }
-
-    // Check if we're inside Shopify admin (embedded mode)
-    const isEmbedded = params.get('embedded') === '1' || !!host;
-
-    if (isEmbedded) {
-      // Wait for App Bridge to initialize (shopify global)
-      const check = () => {
-        if ((window as any).shopify) {
-          setReady(true);
-        } else {
-          // Retry — app-bridge.js loads async from CDN
-          setTimeout(check, 100);
-        }
-      };
-      check();
-
-      // Safety timeout — don't block forever
-      setTimeout(() => setReady(true), 3000);
-    } else {
-      // Not embedded — render immediately
-      setReady(true);
-    }
+    setMounted(true);
   }, []);
 
-  if (!ready) {
+  if (!mounted) {
     return (
-      <div style={{ 
-        minHeight: '100vh', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center',
-        background: '#fafafa',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 14, color: '#6b7280' }}>Loading Cart Optimizer...</div>
-        </div>
+      <div style={{ padding: 20, textAlign: 'center', color: '#6b7280', fontFamily: 'system-ui' }}>
+        Loading...
       </div>
     );
   }
 
-  return <>{children}</>;
+  return (
+    <DashboardErrorBoundary>
+      {children}
+    </DashboardErrorBoundary>
+  );
 }
