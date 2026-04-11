@@ -107,10 +107,21 @@ export function calculateThompsonSampling(
     trafficSplit[v.id] = wins / NUM_SAMPLES;
   }
 
-  // Traffic-adaptive exploration phase
-  // High-traffic stores exit exploration faster (data is meaningful sooner)
-  // Low-traffic stores use a lower bar (can't wait forever for 30/variant)
-  const explorationMin = dailyTraffic >= 500 ? 50 : dailyTraffic >= 50 ? 30 : 20;
+  // Smart exploration phase — based on observed conversion rate + daily traffic
+  // Goal: enough data per variant so Thompson's posterior is stable (not fooled by noise)
+  // Formula: we need the posterior 95% CI to be narrower than ~8pp
+  //   SE = sqrt(p*(1-p)/n), CI width ≈ 2*1.96*SE ≤ 0.08 → n ≥ p*(1-p) / 0.000417
+  // With fallbacks for edge cases (zero conversions, very low traffic)
+  const observedRate = totalObservations > 0
+    ? variants.reduce((s, v) => s + v.successes, 0) / totalObservations
+    : 0.10; // default assumption before any data
+  const rateForCalc = Math.max(0.03, Math.min(observedRate, 0.50)); // clamp to avoid extremes
+  const statisticalMin = Math.ceil(rateForCalc * (1 - rateForCalc) / 0.000417); // ~8pp CI width
+  // Clamp to practical bounds: min 25 (below is noise), max 200 (don't wait forever)
+  const clampedMin = Math.max(25, Math.min(statisticalMin, 200));
+  // Low-traffic stores: reduce by up to 40% (they can't afford to wait)
+  const trafficDiscount = dailyTraffic < 50 ? 0.6 : dailyTraffic < 200 ? 0.8 : 1.0;
+  const explorationMin = Math.max(20, Math.round(clampedMin * trafficDiscount));
 
   if (minObsPerArm < explorationMin) {
     // Exploration: force equal split — no Thompson steering until we have enough data

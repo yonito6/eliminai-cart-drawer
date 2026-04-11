@@ -1457,8 +1457,8 @@ function AddonsPage() {
                           const totalV = exp.totalVisitors ?? 0;
                           const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
                           const liftAbs = Math.abs(exp.liftPercent ?? 0);
-                          // Smart milestones — adaptive to store's real traffic
-                          const minPerVariant = dailyTraffic >= 500 ? 50 : dailyTraffic >= 50 ? 30 : 20;
+                          // Smart milestones — derived from observed conversion rate (API calculates)
+                          const minPerVariant = exp.explorationMinPerVariant || 30;
                           const numVariants = (exp.variantStats || []).length || 2;
                           const minVisitors = minPerVariant * numVariants; // statistical minimum
                           // Time estimate: how many days to reach min visitors at current traffic rate

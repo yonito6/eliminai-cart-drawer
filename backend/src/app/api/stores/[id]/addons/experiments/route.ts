@@ -56,6 +56,14 @@ export async function GET(
           };
         })
       );
+      // Calculate exploration min per experiment based on observed checkout rate
+      const totalCartOpens = variantStats.reduce((s: number, v: any) => s + v.cartOpens, 0);
+      const totalCheckouts = variantStats.reduce((s: number, v: any) => s + v.checkoutClicks, 0);
+      const observedRate = totalCartOpens > 0 ? totalCheckouts / totalCartOpens : 0.10;
+      const rateForCalc = Math.max(0.03, Math.min(observedRate, 0.50));
+      const statisticalMin = Math.ceil(rateForCalc * (1 - rateForCalc) / 0.000417);
+      const clampedMin = Math.max(25, Math.min(statisticalMin, 200));
+
       return {
         id: exp.id,
         name: exp.name,
@@ -70,6 +78,7 @@ export async function GET(
         startedAt: exp.startedAt,
         endedAt: exp.endedAt,
         variantStats,
+        explorationMinPerVariant: clampedMin,
       };
     })
   );
