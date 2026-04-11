@@ -61,10 +61,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid eventType' }, { status: 400 });
   }
 
-  // Dedup: only one CART_OPENED per session (pre-fetch may have already created it server-side)
-  if (body.eventType === 'CART_OPENED') {
+  // Dedup: only one event of each type per session (customer may click checkout multiple times)
+  if (body.eventType === 'CART_OPENED' || body.eventType === 'CHECKOUT_CLICKED') {
     const existing = await prisma.event.findFirst({
-      where: { sessionId: session.id, eventType: 'CART_OPENED' },
+      where: { sessionId: session.id, eventType: body.eventType },
     });
     if (existing) {
       return NextResponse.json({ ok: true, dedup: true }, { status: 200 });
