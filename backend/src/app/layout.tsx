@@ -14,10 +14,6 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <script
-          src={`https://cdn.shopify.com/shopifycloud/app-bridge.js?apiKey=${process.env.NEXT_PUBLIC_SHOPIFY_API_KEY || process.env.SHOPIFY_API_KEY || ''}`}
-          defer
-        />
       </head>
       <body style={{ margin: 0 }}>{children}</body>
     </html>
