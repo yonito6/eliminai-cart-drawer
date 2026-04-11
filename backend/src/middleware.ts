@@ -2,14 +2,19 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
+  // Redirect root to dashboard (Shopify may load / as the app URL)
+  if (request.nextUrl.pathname === '/') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/dashboard';
+    return NextResponse.redirect(url);
+  }
+
   const response = NextResponse.next();
 
-  // Allow Shopify admin (desktop + mobile app) to embed this app in an iframe
-  // Covers: admin.shopify.com, *.myshopify.com, *.shopify.com (mobile app),
-  // shopify: scheme (iOS app), and spin.dev (Shopify dev)
+  // TEMPORARILY allow ALL frame ancestors to debug mobile blank page
   response.headers.set(
     'Content-Security-Policy',
-    "frame-ancestors https://*.myshopify.com https://admin.shopify.com https://*.shopify.com https://*.spin.dev;"
+    "frame-ancestors *;"
   );
 
   // Remove X-Frame-Options if set (conflicts with CSP frame-ancestors)
@@ -20,7 +25,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Apply to all dashboard pages, skip API routes and static files
     '/dashboard/:path*',
     '/',
   ],
