@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import AppBridgeProvider from './app-bridge-provider';
 
@@ -10,17 +11,51 @@ const NAV = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   return (
     <AppBridgeProvider>
-      <div style={{ display: 'flex', minHeight: '100vh' }}>
-        <nav style={{
-          width: 220,
-          background: '#111827',
-          padding: '24px 0',
-          display: 'flex',
-          flexDirection: 'column' as const,
-          flexShrink: 0,
-        }}>
+      <style>{`
+        .dash-wrap { display: flex; min-height: 100vh; }
+        .dash-nav {
+          width: 220px; background: #111827; padding: 24px 0;
+          display: flex; flex-direction: column; flex-shrink: 0;
+        }
+        .dash-mobile-toggle { display: none; }
+        .dash-main { flex: 1; overflow: auto; }
+        @media (max-width: 768px) {
+          .dash-nav {
+            position: fixed; top: 0; left: 0; bottom: 0; z-index: 100;
+            transform: translateX(-100%); transition: transform 0.25s ease;
+          }
+          .dash-nav.open { transform: translateX(0); }
+          .dash-nav-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+            z-index: 99; display: none;
+          }
+          .dash-nav-overlay.open { display: block; }
+          .dash-mobile-toggle {
+            display: flex; align-items: center; gap: 8px;
+            padding: 12px 16px; background: #111827; color: #fff;
+            border: none; font-size: 16px; font-weight: 600;
+            cursor: pointer; width: 100%;
+          }
+          .dash-main { min-width: 0; width: 100%; }
+        }
+      `}</style>
+      <div className="dash-wrap">
+        {/* Mobile hamburger */}
+        <button className="dash-mobile-toggle" onClick={() => setMobileNavOpen(true)}>
+          <span style={{ fontSize: 20 }}>☰</span> Cart Optimizer
+        </button>
+
+        {/* Overlay */}
+        <div
+          className={`dash-nav-overlay${mobileNavOpen ? ' open' : ''}`}
+          onClick={() => setMobileNavOpen(false)}
+        />
+
+        <nav className={`dash-nav${mobileNavOpen ? ' open' : ''}`}>
           <div style={{ padding: '0 20px 24px', fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em' }}>
             Cart Optimizer
           </div>
@@ -30,6 +65,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <a
                 key={n.href}
                 href={n.href}
+                onClick={() => setMobileNavOpen(false)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -50,7 +86,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             );
           })}
         </nav>
-        <main style={{ flex: 1, overflow: 'auto' }}>
+        <main className="dash-main">
           {children}
         </main>
       </div>
