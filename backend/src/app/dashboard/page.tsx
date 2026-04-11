@@ -27,7 +27,7 @@ interface Stats {
 const FEATS = [
   { key: 'showTrustBadges', label: 'Trust Badges', desc: 'Visa/MC/Amex/PayPal icons + "Secure Checkout" below checkout button' },
   { key: 'showScarcityTimer', label: 'Scarcity Timer', desc: '"Cart reserved for 14:59 \u2014 items selling fast!" countdown' },
-  { key: 'showProgressBar', label: 'Rewards', desc: 'Milestone-based progress bar to encourage larger orders' },
+  { key: 'showProgressBar', label: 'Free Shipping Bar', desc: 'Visual progress bar to free shipping threshold' },
   { key: 'showUpsells', label: 'Upsell Recommendations', desc: '"You might also like" product suggestion in cart' },
   { key: 'stickyCheckout', label: 'Sticky Checkout', desc: 'Checkout button stays pinned when scrolling' },
   { key: 'showSocialProof', label: 'Social Proof', desc: '"23 people viewing right now" live indicator' },

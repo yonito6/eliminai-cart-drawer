@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getDefaultAddonsConfig } from '@/lib/addon-definitions';
 
 // POST /api/stores/:id/addons/apply-recommended
-// Enables the 3 recommended addons (trustBadges, rewards/freeShippingBar, scarcityTimer)
+// Enables the 3 recommended addons (trustBadges, freeShippingBar, scarcityTimer)
 // in auto-optimize mode with a testing queue.
 export async function POST(
   req: NextRequest,

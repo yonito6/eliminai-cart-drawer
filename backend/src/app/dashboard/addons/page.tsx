@@ -930,7 +930,7 @@ function AddonsPage() {
                   margin: '4px 0 0',
                 }}
               >
-                Enable Trust Badges + Rewards + Scarcity Timer with
+                Enable Trust Badges + Free Shipping Bar + Scarcity Timer with
                 Auto-Optimize
               </p>
             </div>
