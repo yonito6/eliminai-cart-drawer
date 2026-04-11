@@ -199,47 +199,44 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     }
   }
 
-  // ── Free Shipping Bar: dynamic threshold, text, style, position ────
+  // ── Rewards (freeShippingBar): milestone-based progress bar ────
   if (addonKey === 'freeShippingBar') {
-    const threshold = addonConfig.threshold || 75;
-    const textTemplate = addonConfig.textTemplate || 'spend-more';
-    const barStyle = addonConfig.style || 'full-progress';
+    const m1Label = addonConfig.milestone1Label || themeSettings?.ccd_milestone1_label || 'Free shipping';
+    const m2Label = addonConfig.milestone2Label || themeSettings?.ccd_milestone2_label || '2+1 FREE';
     const position = addonConfig.position || 'above-items';
 
-    const cartTotal = 184.98; // from demo cart
-    const remaining = Math.max(0, threshold - cartTotal);
-    const pct = Math.min(100, (cartTotal / threshold) * 100);
-    const reached = remaining <= 0;
+    // Demo cart has 2 items — milestone 1 reached, milestone 2 not yet
+    const rewardsHtml = '<div class="ccd-progress" data-ccd-progress style="padding:10px 0">'
+      + '<div class="ccd-progress__message" style="text-align:center;font-size:12px;margin-bottom:10px">Add <strong>1</strong> more for <strong>FREE</strong></div>'
+      + '<div class="ccd-progress__bar-wrap" style="display:flex;align-items:center;gap:0;padding:0 8px">'
+      // Line 1 (filled — milestone 1 reached)
+      + '<div style="flex:1;height:3px;background:var(--ccd-success,#22c55e);border-radius:2px"></div>'
+      // Milestone 1 icon (reached)
+      + '<div style="display:flex;flex-direction:column;align-items:center;margin:0 4px">'
+      + '<div style="width:28px;height:28px;border-radius:50%;background:var(--ccd-success,#22c55e);display:flex;align-items:center;justify-content:center;font-size:14px">🚚</div>'
+      + '<span style="font-size:10px;color:#111;font-weight:600;margin-top:2px">' + m1Label + '</span></div>'
+      // Line 2 (half — approaching milestone 2)
+      + '<div style="flex:1;height:3px;background:linear-gradient(to right,var(--ccd-success,#22c55e) 50%,#e5e5e5 50%);border-radius:2px"></div>'
+      // Milestone 2 icon (not yet reached)
+      + '<div style="display:flex;flex-direction:column;align-items:center;margin:0 4px">'
+      + '<div style="width:28px;height:28px;border-radius:50%;background:#e5e5e5;display:flex;align-items:center;justify-content:center;font-size:14px">🏷️</div>'
+      + '<span style="font-size:10px;color:#999;margin-top:2px">' + m2Label + '</span></div>'
+      + '</div></div>';
 
-    const textMap: Record<string, string> = {
-      'spend-more': reached ? '🎉 You qualify for <strong>FREE shipping!</strong>' : 'Spend <strong>$' + remaining.toFixed(2) + '</strong> more for <strong>FREE shipping!</strong>',
-      'almost-there': reached ? '🎉 <strong>Free shipping</strong> unlocked!' : "You're only <strong>$" + remaining.toFixed(2) + '</strong> away from free shipping!',
-    };
-    const barText = textMap[textTemplate] || textMap['spend-more'];
-
-    let barHtml = '';
-    if (barStyle === 'thin-bar') {
-      barHtml = '<div id="ccd-free-shipping" style="padding:8px 0;text-align:center"><div style="font-size:12px;margin-bottom:6px">' + barText + '</div><div style="height:3px;background:#e5e5e5;border-radius:2px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--ccd-success);border-radius:2px;transition:width 0.3s"></div></div></div>';
-    } else {
-      barHtml = '<div id="ccd-free-shipping" style="padding:10px 0;text-align:center"><div style="font-size:13px;margin-bottom:8px">' + barText + '</div><div style="height:6px;background:#e5e5e5;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--ccd-success);border-radius:3px;transition:width 0.3s"></div></div></div>';
-    }
-
-    // Remove existing progress bar if placing in same spot
     if (position === 'header') {
       cartHtml = cartHtml.replace(
         '<div class="drawer__fixed-header">',
-        '<div class="drawer__fixed-header">' + barHtml
+        '<div class="drawer__fixed-header">' + rewardsHtml
       );
     } else if (position === 'below-items') {
       cartHtml = cartHtml.replace(
         '<div class="ccd-sticky-footer">',
-        '<div class="ccd-sticky-footer">' + barHtml
+        '<div class="ccd-sticky-footer">' + rewardsHtml
       );
     } else {
-      // above-items (default) — before cart__items
       cartHtml = cartHtml.replace(
         '<div class="cart__items">',
-        barHtml + '<div class="cart__items">'
+        rewardsHtml + '<div class="cart__items">'
       );
     }
   }
