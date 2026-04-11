@@ -34,11 +34,10 @@ export async function POST(req: NextRequest) {
   for (const exp of experiments) {
     const variants = exp.variants as any[];
     const variantStats = [];
-    const purchaseStats = [];
+    const displayStats = [];
 
     for (const v of variants) {
       // Count UNIQUE sessions (not raw events) — one user = one data point
-      // regardless of how many times they opened the cart
       const uniqueCartSessions = await prisma.event.groupBy({
         by: ['sessionId'],
         where: {
@@ -53,27 +52,31 @@ export async function POST(req: NextRequest) {
           eventType: 'CHECKOUT_CLICKED',
         },
       });
+      const uniqueOrderSessions = await prisma.event.groupBy({
+        by: ['sessionId'],
+        where: {
+          assignment: { experimentId: exp.id, variantId: v.id },
+          eventType: 'ORDER_COMPLETED',
+        },
+      });
 
       const uniqueOpens = uniqueCartSessions.length;
       const uniqueCheckouts = uniqueCheckoutSessions.length;
-      const uniqueOrderSessions = await prisma.event.groupBy({
-        by: ["sessionId"],
-        where: {
-          assignment: { experimentId: exp.id, variantId: v.id },
-          eventType: "ORDER_COMPLETED",
-        },
-      });
       const uniqueOrders = uniqueOrderSessions.length;
 
+      // Thompson optimizes for ORDERS (not checkouts)
+      // successes = orders, failures = cart opens without order
       variantStats.push({
         id: v.id,
-        successes: uniqueCheckouts,
-        failures: Math.max(0, uniqueOpens - uniqueCheckouts),
+        successes: uniqueOrders,
+        failures: Math.max(0, uniqueOpens - uniqueOrders),
       });
-      purchaseStats.push({
+      // Display stats — checkout rate shown on dashboard but NOT used by algorithm
+      displayStats.push({
         id: v.id,
-        orders: uniqueOrders,
+        cartOpens: uniqueOpens,
         checkouts: uniqueCheckouts,
+        orders: uniqueOrders,
       });
     }
 
@@ -95,11 +98,11 @@ export async function POST(req: NextRequest) {
 
     const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
 
-    // Run Thompson Sampling with full options
+    // Run Thompson Sampling — optimizes for order rate (orders / cart opens)
     const ts = calculateThompsonSampling(variantStats, {
       priors,
       dailyTraffic,
-      purchaseStats,
+      displayStats,
       minDaysRunning: daysRunning,
     });
 
@@ -169,9 +172,8 @@ export async function POST(req: NextRequest) {
       trafficSplit: ts.trafficSplit,
       dailyTraffic,
       crossStorePriors: Object.keys(priors).length > 0,
+      orderRates: ts.orderRates,
       checkoutRates: ts.checkoutRates,
-      purchaseRates: ts.purchaseRates,
-      compositeScores: ts.compositeScores,
     });
   }
 

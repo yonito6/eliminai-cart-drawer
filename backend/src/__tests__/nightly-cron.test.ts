@@ -43,7 +43,7 @@ vi.mock('../lib/prisma', () => ({
       update: vi.fn(),
     },
     event: {
-      count: vi.fn(),
+      groupBy: vi.fn(),
       deleteMany: vi.fn(),
     },
     dailySummary: {
@@ -55,6 +55,7 @@ vi.mock('../lib/prisma', () => ({
 // Mock Thompson Sampling — deterministic results for tests
 vi.mock('../lib/thompson', () => ({
   calculateThompsonSampling: vi.fn(),
+  buildCrossStorePriors: vi.fn().mockReturnValue({}),
 }));
 
 import { prisma } from '../lib/prisma';
@@ -107,12 +108,15 @@ const DEFAULT_TS_RESULT = {
   trafficSplit: { control: 0.35, treatment: 0.65 },
 };
 
-// Helper: set event.count to return n for all calls
-function mockEventCounts(cartOpens: number, checkoutClicks: number) {
-  (prisma.event.count as any).mockImplementation(({ where }: any) => {
-    if (where?.eventType === 'CART_OPENED') return Promise.resolve(cartOpens);
-    if (where?.eventType === 'CHECKOUT_CLICKED') return Promise.resolve(checkoutClicks);
-    return Promise.resolve(0);
+// Helper: mock groupBy to return arrays of { sessionId } with given lengths
+function mockEventGroupBy(cartOpens: number, checkoutClicks: number, orders: number = 0) {
+  const makeSessions = (n: number) => Array.from({ length: n }, (_, i) => ({ sessionId: `s${i}` }));
+  (prisma.event.groupBy as any).mockImplementation(({ where }: any) => {
+    const eventType = where?.eventType;
+    if (eventType === 'CART_OPENED') return Promise.resolve(makeSessions(cartOpens));
+    if (eventType === 'CHECKOUT_CLICKED') return Promise.resolve(makeSessions(checkoutClicks));
+    if (eventType === 'ORDER_COMPLETED') return Promise.resolve(makeSessions(orders));
+    return Promise.resolve([]);
   });
 }
 
@@ -128,8 +132,8 @@ describe('POST /api/cron/nightly', () => {
     (prisma.event.deleteMany as any).mockResolvedValue({ count: 42 });
     (calculateThompsonSampling as any).mockReturnValue(DEFAULT_TS_RESULT);
 
-    // Default event counts: 100 opens, 20 clicks (20% rate, matches baseline)
-    mockEventCounts(100, 20);
+    // Default event counts: 100 opens, 20 clicks, 5 orders
+    mockEventGroupBy(100, 20, 5);
   });
 
   // LOCK-1: Wrong secret → 401
@@ -187,12 +191,13 @@ describe('POST /api/cron/nightly', () => {
     expect(json.experiments[0].status).toBe('WINNER_FOUND');
   });
 
-  // LOCK-4: NO_DIFFERENCE when confidence >= 0.95 AND lift <= 1%
-  it('LOCK-4: sets status to NO_DIFFERENCE when confidence>=0.95 but lift<=1%', async () => {
+  // LOCK-4: NO_DIFFERENCE when Thompson reports no meaningful difference
+  it('LOCK-4: sets status to NO_DIFFERENCE when Thompson reports no meaningful difference', async () => {
     (calculateThompsonSampling as any).mockReturnValue({
       confidence: 0.96,
       liftPercent: 0.5,
-      winnerId: 'control',
+      winnerId: null,
+      reason: 'No meaningful difference (lift 0.5% with 96.0% confidence)',
       trafficSplit: { control: 0.52, treatment: 0.48 },
     });
     const POST = await getHandler();
@@ -268,11 +273,7 @@ describe('POST /api/cron/nightly', () => {
   // LOCK-6: REVERTED when 48h checkout rate drops >5% below baseline
   it('LOCK-6: sets REVERTED when recent checkout rate drops more than 5% below baseline', async () => {
     // baseline = 0.20, recent = 5/100 = 0.05 → way below 0.20*0.95=0.19
-    (prisma.event.count as any).mockImplementation(({ where }: any) => {
-      if (where?.eventType === 'CART_OPENED') return Promise.resolve(100);
-      if (where?.eventType === 'CHECKOUT_CLICKED') return Promise.resolve(5); // 5% rate
-      return Promise.resolve(0);
-    });
+    mockEventGroupBy(100, 5, 2);
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');
     const res = await POST(req);
@@ -389,7 +390,7 @@ describe('POST /api/cron/nightly', () => {
     };
     (prisma.experiment.findMany as any).mockResolvedValue([expNoBaseline]);
     // Even with very low checkout counts, should NOT revert
-    (prisma.event.count as any).mockResolvedValue(0);
+    mockEventGroupBy(0, 0, 0);
 
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');
@@ -408,7 +409,7 @@ describe('POST /api/cron/nightly', () => {
       store: { ...MOCK_STORE, baselineCheckoutRate: 0 },
     };
     (prisma.experiment.findMany as any).mockResolvedValue([expZeroBaseline]);
-    (prisma.event.count as any).mockResolvedValue(0);
+    mockEventGroupBy(0, 0, 0);
 
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');
@@ -423,11 +424,7 @@ describe('POST /api/cron/nightly', () => {
 
   // LOCK-11c: Safety check skipped when recentOpens <= 20 (not enough data)
   it('LOCK-11c: skips revert when recent opens are <= 20 (insufficient data)', async () => {
-    (prisma.event.count as any).mockImplementation(({ where }: any) => {
-      if (where?.eventType === 'CART_OPENED') return Promise.resolve(10); // only 10 opens
-      if (where?.eventType === 'CHECKOUT_CLICKED') return Promise.resolve(0); // 0% rate
-      return Promise.resolve(0);
-    });
+    mockEventGroupBy(10, 0, 0);
 
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');

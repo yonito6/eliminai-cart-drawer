@@ -92,18 +92,19 @@ export async function POST(req: NextRequest) {
             eventType: 'CART_OPENED',
           },
         });
-        const uniqueCheckoutSessions = await prisma.event.groupBy({
+        const uniqueOrderSessions = await prisma.event.groupBy({
           by: ['sessionId'],
           where: {
             assignment: { experimentId: exp.id, variantId: v.id },
-            eventType: 'CHECKOUT_CLICKED',
+            eventType: 'ORDER_COMPLETED',
           },
         });
 
+        // Thompson optimizes for ORDERS (not checkouts)
         variantStats.push({
           id: v.id,
-          successes: uniqueCheckoutSessions.length,
-          failures: Math.max(0, uniqueCartSessions.length - uniqueCheckoutSessions.length),
+          successes: uniqueOrderSessions.length,
+          failures: Math.max(0, uniqueCartSessions.length - uniqueOrderSessions.length),
         });
       }
 

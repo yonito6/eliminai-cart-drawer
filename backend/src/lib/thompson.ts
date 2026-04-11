@@ -3,19 +3,20 @@ const jStat = require('jstat');
 
 interface VariantStats {
   id: string;
-  successes: number;
-  failures: number;
+  successes: number;  // ORDER_COMPLETED count (the metric we optimize for)
+  failures: number;   // CART_OPENED without ORDER_COMPLETED
 }
 
-interface VariantPurchaseStats {
+interface VariantDisplayStats {
   id: string;
-  orders: number;      // unique sessions with ORDER_COMPLETED
-  checkouts: number;   // unique sessions with CHECKOUT_CLICKED (denominator)
+  cartOpens: number;
+  checkouts: number;
+  orders: number;
 }
 
 interface Prior {
-  alpha: number;  // prior successes
-  beta: number;   // prior failures
+  alpha: number;  // prior successes (orders)
+  beta: number;   // prior failures (non-orders)
 }
 
 interface ThompsonOptions {
@@ -23,8 +24,8 @@ interface ThompsonOptions {
   priors?: Record<string, Prior>;
   // Traffic tier affects winner declaration thresholds
   dailyTraffic?: number;
-  // Purchase stats — used for composite scoring (checkout + purchase)
-  purchaseStats?: VariantPurchaseStats[];
+  // Display stats — checkout & order rates for dashboard (NOT used in algorithm)
+  displayStats?: VariantDisplayStats[];
   // Minimum calendar days before declaring winner (day-of-week effects)
   minDaysRunning?: number;
 }
@@ -36,24 +37,31 @@ interface ThompsonResult {
   winnerId: string | null;
   liftPercent: number;
   reason?: string;              // Why winner was/wasn't declared
-  checkoutRates?: Record<string, number>;  // Per-variant checkout rate
-  purchaseRates?: Record<string, number>;  // Per-variant purchase rate
-  compositeScores?: Record<string, number>; // 0.4*checkout + 0.6*purchase
+  orderRates?: Record<string, number>;     // Per-variant order rate (orders/cartOpens) — THE metric
+  checkoutRates?: Record<string, number>;  // Per-variant checkout rate — display only
+  explorationMinPerVariant?: number;       // Exported for dashboard progress display
 }
 
 const NUM_SAMPLES = 10000;
 
 /**
- * Thompson Sampling with:
- * 1. Cross-store hierarchical priors (borrow strength from other stores)
- * 2. Expected loss stopping rule (Spotify approach — faster than pure confidence)
- * 3. Traffic-adaptive thresholds
+ * Thompson Sampling — optimizes for ORDER rate (orders / cart opens).
+ *
+ * successes = ORDER_COMPLETED, failures = CART_OPENED without order.
+ * Checkout clicks are display-only and never fed into the algorithm.
+ *
+ * Why orders not checkouts: A variant with aggressive scarcity might get
+ * 50 checkout clicks but 1 order, while a calmer variant gets 6 clicks
+ * but 5 orders. Checkout-steered Thompson would starve the real winner.
+ *
+ * With rare order events, Thompson naturally stays ~50/50 (wide posteriors
+ * overlap), so no special "checkout-steered phase" is needed.
  */
 export function calculateThompsonSampling(
   variants: VariantStats[],
   options: ThompsonOptions = {}
 ): ThompsonResult {
-  const { priors = {}, dailyTraffic = 100, purchaseStats, minDaysRunning = 0 } = options;
+  const { priors = {}, dailyTraffic = 100, displayStats, minDaysRunning = 0 } = options;
 
   // Draw samples from Beta distribution for each variant
   // Prior: cross-store data if available, otherwise weak uninformative Beta(1, 1)
@@ -107,19 +115,19 @@ export function calculateThompsonSampling(
     trafficSplit[v.id] = wins / NUM_SAMPLES;
   }
 
-  // Smart exploration phase — based on observed conversion rate + daily traffic
-  // Goal: enough data per variant so Thompson's posterior is stable (not fooled by noise)
-  // Formula: we need the posterior 95% CI to be narrower than ~8pp
-  //   SE = sqrt(p*(1-p)/n), CI width ≈ 2*1.96*SE ≤ 0.08 → n ≥ p*(1-p) / 0.000417
-  // With fallbacks for edge cases (zero conversions, very low traffic)
+  // Compute totals FIRST (used by exploration + winner declaration)
+  const totalObservations = variants.reduce((s, v) => s + v.successes + v.failures, 0);
+  const minObsPerArm = Math.min(...variants.map(v => v.successes + v.failures));
+
+  // Smart exploration phase — based on observed ORDER rate + daily traffic
+  // Goal: enough data per variant so Thompson's posterior is stable
+  // Formula: n ≥ p*(1-p) / 0.000417 for ~8pp CI width
   const observedRate = totalObservations > 0
     ? variants.reduce((s, v) => s + v.successes, 0) / totalObservations
-    : 0.10; // default assumption before any data
-  const rateForCalc = Math.max(0.03, Math.min(observedRate, 0.50)); // clamp to avoid extremes
-  const statisticalMin = Math.ceil(rateForCalc * (1 - rateForCalc) / 0.000417); // ~8pp CI width
-  // Clamp to practical bounds: min 25 (below is noise), max 200 (don't wait forever)
+    : 0.03; // default assumption: ~3% order rate before any data
+  const rateForCalc = Math.max(0.01, Math.min(observedRate, 0.50));
+  const statisticalMin = Math.ceil(rateForCalc * (1 - rateForCalc) / 0.000417);
   const clampedMin = Math.max(25, Math.min(statisticalMin, 200));
-  // Low-traffic stores: reduce by up to 40% (they can't afford to wait)
   const trafficDiscount = dailyTraffic < 50 ? 0.6 : dailyTraffic < 200 ? 0.8 : 1.0;
   const explorationMin = Math.max(20, Math.round(clampedMin * trafficDiscount));
 
@@ -151,13 +159,6 @@ export function calculateThompsonSampling(
     : 0;
 
   // ── Winner declaration: traffic-adaptive thresholds ──
-  // Low traffic: need higher confidence (less data = more noise)
-  // High traffic: can trust lower confidence (more data = less noise)
-  // Expected loss must be below threshold regardless (Spotify approach)
-
-  const totalObservations = variants.reduce((s, v) => s + v.successes + v.failures, 0);
-  const minObsPerArm = Math.min(...variants.map(v => v.successes + v.failures));
-
   let winnerId: string | null = null;
   let reason = '';
 
@@ -207,26 +208,18 @@ export function calculateThompsonSampling(
 
 
   // Calculate per-variant rates for display
-  const checkoutRates: Record<string, number> = {};
-  const purchaseRates: Record<string, number> = {};
-  const compositeScores: Record<string, number> = {};
+  // Order rate = the primary metric (what Thompson optimizes)
+  const orderRates: Record<string, number> = {};
   for (const v of variants) {
     const total = v.successes + v.failures;
-    checkoutRates[v.id] = total > 0 ? v.successes / total : 0;
+    orderRates[v.id] = total > 0 ? v.successes / total : 0;
   }
-  if (purchaseStats && purchaseStats.length > 0) {
-    for (const ps of purchaseStats) {
-      purchaseRates[ps.id] = ps.checkouts > 0 ? ps.orders / ps.checkouts : 0;
-    }
-  }
-  // Composite: 0.4 * checkout rate + 0.6 * purchase rate
-  // If no purchase data yet, fall back to checkout-only
-  const hasPurchaseData = Object.values(purchaseRates).some(r => r > 0);
-  for (const v of variants) {
-    if (hasPurchaseData) {
-      compositeScores[v.id] = 0.4 * (checkoutRates[v.id] || 0) + 0.6 * (purchaseRates[v.id] || 0);
-    } else {
-      compositeScores[v.id] = checkoutRates[v.id] || 0;
+
+  // Checkout rate = display-only metric (NOT used by Thompson)
+  const checkoutRates: Record<string, number> = {};
+  if (displayStats && displayStats.length > 0) {
+    for (const ds of displayStats) {
+      checkoutRates[ds.id] = ds.cartOpens > 0 ? ds.checkouts / ds.cartOpens : 0;
     }
   }
 
@@ -237,9 +230,9 @@ export function calculateThompsonSampling(
     winnerId,
     liftPercent,
     reason,
-    checkoutRates,
-    purchaseRates: hasPurchaseData ? purchaseRates : undefined,
-    compositeScores: hasPurchaseData ? compositeScores : undefined,
+    orderRates,
+    checkoutRates: Object.keys(checkoutRates).length > 0 ? checkoutRates : undefined,
+    explorationMinPerVariant: explorationMin,
   };
 }
 
