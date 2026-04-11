@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Debug</title>
+</head>
+<body style="margin:0;padding:20px;font-family:system-ui;background:#fafafa">
+  <h2 style="color:#111">Cart Optimizer Debug</h2>
+  <p id="info">Loading...</p>
+  <script>
+    var info = [];
+    info.push('URL: ' + location.href);
+    info.push('UserAgent: ' + navigator.userAgent.substring(0, 80));
+    info.push('InIframe: ' + (window !== window.top));
+    info.push('Width: ' + window.innerWidth + 'x' + window.innerHeight);
+    info.push('Params: ' + location.search);
+    try {
+      info.push('Shopify global: ' + (typeof window.shopify));
+    } catch(e) {
+      info.push('Shopify error: ' + e.message);
+    }
+    document.getElementById('info').innerHTML = info.join('<br>');
+  </script>
+</body>
+</html>

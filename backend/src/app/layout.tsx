@@ -19,10 +19,18 @@ export default function RootLayout({
         {apiKey && (
           <script
             src={`https://cdn.shopify.com/shopifycloud/app-bridge.js?apiKey=${apiKey}`}
+            async
           />
         )}
       </head>
-      <body style={{ margin: 0 }}>{children}</body>
+      <body style={{ margin: 0 }}>
+        <noscript>
+          <div style={{ padding: 20, textAlign: 'center' as const }}>
+            JavaScript is required to use Cart Optimizer.
+          </div>
+        </noscript>
+        {children}
+      </body>
     </html>
   );
 }
