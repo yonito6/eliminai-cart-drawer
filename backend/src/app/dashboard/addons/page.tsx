@@ -1457,8 +1457,8 @@ function AddonsPage() {
                           const totalV = exp.totalVisitors ?? 0;
                           const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
                           const liftAbs = Math.abs(exp.liftPercent ?? 0);
-                          // Smart milestones based on real store traffic (dailyTraffic = unique cart opens/day from last 7 days)
-                          const minPerVariant = 30;
+                          // Smart milestones — adaptive to store's real traffic
+                          const minPerVariant = dailyTraffic >= 500 ? 50 : dailyTraffic >= 50 ? 30 : 20;
                           const numVariants = (exp.variantStats || []).length || 2;
                           const minVisitors = minPerVariant * numVariants; // statistical minimum
                           // Time estimate: how many days to reach min visitors at current traffic rate
@@ -1503,8 +1503,32 @@ function AddonsPage() {
 
                       {/* What's being tested */}
                       <div style={{ marginBottom: 16, padding: 14, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
-                          What we're testing
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
+                            What we're testing
+                          </div>
+                          {testing && exp.trafficSplit && (() => {
+                            const splits = Object.values(exp.trafficSplit as Record<string, number>);
+                            const maxSplit = Math.max(...splits);
+                            const isUnbalanced = maxSplit > 0.65;
+                            if (!isUnbalanced) return null;
+                            return (
+                              <button
+                                onClick={async () => {
+                                  if (!storeId) return;
+                                  await fetch('/api/stores/' + storeId + '/addons/experiments', {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ experimentId: exp.id }),
+                                  });
+                                  fetchExperiments();
+                                }}
+                                style={{ fontSize: 11, padding: '4px 10px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+                              >
+                                Rebalance to 50/50
+                              </button>
+                            );
+                          })()}
                         </div>
                         <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
                           Each visitor sees one of these {(exp.variantStats || []).length} versions. The system automatically sends more traffic to the version that converts best.

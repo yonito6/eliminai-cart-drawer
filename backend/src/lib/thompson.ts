@@ -107,17 +107,23 @@ export function calculateThompsonSampling(
     trafficSplit[v.id] = wins / NUM_SAMPLES;
   }
 
-  // Exploration phase: force near-equal split until we have enough data per variant
-  // This prevents early lucky conversions from starving a variant (feedback loop)
-  if (minObsPerArm < 30) {
+  // Traffic-adaptive exploration phase
+  // High-traffic stores exit exploration faster (data is meaningful sooner)
+  // Low-traffic stores use a lower bar (can't wait forever for 30/variant)
+  const explorationMin = dailyTraffic >= 500 ? 50 : dailyTraffic >= 50 ? 30 : 20;
+
+  if (minObsPerArm < explorationMin) {
+    // Exploration: force equal split — no Thompson steering until we have enough data
     const equalShare = 1 / variants.length;
     for (const id of Object.keys(trafficSplit)) {
       trafficSplit[id] = equalShare;
     }
   } else {
-    // Safety floor: no variant gets less than 10% (was 5%, raised for better balance)
+    // Exploitation: Thompson steers traffic, but with a safety floor
+    // Floor scales inversely with traffic — high-traffic can be more aggressive
+    const safetyFloor = dailyTraffic >= 500 ? 0.05 : dailyTraffic >= 50 ? 0.10 : 0.15;
     for (const id of Object.keys(trafficSplit)) {
-      if (trafficSplit[id] < 0.10) trafficSplit[id] = 0.10;
+      if (trafficSplit[id] < safetyFloor) trafficSplit[id] = safetyFloor;
     }
     // Normalize
     const total = Object.values(trafficSplit).reduce((a, b) => a + b, 0);
@@ -148,9 +154,9 @@ export function calculateThompsonSampling(
   if (minDaysRunning < 3) {
     reason = 'Need at least 3 days to capture traffic patterns';
   }
-  // Minimum observations check
-  else if (minObsPerArm < 30) {
-    reason = 'Need at least 30 unique visitors per variant';
+  // Minimum observations check (traffic-adaptive)
+  else if (minObsPerArm < explorationMin) {
+    reason = `Need at least ${explorationMin} unique visitors per variant (${dailyTraffic}/day traffic)`;
   }
   // Traffic-adaptive winner declaration
   else {

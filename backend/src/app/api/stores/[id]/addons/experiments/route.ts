@@ -92,3 +92,35 @@ export async function GET(
 
   return NextResponse.json({ experiments: bySlot, dailyTraffic });
 }
+
+// PATCH /api/stores/:id/addons/experiments — rebalance a running experiment
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const body = await req.json().catch(() => null);
+  if (!body?.experimentId) {
+    return NextResponse.json({ error: 'Missing experimentId' }, { status: 400 });
+  }
+
+  const experiment = await prisma.experiment.findFirst({
+    where: { id: body.experimentId, storeId: params.id, status: 'RUNNING' },
+  });
+  if (!experiment) {
+    return NextResponse.json({ error: 'Experiment not found or not running' }, { status: 404 });
+  }
+
+  // Reset traffic split to equal distribution
+  const variants = experiment.variants as any[];
+  const equalSplit: Record<string, number> = {};
+  for (const v of variants) {
+    equalSplit[v.id] = 1 / variants.length;
+  }
+
+  await prisma.experiment.update({
+    where: { id: experiment.id },
+    data: { trafficSplit: equalSplit },
+  });
+
+  return NextResponse.json({ ok: true, trafficSplit: equalSplit });
+}
