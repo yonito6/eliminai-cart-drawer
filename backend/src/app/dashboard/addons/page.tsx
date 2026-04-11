@@ -1515,8 +1515,8 @@ function AddonsPage() {
                             return (
                               <button
                                 onClick={async () => {
-                                  if (!storeId) return;
-                                  await fetch('/api/stores/' + storeId + '/addons/experiments', {
+                                  if (!STORE_ID) return;
+                                  await fetch('/api/stores/' + STORE_ID + '/addons/experiments', {
                                     method: 'PATCH',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ experimentId: exp.id }),
