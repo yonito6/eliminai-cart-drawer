@@ -36,18 +36,47 @@ export async function POST(req: NextRequest) {
   const variantId = attrs.find((a: any) => a.name === '_eliminai_variant')?.value;
   const experimentId = attrs.find((a: any) => a.name === '_eliminai_experiment')?.value;
 
-  if (!sessionToken) {
-    // Order not from our cart drawer — skip silently
-    return NextResponse.json({ ok: true, matched: false });
+  // Find the store from shop domain (webhook header)
+  const shopDomain = req.headers.get('x-shopify-shop-domain');
+
+  // Primary path: match via cart attributes
+  let session: any = null;
+  if (sessionToken) {
+    session = await prisma.visitorSession.findUnique({
+      where: { sessionToken },
+    });
   }
 
-  // Find the visitor session
-  const session = await prisma.visitorSession.findUnique({
-    where: { sessionToken },
-  });
+  // Fallback: if no cart attributes (express checkout, Buy Now, cleared cart),
+  // try to find a recent session for this store that had a CHECKOUT_CLICKED
+  // within the last 30 minutes — likely the same customer
+  if (!session && shopDomain) {
+    const store = await prisma.store.findUnique({ where: { shopDomain } });
+    if (store) {
+      const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+      const recentCheckout = await prisma.event.findFirst({
+        where: {
+          storeId: store.id,
+          eventType: 'CHECKOUT_CLICKED',
+          createdAt: { gte: thirtyMinAgo },
+        },
+        orderBy: { createdAt: 'desc' },
+        include: { session: true },
+      });
+      if (recentCheckout?.session) {
+        // Verify this session doesn't already have an ORDER_COMPLETED
+        const alreadyOrdered = await prisma.event.findFirst({
+          where: { sessionId: recentCheckout.sessionId, eventType: 'ORDER_COMPLETED' },
+        });
+        if (!alreadyOrdered) {
+          session = recentCheckout.session;
+        }
+      }
+    }
+  }
 
   if (!session) {
-    return NextResponse.json({ ok: true, matched: false, reason: 'session_not_found' });
+    return NextResponse.json({ ok: true, matched: false, reason: sessionToken ? 'session_not_found' : 'no_attributes' });
   }
 
   // Check if ORDER_COMPLETED already recorded for this order (dedup)

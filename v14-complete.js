@@ -1469,19 +1469,26 @@
       var sess = this.getSessionToken();
       var now = new Date();
 
-      fetch('/apps/eliminai-cart/event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionToken: sess.token,
-          experimentId: cached && cached.experiment ? cached.experiment.id : null,
-          variantId: cached && cached.experiment ? cached.experiment.variant : null,
-          eventType: eventType,
-          hourOfDay: now.getHours(),
-          dayOfWeek: now.getDay(),
-          metadata: metadata || {}
-        })
-      }).catch(function() {});
+      var payload = JSON.stringify({
+        sessionToken: sess.token,
+        experimentId: cached && cached.experiment ? cached.experiment.id : null,
+        variantId: cached && cached.experiment ? cached.experiment.variant : null,
+        eventType: eventType,
+        hourOfDay: now.getHours(),
+        dayOfWeek: now.getDay(),
+        metadata: metadata || {}
+      });
+
+      // Use sendBeacon for CHECKOUT_CLICKED — page navigates away before fetch completes
+      if (eventType === 'CHECKOUT_CLICKED' && navigator.sendBeacon) {
+        navigator.sendBeacon('/apps/eliminai-cart/event', new Blob([payload], { type: 'application/json' }));
+      } else {
+        fetch('/apps/eliminai-cart/event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload
+        }).catch(function() {});
+      }
     },
 
     // Addon key → inject/remove handlers. Add new addons here — everything else is automatic.
@@ -1622,6 +1629,7 @@
   if (drawerEl) {
     observer.observe(drawerEl, { attributes: true, attributeFilter: ['class'] });
     if (drawerEl.classList.contains('drawer--is-open')) {
+      CCD.refreshOnOpen();
       CCD.ensureProtection();
     }
   }
