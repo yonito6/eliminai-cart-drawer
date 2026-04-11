@@ -107,14 +107,23 @@ export function calculateThompsonSampling(
     trafficSplit[v.id] = wins / NUM_SAMPLES;
   }
 
-  // Safety floor: no variant gets less than 5%
-  for (const id of Object.keys(trafficSplit)) {
-    if (trafficSplit[id] < 0.05) trafficSplit[id] = 0.05;
-  }
-  // Normalize
-  const total = Object.values(trafficSplit).reduce((a, b) => a + b, 0);
-  for (const id of Object.keys(trafficSplit)) {
-    trafficSplit[id] = trafficSplit[id] / total;
+  // Exploration phase: force near-equal split until we have enough data per variant
+  // This prevents early lucky conversions from starving a variant (feedback loop)
+  if (minObsPerArm < 30) {
+    const equalShare = 1 / variants.length;
+    for (const id of Object.keys(trafficSplit)) {
+      trafficSplit[id] = equalShare;
+    }
+  } else {
+    // Safety floor: no variant gets less than 10% (was 5%, raised for better balance)
+    for (const id of Object.keys(trafficSplit)) {
+      if (trafficSplit[id] < 0.10) trafficSplit[id] = 0.10;
+    }
+    // Normalize
+    const total = Object.values(trafficSplit).reduce((a, b) => a + b, 0);
+    for (const id of Object.keys(trafficSplit)) {
+      trafficSplit[id] = trafficSplit[id] / total;
+    }
   }
 
   // Lift calculation
