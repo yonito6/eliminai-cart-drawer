@@ -1414,10 +1414,16 @@
     loadExperiment: function(callback, prefetch) {
       var cached = null;
       try { cached = JSON.parse(sessionStorage.getItem('ecart_config')); } catch(e) {}
-      if (cached) { callback(cached); return; }
 
       var sess = this.getSessionToken();
       var self = this;
+
+      if (cached) {
+        callback(cached);
+        // Always re-stamp cart attributes (cart may have been cleared at checkout)
+        self.writeCartAttributes(sess.token, cached);
+        return;
+      }
 
       fetch('/apps/eliminai-cart/config', {
         method: 'POST',
