@@ -33,10 +33,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           display: flex; flex-direction: column; flex-shrink: 0;
         }
         .dash-mobile-toggle { display: none; }
-        .dash-main { flex: 1; overflow: auto; }
+        .dash-main { flex: 1; overflow: auto; min-width: 0; }
         @media (max-width: 768px) {
+          .dash-wrap { flex-direction: column; }
           .dash-nav {
             position: fixed; top: 0; left: 0; bottom: 0; z-index: 100;
+            width: 220px;
             transform: translateX(-100%); transition: transform 0.25s ease;
           }
           .dash-nav.open { transform: translateX(0); }
@@ -51,7 +53,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             border: none; font-size: 16px; font-weight: 600;
             cursor: pointer; width: 100%;
           }
-          .dash-main { min-width: 0; width: 100%; }
+          .dash-main { width: 100%; }
         }
       `}</style>
       <div className="dash-wrap">

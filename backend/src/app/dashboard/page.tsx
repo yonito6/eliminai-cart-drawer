@@ -108,23 +108,23 @@ function Dashboard() {
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: '#fafafa', color: '#111827', padding: '24px 32px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#fafafa', color: '#111827', padding: '16px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' as const, gap: 12 }}>
           <div>
-            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#111827' }}>Cart Optimizer</h1>
+            <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: '#111827' }}>Cart Optimizer</h1>
             <p style={{ color: '#9ca3af', margin: '4px 0 0', fontSize: 13 }}>
               {stats?.store.shopDomain || 'Loading...'} \u00b7 Auto-refreshes every 15s
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
             <button onClick={() => setShowLiveCart(!showLiveCart)}
-              style={{ padding: '9px 18px', background: showLiveCart ? '#dc2626' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+              style={{ padding: '8px 12px', background: showLiveCart ? '#dc2626' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
               {showLiveCart ? 'Close Live Cart' : '\ud83d\udc41 Live Cart Preview'}
             </button>
             <button onClick={() => setShowCreate(!showCreate)}
-              style={{ padding: '9px 18px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+              style={{ padding: '8px 12px', background: '#111827', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
               {showCreate ? 'Cancel' : '+ New Experiment'}
             </button>
           </div>
@@ -145,7 +145,7 @@ function Dashboard() {
                 Open in new tab \u2197
               </a>
             </div>
-            <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb', height: 700 }}>
+            <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb', height: 500 }}>
               <iframe
                 src={'https://' + (stats?.store?.shopDomain || '') + '/collections/all'}
                 style={{ width: '100%', height: '100%', border: 'none' }}
@@ -160,7 +160,7 @@ function Dashboard() {
 
         {/* Stats Cards */}
         {stats && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 28 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 28 }}>
             {[
               { l: 'Sessions', v: stats.totals.sessions, s: stats.last7Days.sessions + ' last 7d', icon: '\ud83d\udc64' },
               { l: 'Cart Opens', v: stats.totals.cartOpens, s: stats.last7Days.cartOpens + ' last 7d', icon: '\ud83d\uded2' },
@@ -185,7 +185,7 @@ function Dashboard() {
         {showCreate && (
           <form onSubmit={createExp} style={{ background: '#fff', borderRadius: 12, padding: 24, marginBottom: 24, border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
             <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 16px' }}>Create New Experiment</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, marginBottom: 20 }}>
               <div>
                 <label style={{ fontSize: 12, color: '#6b7280', display: 'block', marginBottom: 4, fontWeight: 500 }}>Name</label>
                 <input value={nm} onChange={e => setNm(e.target.value)} required placeholder="e.g. Trust Badges Test"
@@ -203,7 +203,7 @@ function Dashboard() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16, marginBottom: 20 }}>
               <div>
                 <h3 style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', margin: '0 0 10px' }}>Control (A) \u2014 Features</h3>
                 {FEATS.map(f => (
@@ -233,7 +233,7 @@ function Dashboard() {
             {/* Side-by-side feature comparison */}
             <div style={{ marginBottom: 20 }}>
               <h3 style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: '0 0 12px' }}>Feature Comparison</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, justifyItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, justifyItems: 'center' }}>
                 <CartPreview variant="control" features={ctrlF} label="Control (A)" color="#6b7280" />
                 <CartPreview variant="variant-b" features={varF} label="Variant B" color="#7c3aed" />
               </div>
@@ -254,9 +254,9 @@ function Dashboard() {
           </div>
         ) : exps.filter(exp => exp.status === 'RUNNING').map(exp => (
           <div key={exp.id} style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 14, border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div>
-                <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: '#111827' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, flexWrap: 'wrap' as const, gap: 10 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: '#111827' }}>
                   {exp.name}
                   <span style={{
                     marginLeft: 10, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 500,
@@ -268,7 +268,7 @@ function Dashboard() {
                   Started {new Date(exp.startedAt).toLocaleDateString()} · {exp.totalVisitors} visitors
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
                 <button onClick={() => setPreviewExp(previewExp === exp.id ? null : exp.id)}
                   style={{ padding: '6px 14px', background: previewExp === exp.id ? '#ede9fe' : '#f3f4f6', color: previewExp === exp.id ? '#7c3aed' : '#6b7280', border: '1px solid ' + (previewExp === exp.id ? '#c4b5fd' : '#e5e7eb'), borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>
                   {previewExp === exp.id ? 'Hide Preview' : 'Preview'}
@@ -292,7 +292,7 @@ function Dashboard() {
             {previewExp === exp.id && (
               <div style={{ marginBottom: 14, padding: 16, background: '#fafafa', borderRadius: 8, border: '1px solid #f3f4f6' }}>
                 <h4 style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: '0 0 12px' }}>A/B Test Comparison</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, justifyItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, justifyItems: 'center' }}>
                   {exp.variantStats.map(v => (
                     <CartPreview key={v.id} variant={v.id} features={v.features || {}} label={v.name} color={v.id === 'control' ? '#6b7280' : '#7c3aed'} />
                   ))}
@@ -301,7 +301,7 @@ function Dashboard() {
             )}
 
             {/* Variant Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 12, marginBottom: 12 }}>
               {exp.variantStats.map(v => (
                 <div key={v.id} style={{ background: '#fafafa', borderRadius: 8, padding: 12, border: '1px solid #f3f4f6' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: v.id === 'control' ? '#6b7280' : '#7c3aed', marginBottom: 6 }}>
@@ -310,7 +310,7 @@ function Dashboard() {
                   <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
                     {Object.entries(v.features || {}).filter(([, val]) => val).map(([k]) => k).join(', ') || 'No features (baseline)'}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, textAlign: 'center' as const }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(55px, 1fr))', gap: 6, textAlign: 'center' as const }}>
                     {[
                       { l: 'Visitors', val: v.visitors },
                       { l: 'Cart Opens', val: v.cartOpens },
