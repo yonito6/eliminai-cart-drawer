@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 import AppBridgeProvider from './app-bridge-provider';
 
 const NAV = [
@@ -9,9 +10,19 @@ const NAV = [
   { href: '/dashboard/addons', label: 'Addons', icon: '⚙' },
 ];
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Preserve shop/host/hmac params on nav links (critical for Shopify embedded mode)
+  function navHref(base: string) {
+    const keep = ['shop', 'host', 'hmac', 'timestamp', 'session'];
+    const params = new URLSearchParams();
+    keep.forEach(k => { const v = searchParams.get(k); if (v) params.set(k, v); });
+    const qs = params.toString();
+    return qs ? `${base}?${qs}` : base;
+  }
 
   return (
     <AppBridgeProvider>
@@ -64,7 +75,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             return (
               <a
                 key={n.href}
-                href={n.href}
+                href={navHref(n.href)}
                 onClick={() => setMobileNavOpen(false)}
                 style={{
                   display: 'flex',
@@ -91,5 +102,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </main>
       </div>
     </AppBridgeProvider>
+  );
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: '#fafafa' }} />}>
+      <DashboardLayoutInner>{children}</DashboardLayoutInner>
+    </Suspense>
   );
 }
