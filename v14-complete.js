@@ -118,6 +118,8 @@
       this.setupScrollIndicator();
       this.updateProgress();
       this.checkOverflow();
+      // Pre-fetch experiment config on page load so cart opens instantly
+      this.loadExperiment(function() {}, true);
       // Remove instant class only on first user interaction with the toggle
       var tglInput = document.getElementById("ccd-shipping-toggle");
       if (tglInput) {
@@ -292,18 +294,17 @@
         }
       });
 
-      // Track checkout clicks for experiment analytics
-      var checkoutBtn = document.querySelector('.ccd-checkout-btn');
-      if (checkoutBtn) {
-        checkoutBtn.addEventListener('click', function() {
+      // Track checkout clicks via event delegation (button is rebuilt on every refresh)
+      document.addEventListener('click', function(e) {
+        if (e.target && e.target.closest('.ccd-checkout-btn')) {
           var cart = null;
-          try { cart = JSON.parse(sessionStorage.getItem('ecart_last_cart')); } catch(e) {}
+          try { cart = JSON.parse(sessionStorage.getItem('ecart_last_cart')); } catch(e2) {}
           CCD.sendEvent('CHECKOUT_CLICKED', {
             cartTotal: cart ? cart.total_price : 0,
             itemCount: cart ? cart.item_count : 0
           });
-        });
-      }
+        }
+      });
     },
 
     changeQty: function(key, qty, btnEl) {
@@ -1342,7 +1343,11 @@
       var self = this;
       this.loadExperiment(function(config) {
         if (config) self.applyExperimentFeatures(config);
-        // CART_OPENED is tracked server-side in /api/proxy/config for accuracy
+        // Track CART_OPENED on first actual cart open (not on pre-fetch)
+        if (!self._cartOpenTracked) {
+          self._cartOpenTracked = true;
+          self.sendEvent('CART_OPENED', { source: 'client-open' });
+        }
       });
       CCD.fixMobileWidth();
       fetch('/cart.js')
@@ -1406,7 +1411,7 @@
       return 'DESKTOP';
     },
 
-    loadExperiment: function(callback) {
+    loadExperiment: function(callback, prefetch) {
       var cached = null;
       try { cached = JSON.parse(sessionStorage.getItem('ecart_config')); } catch(e) {}
       if (cached) { callback(cached); return; }
@@ -1422,7 +1427,8 @@
           deviceType: self.getDeviceType(),
           isReturning: sess.isReturning,
           referralSource: document.referrer || 'direct',
-          country: window.Shopify && window.Shopify.country ? window.Shopify.country : null
+          country: window.Shopify && window.Shopify.country ? window.Shopify.country : null,
+          prefetch: !!prefetch
         })
       })
       .then(function(r) { return r.json(); })
