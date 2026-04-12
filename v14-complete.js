@@ -1138,27 +1138,8 @@
       var targetVid = null;
       var target = CFG.scarcityTarget || '2';
 
-      // STICKY LOGIC: if we already assigned scarcity to a variant,
-      // keep it as long as that variant is still in the cart with qty 1
-      var stickyVid = null;
-      try { stickyVid = sessionStorage.getItem('ccd_scarcity_vid'); } catch(e) {}
-
-      if (stickyVid && realItems.length > 0) {
-        var stillInCart = false;
-        for (var s = 0; s < realItems.length; s++) {
-          if (String(realItems[s].variant_id) === stickyVid && realItems[s].quantity === 1) {
-            stillInCart = true;
-            break;
-          }
-        }
-        if (stillInCart) {
-          targetVid = stickyVid;
-        }
-        // else: scarcity item was removed or qty changed — recompute below
-      }
-
-      // Only recompute if no sticky assignment or sticky item was removed
-      if (!targetVid && realItems.length > 0) {
+      // Always recompute target from current cart state (no sticky override)
+      if (realItems.length > 0) {
         var idx = -1;
         if (target === 'last') { idx = realItems.length - 1; }
         else if (target === 'random') {
@@ -1172,25 +1153,42 @@
           }
         }
         else {
+          // Numeric target: activate scarcity when N+ unique variants exist
+          // Pick the variant with LOWEST total qty (the one just added)
           var tNum = parseInt(target) || 1;
-          var seenH = {};
-          var uniq = [];
+          var qtyByVid = {};
+          var firstIdx = {};
           for (var i = 0; i < realItems.length; i++) {
-            if (!seenH[realItems[i].variant_id]) {
-              seenH[realItems[i].variant_id] = true;
-              uniq.push(i);
+            var vid = realItems[i].variant_id;
+            if (!qtyByVid[vid]) {
+              qtyByVid[vid] = 0;
+              firstIdx[vid] = i;
             }
+            qtyByVid[vid] += realItems[i].quantity;
           }
-          if (uniq.length >= tNum) {
-            var pickIdx = uniq[tNum - 1];
-            if (realItems[pickIdx].quantity === 1) {
-              idx = pickIdx;
+          var uniqueVids = Object.keys(qtyByVid);
+          if (uniqueVids.length >= tNum) {
+            // Find the variant with lowest total qty; ties broken by last in array (newest)
+            var bestVid = null;
+            var bestQty = Infinity;
+            var bestIdx = -1;
+            for (var v = 0; v < uniqueVids.length; v++) {
+              var thisVid = uniqueVids[v];
+              var thisQty = qtyByVid[thisVid];
+              var thisIdx = firstIdx[thisVid];
+              if (thisQty < bestQty || (thisQty === bestQty && thisIdx > bestIdx)) {
+                bestQty = thisQty;
+                bestVid = thisVid;
+                bestIdx = thisIdx;
+              }
             }
+            if (bestVid) idx = firstIdx[bestVid];
           }
         }
 
         if (idx >= 0) {
           targetVid = String(realItems[idx].variant_id);
+          // Force qty to 1 if target has more than 1
           if (realItems[idx].quantity > 1) {
             fetch('/cart/change.js', {
               method: 'POST',
@@ -1542,9 +1540,9 @@
       'visa': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#1434CB"/><path d="M489.8 143.1c-46.8 0-88.7 24.3-88.7 69.2 0 51.4 74.2 55 74.2 80.8 0 10.9-12.5 20.6-33.8 20.6-30.2 0-52.8-13.6-52.8-13.6l-9.7 45.3s26 11.5 60.6 11.5c51.2 0 91.5-25.5 91.5-71.1 0-54.4-74.5-57.8-74.5-81.8 0-8.5 10.2-17.9 31.5-17.9 24 0 43.5 9.9 43.5 9.9l9.5-43.7s-21.3-8.9-51.3-8.9zM61.3 146.4l-1.1 6.6s19.7 3.6 37.4 10.8c22.9 8.2 24.5 13.1 28.4 27.9l41.9 161.7h56.2l86.6-207.1h-56.1l-55.6 140.8-22.7-119.3c-2.1-13.7-12.6-21.5-25.5-21.5H61.3zm271.9 0L289.3 353.5h53.5l43.8-207.1h-53.3zm298.3 0c-12.9 0-19.7 6.9-24.7 19l-78.4 188.1h56.1l10.9-30.1h68.3l6.6 30.1h49.5l-43.2-207.1h-45.1zm7.3 55.9l16.6 77.7h-44.5l27.9-77.7z" fill="#fff"/></svg>',
       'mastercard': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#000"/><path d="M465.7 69.1H314.2v273h151.6z" fill="#FF5A00"/><path d="M323.9 205.6c0-55.5 26.1-104.7 66.1-136.5A189.6 189.6 0 00282.9 32C186.9 32 109.3 109.6 109.3 205.6s77.6 173.6 173.6 173.6c40.5 0 77.6-14 107.1-37.1a189.6 189.6 0 01-66.1-136.5z" fill="#EB001B"/><path d="M670.7 205.6c0 96-77.6 173.6-173.6 173.6-40.5 0-77.6-14-107-37.1a189.6 189.6 0 000-273.1c29.4-23.1 66.5-37.1 107-37.1 96 0 173.6 77.6 173.6 173.6z" fill="#F79E1B"/></svg>',
       'amex': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#006FCF"/><text x="390" y="320" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="800" font-size="190" fill="white" letter-spacing="10">AMEX</text></svg>',
-      'paypal': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#fff" stroke="#ddd" stroke-width="2"/><path d="M168.4 169.9c-8.4-5.8-19.4-8.7-32.9-8.7H83.2c-4.1 0-6.4 2.1-6.9 6.2L55 300.9c-.2 1.3.1 2.5 1 3.6s2 1.6 3.3 1.6h24.9c4.4 0 6.8-2.1 7.2-6.2l5.9-36c.2-1.7 1-3.2 2.3-4.3 1.3-1.1 2.9-1.8 4.9-2.1 2-.3 3.8-.5 5.6-.5s3.8.1 6.2.3c2.4.2 3.9.3 4.6.3 18.8 0 33.5-5.3 44.2-15.9 10.7-10.6 16-25.2 16-44 0-12.9-4.2-22.2-12.6-28z" fill="#003087"/><path d="M540 169.9c-8.4-5.8-19.4-8.7-32.9-8.7h-52c-4.4 0-6.8 2.1-7.2 6.2l-21.3 133.5c-.2 1.3.1 2.5 1 3.6s2 1.6 3.3 1.6h26.8c2.6 0 4.4-1.4 5.2-4.3l5.9-37.9c.2-1.7 1-3.2 2.3-4.3 1.3-1.1 2.9-1.8 4.9-2.1 2-.3 3.8-.5 5.6-.5s3.8.1 6.2.3c2.4.2 3.9.3 4.6.3 18.8 0 33.5-5.3 44.2-15.9 10.7-10.6 16-25.2 16-44 0-12.9-4.2-22.2-12.6-28z" fill="#009CDE"/></svg>',
+      'paypal': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#fff" stroke="#ddd" stroke-width="2"/><text x="390" y="310" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="180"><tspan fill="#003087">Pay</tspan><tspan fill="#009CDE">Pal</tspan></text></svg>',
       'apple-pay': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#000"/><g transform="translate(55,82) scale(14)"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701" fill="white"/></g><text x="400" y="250" font-family="-apple-system,SF Pro Text,Helvetica,Arial,sans-serif" font-weight="300" font-size="180" dominant-baseline="central" fill="white">Pay</text></svg>',
-      'google-pay': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#fff" stroke="#ddd" stroke-width="2"/><text x="390" y="290" text-anchor="middle" font-family="Arial" font-weight="600" font-size="120" fill="#5f6368">GPay</text></svg>',
+      'google-pay': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#fff" stroke="#ddd" stroke-width="2"/><text x="390" y="310" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="180" fill="#5f6368">GPay</text></svg>',
       'shop-pay': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#5A31F4"/><text x="390" y="290" text-anchor="middle" font-family="Arial" font-weight="700" font-size="110" fill="white">Shop Pay</text></svg>',
       'discover': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#4D4D4D"/><circle cx="415" cy="214" r="53" fill="#F47216"/><text x="390" y="410" text-anchor="middle" font-family="Arial" font-weight="700" font-size="100" fill="#fff">DISCOVER</text></svg>',
       'klarna': '<svg viewBox="0 0 780 500" width="38" height="24"><rect width="780" height="500" rx="40" fill="#FFB3C7"/><text x="390" y="300" text-anchor="middle" font-family="Arial" font-weight="800" font-size="160" fill="#0A0B09">Klarna</text></svg>',
@@ -1578,7 +1576,7 @@
       row.className = 'ccd-trust-badges';
       row.innerHTML = '<div class="ccd-trust-icons">' + iconsHtml + '</div>' + textHtml;
 
-      // Position: below-checkout (default), above-checkout, below-items
+      // Position: below-checkout (default = after .ccd-trust risk-free row), above-checkout, below-items
       if (position === 'above-checkout') {
         var checkout = document.querySelector('.ccd-checkout-btn');
         if (checkout && checkout.parentNode) checkout.parentNode.insertBefore(row, checkout);
@@ -1586,8 +1584,15 @@
         var footer = document.querySelector('.ccd-sticky-footer');
         if (footer) footer.insertBefore(row, footer.firstChild);
       } else {
-        var checkout2 = document.querySelector('.ccd-checkout-btn');
-        if (checkout2 && checkout2.parentNode) checkout2.parentNode.insertBefore(row, checkout2.nextSibling);
+        // Insert after .ccd-trust (risk-free returns) so order matches preview:
+        // Checkout → Risk free → Trust badges
+        var trustRow = document.querySelector('.ccd-sticky-footer .ccd-trust');
+        if (trustRow && trustRow.parentNode) {
+          trustRow.parentNode.insertBefore(row, trustRow.nextSibling);
+        } else {
+          var checkout2 = document.querySelector('.ccd-checkout-btn');
+          if (checkout2 && checkout2.parentNode) checkout2.parentNode.insertBefore(row, checkout2.nextSibling);
+        }
       }
     }
   };
@@ -1619,8 +1624,15 @@
   var observer = new MutationObserver(function(mutations) {
     mutations.forEach(function(m) {
       if (m.target.id === 'CartDrawer' && m.target.classList.contains('drawer--is-open')) {
+        // Store the page URL the user was on when opening the cart
+        if (!window._ccdReturnUrl) {
+          window._ccdReturnUrl = window.location.href;
+        }
         CCD.refreshOnOpen();
         CCD.ensureProtection();
+      } else if (m.target.id === 'CartDrawer' && !m.target.classList.contains('drawer--is-open')) {
+        // Clear when drawer closes so next open captures fresh URL
+        window._ccdReturnUrl = null;
       }
     });
   });

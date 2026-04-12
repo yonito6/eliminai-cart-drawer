@@ -77,18 +77,18 @@
 
       <div class="ccd-item__price-col">
         <div class="ccd-item__price-row">
-          {%- if product.original_price != product.final_price -%}
-            <span class="ccd-item__compare-price">{{ product.original_price | money }}</span>
-            {%- if product.final_price == 0 -%}
+          {%- if product.original_line_price != product.final_line_price -%}
+            <span class="ccd-item__compare-price">{{ product.original_line_price | money }}</span>
+            {%- if product.final_line_price == 0 -%}
               <span class="ccd-item__price ccd-item__price--free">Free</span>
             {%- else -%}
-              <span class="ccd-item__price">{{ product.final_price | money }}</span>
+              <span class="ccd-item__price">{{ product.final_line_price | money }}</span>
             {%- endif -%}
           {%- else -%}
-            {%- if product.original_price == 0 -%}
+            {%- if product.original_line_price == 0 -%}
               <span class="ccd-item__price ccd-item__price--free">Free</span>
             {%- else -%}
-              <span class="ccd-item__price">{{ product.original_price | money }}</span>
+              <span class="ccd-item__price">{{ product.original_line_price | money }}</span>
             {%- endif -%}
           {%- endif -%}
         </div>

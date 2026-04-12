@@ -3,8 +3,8 @@ const fs = require("fs");
 const path = require("path");
 
 const store = "eleganto-3011.myshopify.com";
-const STAGING_THEME = 158577557755;
-const LIVE_THEME = 158546952443;
+const STAGING_THEME = 158622155003;  // "Eliminai Cart Drawer Demo"
+const LIVE_THEME = 158577557755;    // "Eliminai Cart Drawer Live" (published)
 const isLive = process.argv.includes("--live");
 const themeId = isLive ? LIVE_THEME : STAGING_THEME;
 const label = isLive ? "LIVE" : "STAGING";

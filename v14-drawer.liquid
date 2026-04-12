@@ -215,10 +215,10 @@
       </div>
 
       <div class="drawer__cart-empty appear-animation appear-delay-2" {% if real_item_count > 0 %}style="display:none"{% endif %}>
-        <div style="padding: 60px 20px; text-align: center;">
-          <svg viewBox="0 0 24 24" width="48" height="48" fill="#bbb" style="margin-bottom: 16px;"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
-          <p style="color: #888; font-size: 16px;">Your cart is empty</p>
-          <a href="/collections/all" style="display: inline-block; margin-top: 16px; padding: 12px 28px; background: #111; border: none; border-radius: 6px; color: #fff; text-decoration: none; font-size: 14px; letter-spacing: 0.5px;">Continue Shopping</a>
+        <div style="padding: 32px 20px; text-align: center;">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="#bbb" style="margin-bottom: 12px;"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
+          <p style="color: #888; font-size: 15px; margin-bottom: 12px;">Your cart is empty</p>
+          <a href="/collections/all" onclick="if(window._ccdReturnUrl){window.location.href=window._ccdReturnUrl;return false;}" style="display: inline-block; padding: 12px 28px; background: #111; border: none; border-radius: 6px; color: #fff; text-decoration: none; font-size: 14px; letter-spacing: 0.5px;">Continue Shopping</a>
         </div>
       </div>
     </form>

@@ -168,7 +168,7 @@
 #CartDrawer.custom-cart-drawer .cart__item-row, #CartDrawer.custom-cart-drawer .cart__item-sub { display: none !important; }
 #CartDrawer.custom-cart-drawer .cart__discounts { display: none !important; }
 
-@media (min-width: 769px) { #CartDrawer.custom-cart-drawer { max-width: 440px; } }
+@media (min-width: 769px) { #CartDrawer.custom-cart-drawer { max-width: 520px; } }
 @media (max-width: 768px) {
   #CartDrawer.custom-cart-drawer { max-width: var(--ccd-mobile-width, 78%); }
   #CartDrawer.custom-cart-drawer.drawer--right { right: 0; transform: translateX(100%); }
@@ -247,7 +247,7 @@
 .ccd-trust-badges {
   text-align: center;
   padding: 8px 0 4px;
-  opacity: 0.7;
+  opacity: 1;
 }
 .ccd-trust-icons {
   display: flex;
