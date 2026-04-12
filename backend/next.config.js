@@ -7,12 +7,21 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // Allow Shopify admin to embed this app in an iframe
+        // Allow Shopify admin (desktop + mobile) to embed this app
         source: '/:path*',
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors https://*.myshopify.com https://admin.shopify.com https://*.spin.dev;",
+            value: "frame-ancestors https://*.myshopify.com https://admin.shopify.com https://admin.myshopify.io https://*.spin.dev https://admin.shop.dev;",
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'ALLOWALL',
+          },
+          // Prevent aggressive caching that breaks mobile
+          {
+            key: 'Cache-Control',
+            value: 'no-store, must-revalidate',
           },
         ],
       },
