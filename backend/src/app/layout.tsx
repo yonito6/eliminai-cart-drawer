@@ -17,10 +17,10 @@ export default function RootLayout({
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         {apiKey && (
-          <script
-            src={`https://cdn.shopify.com/shopifycloud/app-bridge.js?apiKey=${apiKey}`}
-            async
-          />
+          <>
+            <meta name="shopify-api-key" content={apiKey} />
+            <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" />
+          </>
         )}
       </head>
       <body style={{ margin: 0 }}>

@@ -38,25 +38,44 @@ class DashboardErrorBoundary extends Component<
 }
 
 export default function AppBridgeProvider({ children }: Props) {
-  const [mounted, setMounted] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const host = params.get('host');
-      const shop = params.get('shop');
+    let cancelled = false;
+    let attempts = 0;
 
-      if (host && shop) {
-        (window as any).__shopifyHost = host;
-        (window as any).__shopifyShop = shop;
+    function tryInit() {
+      if (cancelled) return;
+
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const host = params.get('host');
+        const shop = params.get('shop');
+
+        if (host && shop) {
+          (window as any).__shopifyHost = host;
+          (window as any).__shopifyShop = shop;
+        }
+      } catch (e) {
+        console.error('AppBridgeProvider init error:', e);
       }
-    } catch (e) {
-      console.error('AppBridgeProvider init error:', e);
+
+      // Check if App Bridge is available (may take time on mobile)
+      const shopify = (window as any).shopify;
+      if (shopify || attempts >= 15) {
+        // Either App Bridge loaded or we've waited long enough — render anyway
+        setReady(true);
+      } else {
+        attempts++;
+        setTimeout(tryInit, 200);
+      }
     }
-    setMounted(true);
+
+    tryInit();
+    return () => { cancelled = true; };
   }, []);
 
-  if (!mounted) {
+  if (!ready) {
     return (
       <div style={{ padding: 20, textAlign: 'center', color: '#6b7280', fontFamily: 'system-ui' }}>
         Loading...
