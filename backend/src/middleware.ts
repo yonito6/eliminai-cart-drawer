@@ -3,9 +3,10 @@ import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
   // Redirect root to dashboard (Shopify loads / as the app URL)
+  // TEMPORARY: redirect to mobile diagnostic page to debug blank screen
   if (request.nextUrl.pathname === '/') {
     const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
+    url.pathname = '/api/mobile-test';
     return NextResponse.redirect(url);
   }
 
