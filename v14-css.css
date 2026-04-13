@@ -22,10 +22,8 @@
 
 /* Progress — lines touch milestone circles via negative margins */
 .ccd-progress { padding: 10px 24px 14px; background: #f9f9f9; }
-.ccd-progress__message { text-align: center; font-size: 15px; color: #333; margin-bottom: 10px; line-height: 1.4; }
-.ccd-progress__message strong { color: #111; font-weight: 700; }
-.ccd-progress__message--done { color: var(--ccd-success, #1a7a1a); }
-.ccd-progress__message--done strong { color: #1a7a1a; }
+.ccd-progress__message { text-align: center; font-size: 15px; margin-bottom: 10px; line-height: 1.4; }
+.ccd-progress__message strong { font-weight: 700; }
 .ccd-progress__bar-wrap { display: flex; align-items: flex-start; gap: 0; position: relative; }
 .ccd-progress__line { flex: 1; height: 3px; background: var(--ccd-progress-bg, #ddd); margin-top: 21px; border-radius: 0; transition: background 0.4s; margin-left: -3px; margin-right: -3px; position: relative; z-index: 0; }
 .ccd-progress__line--filled { background: #ddd; }
