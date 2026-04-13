@@ -38,11 +38,23 @@ const PAYMENT_SVGS: Record<string, string> = {
   'alipay': '<svg viewBox="0 0 780 500" width="38" height="24" xmlns="http://www.w3.org/2000/svg"><rect width="780" height="500" rx="40" fill="#1677FF"/><path d="M114.3 258c-4.8.6-13.2 2.4-18 6.6C82.8 277.2 90.3 299.4 119.7 299.4c16.8 0 33.6-10.8 46.8-27.6-19.2-9-34.8-15.6-52.2-13.8z" fill="#fff"/><path d="M221.8 273.4c27 9 33 9.6 33 9.6v-96c0-16.2-13.2-29.4-30-29.4H98.8c-16.2 0-30 13.2-30 29.4v126c0 16.2 13.2 29.4 30 29.4h126c16.2 0 30-13.2 30-29.4v-1.2s-48-19.8-72.6-31.8c-16.2 19.8-37.2 32.4-59.4 32.4-37.2 0-49.8-32.4-31.8-53.4 3.6-4.8 10.2-9 20.4-11.4 15.6-3.6 40.8 2.4 64.2 10.2 4.2-7.8 7.8-16.2 10.2-25.2h-72.6v-7.2h37.2v-14.4h-45.6v-7.2h45.6v-18.6s0-3 3-3h18v22.2h45v6.6h-45v13.2h36.6c-3.6 14.4-9 27.6-15.6 39 12 4.2 22.2 7.8 29.4 10.2z" fill="#fff"/></svg>',
 };
 
+/** Staging hint tells the preview what scenario to show based on what the user is editing */
+export interface StagingHint {
+  /** 'tier' = editing a specific tier, 'allUnlocked' = editing the "all rewards" text, null = default */
+  context: 'tier' | 'allUnlocked' | null;
+  /** Which tier is being edited (index in sorted tiers array) */
+  tierIndex?: number;
+  /** 'before' = show cart NOT yet reaching this tier, 'after' = show cart REACHING this tier, 'gift' = same as after */
+  field?: 'before' | 'after' | 'gift' | 'label' | 'goal';
+}
+
 interface AddonPreviewProps {
   addonKey: string;
   addonConfig: Record<string, any>;
   mode: 'focused' | 'full';
   themeSettings?: Record<string, any>;
+  /** Controls what the preview "stages" to show based on what the user is currently editing */
+  stagingHint?: StagingHint | null;
 }
 
 function buildTrustBadgesHtml(config: Record<string, any>): string {
@@ -61,7 +73,7 @@ function buildTrustBadgesHtml(config: Record<string, any>): string {
     text + '</div></div>';
 }
 
-export default function AddonPreview({ addonKey, addonConfig, mode, themeSettings }: AddonPreviewProps) {
+export default function AddonPreview({ addonKey, addonConfig, mode, themeSettings, stagingHint }: AddonPreviewProps) {
   const [iframeHeight, setIframeHeight] = useState(mode === 'full' ? 680 : (FOCUS_AREAS[addonKey]?.height || 200));
 
   let cartHtml = CONTROL_HTML.replace(/\r\n/g, '\n');
@@ -224,9 +236,28 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
       }
     }
 
-    // Demo cart: 2 items, $80 total — determine which tiers are reached
-    const demoValue = thresholdMode === 'dollars' ? 80 : 2;
+    // ── Staging-aware demo cart value ──────────────────────────────────
+    // Default: 2 items / $80.  When the user is editing a specific tier or
+    // the "all rewards unlocked" text, we stage the cart to show the relevant
+    // scenario so they get a live preview of exactly what they're editing.
     const sortedTiers = [...tiers].sort((a, b) => a.goal - b.goal);
+    let demoValue = thresholdMode === 'dollars' ? 80 : 2;
+
+    if (stagingHint?.context === 'allUnlocked' && sortedTiers.length > 0) {
+      // Show all tiers completed
+      demoValue = sortedTiers[sortedTiers.length - 1].goal;
+    } else if (stagingHint?.context === 'tier' && stagingHint.tierIndex != null) {
+      const targetTier = sortedTiers[stagingHint.tierIndex];
+      if (targetTier) {
+        if (stagingHint.field === 'before') {
+          // Show cart NOT yet reaching this tier (1 below the goal)
+          demoValue = Math.max(0, targetTier.goal - 1);
+        } else {
+          // 'after', 'gift', 'label', 'goal' — show cart reaching this tier
+          demoValue = targetTier.goal;
+        }
+      }
+    }
 
     // Find highest reached tier
     let highestReachedIdx = -1;

@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { REWARD_ICONS } from '@/lib/addon-definitions';
 import type { RewardTier } from '@/lib/addon-definitions';
 import RichTextEditor, { applyDefaultColor } from './rich-text-editor';
+import type { StagingHint } from './addon-preview';
 
 interface RewardsTierEditorProps {
   config: Record<string, any>;
@@ -14,15 +15,30 @@ interface RewardsTierEditorProps {
   /** Default text color for "before" tier text (CSS default, overridden by editor formatting) */
   messageColor?: string;
   themeFont?: string;
+  /** Called when the editing context changes — tells the preview what scenario to stage */
+  onStagingChange?: (hint: StagingHint | null) => void;
 }
 
-export default function RewardsTierEditor({ config, onConfigChange, storeId, successColor, messageColor, themeFont }: RewardsTierEditorProps) {
+export default function RewardsTierEditor({ config, onConfigChange, storeId, successColor, messageColor, themeFont, onStagingChange }: RewardsTierEditorProps) {
   const tiers: RewardTier[] = config.tiers ?? [];
   const thresholdMode: 'items' | 'dollars' = config.thresholdMode ?? 'items';
   const highestTierOnly: boolean = config.highestTierOnly ?? false;
   const allRewardsUnlockedText: string = config.allRewardsUnlockedText ?? '';
 
   const [editingTierId, setEditingTierId] = useState<string | null>(null);
+
+  // Emit staging hint whenever the editing context changes
+  const emitStaging = useCallback((tierId: string | null, field?: StagingHint['field']) => {
+    if (!onStagingChange) return;
+    if (!tierId) {
+      onStagingChange(null);
+      return;
+    }
+    const sortedTiers = [...tiers].sort((a, b) => a.goal - b.goal);
+    const tierIndex = sortedTiers.findIndex(t => t.id === tierId);
+    if (tierIndex < 0) { onStagingChange(null); return; }
+    onStagingChange({ context: 'tier', tierIndex, field: field || 'label' });
+  }, [onStagingChange, tiers]);
   const [iconPickerTierId, setIconPickerTierId] = useState<string | null>(null);
   const [giftSearchQuery, setGiftSearchQuery] = useState('');
   const [giftSearchResults, setGiftSearchResults] = useState<any[]>([]);
@@ -186,7 +202,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
       </label>
 
       {/* All Rewards Unlocked Text */}
-      <div>
+      <div onFocus={() => { onStagingChange?.({ context: 'allUnlocked' }); }}>
         <span style={labelStyle}>Text when all rewards unlocked</span>
         <RichTextEditor
           value={allRewardsUnlockedText}
@@ -245,7 +261,11 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                     padding: '10px 14px',
                     cursor: 'pointer',
                   }}
-                  onClick={() => setEditingTierId(isEditing ? null : tier.id)}
+                  onClick={() => {
+                    const nextId = isEditing ? null : tier.id;
+                    setEditingTierId(nextId);
+                    emitStaging(nextId, 'label');
+                  }}
                 >
                   {/* Icon — always show the user-chosen tier icon */}
                   <div
@@ -367,7 +387,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                     </div>
 
                     {/* Before Text */}
-                    <div>
+                    <div onFocus={() => { emitStaging(tier.id, 'before'); }}>
                       <span style={labelStyle}>Text before achieving <span style={{ color: '#9ca3af' }}>({'{remaining}'} = items left)</span></span>
                       <RichTextEditor
                         value={tier.beforeText}
@@ -379,7 +399,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                     </div>
 
                     {/* After Text */}
-                    <div>
+                    <div onFocus={() => { emitStaging(tier.id, 'after'); }}>
                       <span style={labelStyle}>Text after achieving</span>
                       <RichTextEditor
                         value={tier.afterText}
@@ -391,7 +411,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                     </div>
 
                     {/* Gift Products — multi-product picker with real Shopify images */}
-                    <div>
+                    <div onFocus={() => { emitStaging(tier.id, 'gift'); }}>
                       <span style={labelStyle}>Gift Products (auto-added to cart when tier is reached)</span>
 
                       {/* Selected gifts list */}
@@ -554,9 +574,11 @@ interface WithSaveProps {
   successColor?: string;
   messageColor?: string;
   themeFont?: string;
+  /** Called when the editing context changes — tells the preview what scenario to stage */
+  onStagingChange?: (hint: StagingHint | null) => void;
 }
 
-export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange, storeId, successColor, messageColor, themeFont }: WithSaveProps) {
+export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange, storeId, successColor, messageColor, themeFont, onStagingChange }: WithSaveProps) {
   // Migrate plain text → colorized HTML on initial load (both draft AND saved baseline)
   const migrateColors = useCallback((config: Record<string, any>) => {
     const sColor = successColor || '#1a7a1a';
@@ -652,7 +674,7 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
 
   return (
     <div>
-      <RewardsTierEditor config={draft} onConfigChange={handleConfigChange} storeId={storeId} successColor={successColor} messageColor={messageColor} themeFont={themeFont} />
+      <RewardsTierEditor config={draft} onConfigChange={handleConfigChange} storeId={storeId} successColor={successColor} messageColor={messageColor} themeFont={themeFont} onStagingChange={onStagingChange} />
       {hasChanges && (
         <div style={{ display: 'flex', gap: 8, marginTop: 16, padding: '12px 14px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 10, alignItems: 'center' }}>
           <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#92400e' }}>Unsaved changes</div>

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AddonPreview from './addon-preview';
+import type { StagingHint } from './addon-preview';
 import { RewardsTierEditorWithSave } from './rewards-tier-editor';
 import { useStore } from '@/lib/hooks/use-store';
 import RichTextEditor from './rich-text-editor';
@@ -186,6 +187,8 @@ function AddonsPage() {
   const [optimizeQueue, setOptimizeQueue] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [expandedView, setExpandedView] = useState<'edit' | 'results'>('edit');
+  // Cart preview staging — changes the preview scenario based on what the user is editing
+  const [stagingHint, setStagingHint] = useState<StagingHint | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saveToast, setSaveToast] = useState<string | null>(null);
@@ -1468,7 +1471,7 @@ function AddonsPage() {
                     )}
                     <button
                       onClick={() => {
-                        if (isExpanded && expandedView === 'edit') { setExpanded(null); }
+                        if (isExpanded && expandedView === 'edit') { setExpanded(null); setStagingHint(null); }
                         else { setExpanded(def.key); setExpandedView('edit'); }
                         const urlKey = def.key === 'freeShippingBar' ? 'rewards' : def.key;
                         const url = isExpanded && expandedView === 'edit' ? window.location.pathname : '?edit=' + urlKey;
@@ -1509,6 +1512,7 @@ function AddonsPage() {
                       addonKey={def.key}
                       addonConfig={addon.config ?? {}}
                       mode="full"
+                      stagingHint={def.key === 'freeShippingBar' ? stagingHint : undefined}
                     />
 
                     {/* Right: Edit controls */}
@@ -1526,6 +1530,7 @@ function AddonsPage() {
                               return { ...prev, [def.key]: { ...current, config: draftConfig } };
                             });
                           }}
+                          onStagingChange={setStagingHint}
                           storeId={STORE_ID}
                           successColor={themeSettings?.ccd_color_success || '#1a7a1a'}
                           messageColor={'#333333'}
