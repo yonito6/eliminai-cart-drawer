@@ -1772,15 +1772,18 @@ function AddonsPage() {
                           const observedLift = secondRate > 0 ? ((bestRate - secondRate) / secondRate) * 100 : 0;
                           const liftHasData = vs.length >= 2 && (bestRate > 0 || secondRate > 0);
                           const liftAbs = Math.abs(observedLift);
-                          // ── Smart milestones — order-based, not visitor-based ──
+                          // ── Smart milestones — order-based, dynamically calculated ──
                           const numVariants = (exp.variantStats || []).length || 2;
                           const minOrdersPerVariant = exp.minOrdersPerVariant || 25;
                           // Orders per variant (minimum across variants)
                           const ordersPerVariant = vs.map((v: any) => v.orders ?? 0);
                           const minOrders = Math.min(...ordersPerVariant);
                           const totalOrders = ordersPerVariant.reduce((a: number, b: number) => a + b, 0);
-                          // Smart sample target (visitors) from API
-                          const sampleTargetTotal = exp.sampleTargetTotal || (totalV > 0 ? totalV * 3 : 4000);
+                          // Dynamic order target: derive from visitor sample target × purchase rate
+                          const sampleTargetPerVar = exp.sampleTargetPerVariant || 2000;
+                          const baselinePurchaseRate = exp.baselinePurchaseRate || 0.03;
+                          const dynamicOrdersPerVariant = Math.max(minOrdersPerVariant, Math.ceil(sampleTargetPerVar * baselinePurchaseRate));
+                          const dynamicOrdersTotal = dynamicOrdersPerVariant * numVariants;
 
                           // Time remaining for 3-day minimum
                           const hoursLeft = Math.max(0, 72 - hoursRunning);
@@ -1798,14 +1801,14 @@ function AddonsPage() {
                           const consistencyMsg = exp.consistencyMessage || null;
 
                           // Progress percentages for each step
-                          const orderPct = Math.min(100, (minOrders / minOrdersPerVariant) * 100);
+                          const orderPct = Math.min(100, (minOrders / dynamicOrdersPerVariant) * 100);
                           const timePct = Math.min(100, (hoursRunning / 72) * 100);
                           // Impact: based on orders + time
-                          const impactReady = past3Days && minOrders >= minOrdersPerVariant;
+                          const impactReady = past3Days && minOrders >= dynamicOrdersPerVariant;
                           const impactDone = impactReady && (confidence >= 60 || (liftHasData && liftAbs < 3 && minOrders >= 40));
                           const impactActive = impactReady && !impactDone;
                           const impactPct = impactDone ? 100 : impactActive ? Math.min(95, (confidence / 60) * 100) : 0;
-                          const conclusionDone = (confidence >= 90 || winner || noDiff) && past3Days && minOrders >= minOrdersPerVariant;
+                          const conclusionDone = (confidence >= 90 || winner || noDiff) && past3Days && minOrders >= dynamicOrdersPerVariant;
                           const conclusionActive = impactDone && confidence >= 60 && confidence < 90;
                           const conclusionPct = conclusionDone ? 100 : conclusionActive ? Math.min(95, ((confidence - 60) / 30) * 100) : 0;
 
@@ -1825,7 +1828,7 @@ function AddonsPage() {
                           }
 
                           const steps = [
-                            { label: 'Orders', detail: totalOrders + ' of ~' + (minOrdersPerVariant * numVariants), sub: totalV.toLocaleString() + ' visitors', pct: orderPct, done: testConcluded && orderPct >= 100, active: orderPct < 100 },
+                            { label: 'Orders', detail: totalOrders + ' of ~' + dynamicOrdersTotal, sub: totalV.toLocaleString() + ' visitors', pct: orderPct, done: testConcluded && orderPct >= 100, active: orderPct < 100 },
                             { label: '3-day min', detail: timeRunningLabel + ' / ' + timeLeftLabel, sub: null as string | null, pct: timePct, done: testConcluded && past3Days, active: orderPct >= 100 && !past3Days },
                             { label: 'Impact', detail: impactDetail, sub: dailyLeaders.length >= 2 ? null : null, pct: impactPct, done: testConcluded && impactDone, active: impactActive },
                             { label: 'Conclusion', detail: conclusionDone ? (winner ? 'Winner!' : noDiff ? 'No diff' : 'Done') : conclusionActive ? (displayConfidence + '% conf') : 'Waiting', sub: null as string | null, pct: conclusionPct, done: testConcluded, active: conclusionActive },
