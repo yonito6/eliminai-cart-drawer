@@ -1910,6 +1910,11 @@ function AddonsPage() {
                                   );
                                 })}
                               </div>
+                              {orderPct < 100 && (
+                                <div style={{ marginTop: 6, fontSize: 10, color: '#9ca3af', textAlign: 'center' }}>
+                                  Based on your store{'\u2019'}s {(baselinePurchaseRate * 100).toFixed(1)}% purchase rate — adapts as data grows
+                                </div>
+                              )}
                               {liftHasData && minOrders >= 40 && liftAbs < 3 && (
                                 <div style={{ marginTop: 8, padding: 8, background: '#fef3c7', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
                                   {'This feature shows less than 3% impact. The engine will auto-conclude soon so we can test the next dimension.'}

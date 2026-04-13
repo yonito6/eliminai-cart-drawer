@@ -36,6 +36,27 @@ describe('Thompson Sampling — order-based optimization', () => {
     expect(result.reason).toContain('orders per variant');
   });
 
+  it('declares blowout winner when leading variant has 25+ orders even if loser has few', () => {
+    // Blowout: 8% vs 0.5% — winner has 40 orders, loser has 3
+    // Total = 43 orders (>= 40), winner has 40 (>= 25), 5+ days
+    const result = calculateThompsonSampling([
+      { id: 'control', successes: 3, failures: 597 },
+      { id: 'treatment', successes: 40, failures: 460 },
+    ], { dailyTraffic: 200, minDaysRunning: 5 });
+    // Should declare winner via blowout (control has only 3 orders < 25)
+    expect(result.winnerId).toBe('treatment');
+    expect(result.reason).toContain('Clear winner');
+  });
+
+  it('does NOT blowout before 3 days even with overwhelming data', () => {
+    const result = calculateThompsonSampling([
+      { id: 'control', successes: 2, failures: 298 },
+      { id: 'treatment', successes: 50, failures: 250 },
+    ], { dailyTraffic: 200, minDaysRunning: 2 });
+    expect(result.winnerId).toBeNull();
+    expect(result.reason).toContain('3 days');
+  });
+
   it('reports low confidence with small samples', () => {
     // Few orders — Thompson can't distinguish variants
     const result = calculateThompsonSampling([

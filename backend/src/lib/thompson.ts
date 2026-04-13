@@ -185,11 +185,27 @@ export function calculateThompsonSampling(
   const MIN_ORDERS = 25;
   const minOrdersPerArm = Math.min(...variants.map(v => v.successes));
 
+  // Blowout shortcut: if one variant clearly crushes the other, don't wait
+  // for the loser to collect 25 orders — the signal is overwhelming
+  const totalOrdersAll = variants.reduce((s, v) => s + v.successes, 0);
+  const maxOrdersPerArm = Math.max(...variants.map(v => v.successes));
+  const isBlowout = confidence >= 0.99
+    && expectedLoss <= 0.001
+    && minDaysRunning >= 3
+    && maxOrdersPerArm >= MIN_ORDERS
+    && totalOrdersAll >= 40
+    && Math.abs(liftPercent) > 5;
+
   // Minimum calendar days check (day-of-week effects)
   if (minDaysRunning < 3) {
     reason = 'Need at least 3 days to capture traffic patterns';
   }
-  // Minimum ORDERS check — the real statistical gate
+  // Blowout: clear winner even if loser has few orders
+  else if (isBlowout) {
+    winnerId = bestId;
+    reason = `Clear winner: ${(confidence * 100).toFixed(1)}% confidence, +${Math.abs(liftPercent).toFixed(0)}% lift, ${maxOrdersPerArm} orders on leading variant`;
+  }
+  // Minimum ORDERS check — the real statistical gate (skipped if blowout)
   else if (minOrdersPerArm < MIN_ORDERS) {
     reason = `Need at least ${MIN_ORDERS} orders per variant (currently ${minOrdersPerArm})`;
   }
