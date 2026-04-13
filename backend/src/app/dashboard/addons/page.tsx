@@ -1527,6 +1527,8 @@ function AddonsPage() {
                             });
                           }}
                           storeId={STORE_ID}
+                          successColor={themeSettings?.ccd_color_success || '#1a7a1a'}
+                          messageColor={'#333333'}
                           themeFont={themeSettings?.ccd_font_family}
                         />
                       )}
