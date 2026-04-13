@@ -552,10 +552,18 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const savedRef = useRef(savedConfig);
+  // Snapshot of what was ACTUALLY saved (persisted to DB) — not polluted by preview updates
+  const savedJsonRef = useRef(JSON.stringify(savedConfig));
+  // Track whether we are the source of preview updates (to ignore our own prop changes)
+  const isPreviewingRef = useRef(false);
 
   useEffect(() => {
-    if (JSON.stringify(savedConfig) !== JSON.stringify(savedRef.current)) {
+    // Only update saved snapshot from external saves (not from our own preview updates)
+    if (isPreviewingRef.current) return;
+    const newJson = JSON.stringify(savedConfig);
+    if (newJson !== savedJsonRef.current) {
       savedRef.current = savedConfig;
+      savedJsonRef.current = newJson;
       if (!hasChanges) setDraft({ ...savedConfig });
     }
   }, [savedConfig, hasChanges]);
@@ -563,9 +571,12 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
   const handleConfigChange = useCallback((patch: Record<string, any>) => {
     setDraft(prev => {
       const next = { ...prev, ...patch };
+      isPreviewingRef.current = true;
       onPreviewChange(next);
-      // Auto-detect if draft matches saved — hide Save/Discard when user undoes changes
-      setHasChanges(JSON.stringify(next) !== JSON.stringify(savedRef.current));
+      // Reset after React processes the preview update
+      setTimeout(() => { isPreviewingRef.current = false; }, 0);
+      // Compare draft to saved snapshot for undo detection
+      setHasChanges(JSON.stringify(next) !== savedJsonRef.current);
       return next;
     });
   }, [onPreviewChange]);
@@ -576,6 +587,7 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
     setSaving(true);
     onSave(draft);
     savedRef.current = draft;
+    savedJsonRef.current = JSON.stringify(draft);
     setHasChanges(false);
 
     // Sync gift discounts with Shopify after saving config

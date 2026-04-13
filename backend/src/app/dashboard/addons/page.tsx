@@ -402,8 +402,82 @@ function AddonsPage() {
 
   // ── Start/stop optimization ────────────────────────────────────────────────
 
+  // Helper: apply a variant's features to the addon config
+  async function applyVariantConfig(addonKey: string, variant: any) {
+    if (!variant?.features) return;
+    const features = variant.features as Record<string, any>;
+    // _enabled is a special flag — enable/disable the addon itself
+    if ('_enabled' in features) {
+      await patchAddon(addonKey, { enabled: features._enabled });
+    } else {
+      updateAddonConfig(addonKey, features);
+    }
+  }
+
+  // Helper: pick winner or ask user after stopping a test
+  async function resolveTestOutcome(addonKey: string) {
+    const exp = experiments[addonKey];
+    if (!exp?.variantStats || exp.variantStats.length < 2) return;
+
+    const vs = exp.variantStats as any[];
+    // Sort by checkout rate descending
+    const sorted = [...vs].sort((a, b) => (b.checkoutRate ?? 0) - (a.checkoutRate ?? 0));
+    const best = sorted[0];
+    const second = sorted[1];
+
+    // Calculate mapped confidence (same formula as results view)
+    const rawConf = exp.confidence ?? 0;
+    const confidence = Math.max(0, (rawConf - 0.5) / 0.5) * 100;
+    const lift = exp.liftPercent ?? 0;
+
+    // Clear winner: confidence > 50% AND lift > 5%
+    if (confidence > 50 && Math.abs(lift) > 5) {
+      const winnerLabel = best.label?.replace(' (current)', '') ?? best.id;
+      showSaveToast(`Applied "${winnerLabel}" — it was winning with +${lift.toFixed(1)}% lift`);
+      await applyVariantConfig(addonKey, best);
+    } else {
+      // No clear winner — ask user which to keep
+      const bestRate = (best.checkoutRate ?? 0).toFixed(1);
+      const secondRate = (second.checkoutRate ?? 0).toFixed(1);
+      const bestLabel = best.label?.replace(' (current)', '') ?? best.id;
+      const secondLabel = second.label?.replace(' (current)', '') ?? second.id;
+
+      const pickBest = confirm(
+        `No clear winner yet.\n\n` +
+        `"${bestLabel}" — ${bestRate}% checkout rate (${best.cartOpens ?? 0} cart opens)\n` +
+        `"${secondLabel}" — ${secondRate}% checkout rate (${second.cartOpens ?? 0} cart opens)\n\n` +
+        `Apply "${bestLabel}" as the winner?\n\n` +
+        `OK = Apply "${bestLabel}"\nCancel = Apply "${secondLabel}"`
+      );
+
+      const chosen = pickBest ? best : second;
+      const chosenLabel = chosen.label?.replace(' (current)', '') ?? chosen.id;
+      showSaveToast(`Applied "${chosenLabel}"`);
+      await applyVariantConfig(addonKey, chosen);
+    }
+  }
+
   async function startTest(addonKey: string, dimensionKey?: string) {
     if (!STORE_ID) return;
+
+    // Warn if a test is already running for this addon
+    const runningExp = experiments[addonKey];
+    if (runningExp?.status === 'RUNNING') {
+      const visitors = runningExp.totalVisitors ?? 0;
+      const lift = runningExp.liftPercent ?? 0;
+      let msg = `A test is currently running with ${visitors} visitors.`;
+      if (Math.abs(lift) > 1) {
+        const vs = (runningExp.variantStats as any[]) ?? [];
+        const sorted = [...vs].sort((a, b) => (b.checkoutRate ?? 0) - (a.checkoutRate ?? 0));
+        const leader = sorted[0]?.label?.replace(' (current)', '') ?? 'Variant A';
+        msg += `\n"${leader}" is leading with ${lift > 0 ? '+' : ''}${lift.toFixed(1)}% lift.`;
+      }
+      msg += '\n\nStarting a new test will stop the current one and apply the best-performing variant.\n\nProceed?';
+      if (!confirm(msg)) return;
+      // Apply the current test's best variant before starting new test
+      await resolveTestOutcome(addonKey);
+    }
+
     setStartingTest(s => ({ ...s, [addonKey]: true }));
     try {
       const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons/test', {
@@ -428,9 +502,9 @@ function AddonsPage() {
 
   async function stopTest(addonKey: string) {
     if (!STORE_ID) return;
-    const first = confirm('Are you sure you want to stop this test? You can resume it later.');
+    const first = confirm('Are you sure you want to stop this test? You can resume it later, or the system will apply the best variant.');
     if (!first) return;
-    const second = confirm('This will pause the experiment. Confirm to proceed.');
+    const second = confirm('This will pause the experiment and apply the leading variant. Confirm to proceed.');
     if (!second) return;
     try {
       const res = await fetch(
@@ -438,6 +512,8 @@ function AddonsPage() {
         { method: 'DELETE' },
       );
       if (res.ok) {
+        // Apply winner or ask user before refreshing experiments
+        await resolveTestOutcome(addonKey);
         await fetchExperiments();
       }
     } catch (e) {

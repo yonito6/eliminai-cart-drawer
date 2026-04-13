@@ -525,6 +525,9 @@
 
     ensureProtection: function() {
       if (protectionDone || toggling) return;
+      // Respect defaultOn setting — if false, don't auto-add protection
+      var shouldAutoAdd = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
+      if (!shouldAutoAdd) return;
       protectionDone = true;
       fetch('/cart.js')
       .then(function(r) { return r.json(); })
@@ -576,7 +579,7 @@
             var body = JSON.parse(opts.body);
             if (body && body.items && Array.isArray(body.items)) {
               var hasProt = body.items.some(function(it) { return it.id === PROT_VID || it.id === String(PROT_VID); });
-              if (!hasProt && !protectionDone) {
+              if (!hasProt && !protectionDone && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false) {
                 body.items.push({ id: PROT_VID, quantity: 1 });
                 opts.body = JSON.stringify(body);
                 protectionDone = true;
@@ -1870,6 +1873,8 @@
       } else if (m.target.id === 'CartDrawer' && !m.target.classList.contains('drawer--is-open')) {
         // Clear when drawer closes so next open captures fresh URL
         window._ccdReturnUrl = null;
+        // Reset so next cart open re-adds protection if defaultOn
+        protectionDone = false;
       }
     });
   });
