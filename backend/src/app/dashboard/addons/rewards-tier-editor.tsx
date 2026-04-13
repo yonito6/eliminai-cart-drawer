@@ -606,21 +606,6 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
   // Track whether we are the source of preview updates (to ignore our own prop changes)
   const isPreviewingRef = useRef(false);
 
-  // Push migrated config to the preview on mount so the parent's addon state
-  // has the colorized HTML BEFORE the user types anything. Without this, the
-  // preview shows un-migrated (colorless) text until the first keystroke.
-  const didPushInitialRef = useRef(false);
-  useEffect(() => {
-    if (didPushInitialRef.current) return;
-    const migrated = migrateColors(savedConfig);
-    if (JSON.stringify(migrated) !== JSON.stringify(savedConfig)) {
-      didPushInitialRef.current = true;
-      isPreviewingRef.current = true;
-      onPreviewChange(migrated);
-      setTimeout(() => { isPreviewingRef.current = false; }, 0);
-    }
-  }, [savedConfig, migrateColors, onPreviewChange]);
-
   useEffect(() => {
     // Only update saved snapshot from external saves (not from our own preview updates)
     if (isPreviewingRef.current) return;
@@ -682,14 +667,29 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
   }
 
   function handleDiscard() {
-    setDraft({ ...savedRef.current });
-    onPreviewChange(savedRef.current);
+    const saved = { ...savedRef.current };
+    setDraft(saved);
+    isPreviewingRef.current = true;
+    onPreviewChange(saved);
+    setTimeout(() => { isPreviewingRef.current = false; }, 0);
+    onStagingChange?.(null);
     setHasChanges(false);
   }
 
+  // When staging hint changes, push current draft (with migrated colors) to
+  // the preview so the parent's addon config matches the editor immediately.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const handleStagingChange = useCallback((hint: StagingHint | null) => {
+    isPreviewingRef.current = true;
+    onPreviewChange(draftRef.current);
+    setTimeout(() => { isPreviewingRef.current = false; }, 0);
+    onStagingChange?.(hint);
+  }, [onPreviewChange, onStagingChange]);
+
   return (
     <div>
-      <RewardsTierEditor config={draft} onConfigChange={handleConfigChange} storeId={storeId} successColor={successColor} messageColor={messageColor} themeFont={themeFont} onStagingChange={onStagingChange} />
+      <RewardsTierEditor config={draft} onConfigChange={handleConfigChange} storeId={storeId} successColor={successColor} messageColor={messageColor} themeFont={themeFont} onStagingChange={handleStagingChange} />
       {hasChanges && (
         <div style={{ display: 'flex', gap: 8, marginTop: 16, padding: '12px 14px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 10, alignItems: 'center' }}>
           <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#92400e' }}>Unsaved changes</div>
