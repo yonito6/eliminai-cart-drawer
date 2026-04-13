@@ -14,6 +14,11 @@ interface RichTextEditorProps {
   themeBg?: string;
 }
 
+/** Check if HTML already contains inline color (font color, style="color:", etc.) */
+function hasInlineColor(html: string): boolean {
+  return /color\s*[:=]/i.test(html);
+}
+
 export default function RichTextEditor({ value, onChange, placeholder, themeColor, themeFont, themeBg }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [showHtml, setShowHtml] = useState(false);
@@ -22,12 +27,26 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
   // Track whether we've done the initial render
   const initializedRef = useRef(false);
 
+  // Auto-apply themeColor to plain text that has no inline color yet (one-time migration)
+  const colorAppliedRef = useRef(false);
+
   // Set initial content once, then only update if external value changes
   useEffect(() => {
     if (!editorRef.current || showHtml) return;
     if (!initializedRef.current) {
-      editorRef.current.innerHTML = value || '';
-      lastValueRef.current = value || '';
+      let html = value || '';
+      // If themeColor set and content has no inline color, wrap it once and save
+      if (themeColor && html && !colorAppliedRef.current && !hasInlineColor(html)) {
+        html = `<span style="color: ${themeColor}">${html}</span>`;
+        colorAppliedRef.current = true;
+        editorRef.current.innerHTML = html;
+        lastValueRef.current = html;
+        setHtmlSource(html);
+        onChange(html);
+      } else {
+        editorRef.current.innerHTML = html;
+        lastValueRef.current = html;
+      }
       initializedRef.current = true;
       return;
     }
@@ -130,7 +149,7 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
     outline: 'none',
     fontSize: 13,
     lineHeight: 1.5,
-    color: themeColor || '#1f2937',
+    color: '#1f2937',
     fontFamily: themeFont || 'inherit',
     background: themeBg || 'transparent',
   };
