@@ -1901,6 +1901,22 @@ function AddonsPage() {
                                             {step.sub}
                                           </div>
                                         )}
+                                        {/* "Why X orders?" — only under Orders step */}
+                                        {si === 0 && orderPct < 100 && (
+                                          <details style={{ marginTop: 3, textAlign: 'center' }}>
+                                            <summary style={{ fontSize: 9, color: '#7c3aed', cursor: 'pointer', listStyle: 'none' }}>
+                                              why {dynamicOrdersTotal} orders?
+                                            </summary>
+                                            <div style={{ marginTop: 4, padding: 6, background: '#f5f3ff', borderRadius: 5, fontSize: 10, color: '#4b5563', textAlign: 'left', lineHeight: 1.5, maxWidth: 200 }}>
+                                              <div>About <strong>{(baselinePurchaseRate * 100).toFixed(1)}%</strong> of cart openers buy.</div>
+                                              <div style={{ marginTop: 3 }}>At that rate, ~{dynamicOrdersPerVariant} orders per variant ({numVariants} variants = ~{dynamicOrdersTotal}) lets us detect a real difference.</div>
+                                              <div style={{ marginTop: 3 }}>This can <strong>go up or down</strong> as your data changes — more orders may lower it, inconsistent results may raise it.</div>
+                                              {consistencyScore < 1 && dailyLeaders.length >= 3 && (
+                                                <div style={{ marginTop: 3, color: '#92400e' }}>Extended ×{exp.consistencyMultiplier?.toFixed(1) || '1.0'} due to inconsistent daily results.</div>
+                                              )}
+                                            </div>
+                                          </details>
+                                        )}
                                       </div>
                                       {/* Connector arrow */}
                                       {si < steps.length - 1 && (
@@ -1910,21 +1926,6 @@ function AddonsPage() {
                                   );
                                 })}
                               </div>
-                              {orderPct < 100 && (
-                                <details style={{ marginTop: 6, textAlign: 'center' }}>
-                                  <summary style={{ fontSize: 10, color: '#7c3aed', cursor: 'pointer', listStyle: 'none' }}>
-                                    Why ~{dynamicOrdersTotal}?
-                                  </summary>
-                                  <div style={{ marginTop: 6, padding: 8, background: '#f5f3ff', borderRadius: 6, fontSize: 11, color: '#4b5563', textAlign: 'left', lineHeight: 1.5 }}>
-                                    <div>About <strong>{(baselinePurchaseRate * 100).toFixed(1)}%</strong> of people who open your cart end up buying.</div>
-                                    <div style={{ marginTop: 4 }}>At that rate, we need <strong>~{dynamicOrdersPerVariant} orders per variant</strong> ({numVariants} variants = ~{dynamicOrdersTotal} total) to reliably detect if one version sells better than the other.</div>
-                                    <div style={{ marginTop: 4 }}>This number is <strong>unique to your store</strong> — a store with a higher buy rate needs fewer orders. It updates as more data comes in.</div>
-                                    {consistencyScore < 1 && dailyLeaders.length >= 3 && (
-                                      <div style={{ marginTop: 4, color: '#92400e' }}>Results have been inconsistent between days, so the target was extended ×{exp.consistencyMultiplier?.toFixed(1) || '1.0'} to be safe.</div>
-                                    )}
-                                  </div>
-                                </details>
-                              )}
                               {liftHasData && minOrders >= 40 && liftAbs < 3 && (
                                 <div style={{ marginTop: 8, padding: 8, background: '#fef3c7', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
                                   {'This feature shows less than 3% impact. The engine will auto-conclude soon so we can test the next dimension.'}
