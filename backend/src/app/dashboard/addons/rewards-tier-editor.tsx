@@ -26,6 +26,8 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
   const allRewardsUnlockedText: string = config.allRewardsUnlockedText ?? '';
 
   const [editingTierId, setEditingTierId] = useState<string | null>(null);
+  // Track which tier+field is being explicitly previewed via "Preview in cart" button
+  const [previewingKey, setPreviewingKey] = useState<string | null>(null);
 
   // Emit staging hint whenever the editing context changes
   const emitStaging = useCallback((tierId: string | null, field?: StagingHint['field']) => {
@@ -39,6 +41,20 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
     if (tierIndex < 0) { onStagingChange(null); return; }
     onStagingChange({ context: 'tier', tierIndex, field: field || 'label' });
   }, [onStagingChange, tiers]);
+
+  // Toggle explicit preview for a specific tier+field (e.g. gift products)
+  const togglePreview = useCallback((tierId: string, field: StagingHint['field']) => {
+    const key = `${tierId}:${field}`;
+    if (previewingKey === key) {
+      // Hide preview — go back to whatever the current editing context is
+      setPreviewingKey(null);
+      emitStaging(editingTierId, 'label');
+    } else {
+      setPreviewingKey(key);
+      emitStaging(tierId, field);
+    }
+  }, [previewingKey, emitStaging, editingTierId]);
+
   const [iconPickerTierId, setIconPickerTierId] = useState<string | null>(null);
   const [giftSearchQuery, setGiftSearchQuery] = useState('');
   const [giftSearchResults, setGiftSearchResults] = useState<any[]>([]);
@@ -264,6 +280,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                   onClick={() => {
                     const nextId = isEditing ? null : tier.id;
                     setEditingTierId(nextId);
+                    setPreviewingKey(null);
                     emitStaging(nextId, 'label');
                   }}
                 >
@@ -412,7 +429,24 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
 
                     {/* Gift Products — multi-product picker with real Shopify images */}
                     <div onFocus={() => { emitStaging(tier.id, 'gift'); }}>
-                      <span style={labelStyle}>Gift Products (auto-added to cart when tier is reached)</span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={labelStyle}>Gift Products (auto-added to cart when tier is reached)</span>
+                        {normalizeTier(tier).giftProducts.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); togglePreview(tier.id, 'gift'); }}
+                            style={{
+                              padding: '3px 10px', fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                              border: '1px solid', borderRadius: 6, lineHeight: '18px',
+                              ...(previewingKey === `${tier.id}:gift`
+                                ? { background: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
+                                : { background: '#fff', color: '#6b7280', borderColor: '#d1d5db' }),
+                            }}
+                          >
+                            {previewingKey === `${tier.id}:gift` ? 'Hide preview' : 'Preview in cart'}
+                          </button>
+                        )}
+                      </div>
 
                       {/* Selected gifts list */}
                       {normalizeTier(tier).giftProducts.length > 0 && (
