@@ -303,7 +303,7 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
         const remaining = nextTier.goal - demoValue;
         const unit = thresholdMode === 'dollars' ? '$' : '';
         const suffix = thresholdMode === 'items' && remaining !== 1 ? ' items' : thresholdMode === 'items' ? ' item' : '';
-        progressMsg = `Add <strong>${unit}${remaining}${suffix}</strong> more for <strong>${nextTier.label}</strong>`;
+        progressMsg = `Add ${unit}${remaining}${suffix} more for ${nextTier.label}`;
       }
     } else if (sortedTiers.length > 0) {
       // All tiers reached — show highest tier's afterText or allRewardsUnlockedText
@@ -373,10 +373,11 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
       );
     }
 
-    // ── Gift item preview: inject gift product(s) into cart items when staging ──
+    // ── Gift item preview: inject gift product(s) into cart items when a tier with gifts is staged ──
     // Renders gifts exactly like the live cart (v14-complete.js enforceGiftItem):
     // regular ccd-item with qty hidden, configurable badge, "Free" price
-    if (stagingHint?.field === 'gift' && stagedTier) {
+    // Shows automatically whenever the staged tier has gifts (no explicit toggle needed)
+    if (stagedTier) {
       const gifts: Array<{ title?: string; imageUrl?: string; handle?: string }> =
         stagedTier.giftProducts ?? (stagedTier.giftProduct ? [stagedTier.giftProduct] : []);
       if (gifts.length > 0) {
@@ -553,8 +554,15 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
   }
 
   const focusArea = FOCUS_AREAS[addonKey];
-  // When staging gift preview, scroll to the last cart item (the gift) instead of the normal focus area
-  const giftScrollScript = stagingHint?.field === 'gift'
+  // When staged tier has gifts, scroll to the last cart item (the gift)
+  let hasGiftInStaged = false;
+  if (stagingHint?.context === 'tier' && stagingHint.tierIndex != null && addonKey === 'freeShippingBar') {
+    const sortedForScroll = [...(addonConfig.tiers ?? [])].sort((a: any, b: any) => a.goal - b.goal);
+    const scrollTier = sortedForScroll[stagingHint.tierIndex];
+    const scrollGifts = scrollTier?.giftProducts ?? (scrollTier?.giftProduct ? [scrollTier.giftProduct] : []);
+    hasGiftInStaged = scrollGifts.length > 0;
+  }
+  const giftScrollScript = hasGiftInStaged
     ? '<scr' + 'ipt>window.addEventListener("load",function(){setTimeout(function(){var items=document.querySelectorAll(".ccd-item");var last=items[items.length-1];if(last){var sc=document.querySelector(".drawer__scrollable");if(sc)sc.scrollTop=sc.scrollHeight;}},200)})</scr' + 'ipt>'
     : '';
   const scrollScript = giftScrollScript || (mode === 'focused' && focusArea
@@ -577,10 +585,32 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     if (overrides.length) themeCssOverride = ':root{' + overrides.join(';') + '}';
   }
 
-  // Remove bottom fade when staging gift preview so the gift item is fully visible
-  if (stagingHint?.field === 'gift') {
-    themeCssOverride += '#CartDrawer.custom-cart-drawer .drawer__inner::after{display:none !important;}';
+  // Remove bottom fade when staging a tier with gifts so gift items are fully visible
+  if (stagingHint?.context === 'tier' && stagingHint.tierIndex != null && addonKey === 'freeShippingBar') {
+    const sortedForFade = [...(addonConfig.tiers ?? [])].sort((a: any, b: any) => a.goal - b.goal);
+    const fadeTier = sortedForFade[stagingHint.tierIndex];
+    const fadeGifts = fadeTier?.giftProducts ?? (fadeTier?.giftProduct ? [fadeTier.giftProduct] : []);
+    if (fadeGifts.length > 0) {
+      themeCssOverride += '#CartDrawer.custom-cart-drawer .drawer__inner::after{display:none !important;}';
+    }
   }
+
+  // Milestone animation override based on config
+  const animType = addonConfig.milestoneAnimationType ?? 'pulse';
+  const animEnabled = addonConfig.milestoneAnimation !== false;
+  if (!animEnabled || animType === 'none') {
+    themeCssOverride += '.ccd-progress__icon--reached{animation:none !important;}';
+  } else if (animType === 'bounce') {
+    themeCssOverride += '@keyframes ccdMilestoneBounce{0%,100%{transform:translateY(0) scale(1)}30%{transform:translateY(-5px) scale(1.05)}50%{transform:translateY(-2px) scale(1.02)}70%{transform:translateY(-4px) scale(1.04)}}'
+      + '.ccd-progress__icon--reached{animation:ccdMilestoneBounce 1.6s ease-in-out infinite !important;}';
+  } else if (animType === 'heartbeat') {
+    themeCssOverride += '@keyframes ccdMilestoneHeartbeat{0%,100%{transform:scale(1)}14%{transform:scale(1.15)}28%{transform:scale(1)}42%{transform:scale(1.1)}56%{transform:scale(1)}}'
+      + '.ccd-progress__icon--reached{animation:ccdMilestoneHeartbeat 1.8s ease-in-out infinite !important;}';
+  } else if (animType === 'shake') {
+    themeCssOverride += '@keyframes ccdMilestoneShake{0%,100%{transform:rotate(0)}15%{transform:rotate(-10deg)}30%{transform:rotate(10deg)}45%{transform:rotate(-6deg)}60%{transform:rotate(6deg)}75%{transform:rotate(-2deg)}}'
+      + '.ccd-progress__icon--reached{animation:ccdMilestoneShake 1.5s ease-in-out infinite !important;}';
+  }
+  // 'pulse' uses the default CSS from REAL_CART_CSS — no override needed
 
   const srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'
     + REAL_CART_CSS + themeCssOverride

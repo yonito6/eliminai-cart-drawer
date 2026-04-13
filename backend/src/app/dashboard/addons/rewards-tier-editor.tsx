@@ -26,8 +26,6 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
   const allRewardsUnlockedText: string = config.allRewardsUnlockedText ?? '';
 
   const [editingTierId, setEditingTierId] = useState<string | null>(null);
-  // Track which tier+field is being explicitly previewed via "Preview in cart" button
-  const [previewingKey, setPreviewingKey] = useState<string | null>(null);
 
   // Emit staging hint whenever the editing context changes
   const emitStaging = useCallback((tierId: string | null, field?: StagingHint['field']) => {
@@ -41,19 +39,6 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
     if (tierIndex < 0) { onStagingChange(null); return; }
     onStagingChange({ context: 'tier', tierIndex, field: field || 'label' });
   }, [onStagingChange, tiers]);
-
-  // Toggle explicit preview for a specific tier+field (e.g. gift products)
-  const togglePreview = useCallback((tierId: string, field: StagingHint['field']) => {
-    const key = `${tierId}:${field}`;
-    if (previewingKey === key) {
-      // Hide preview — go back to whatever the current editing context is
-      setPreviewingKey(null);
-      emitStaging(editingTierId, 'label');
-    } else {
-      setPreviewingKey(key);
-      emitStaging(tierId, field);
-    }
-  }, [previewingKey, emitStaging, editingTierId]);
 
   const [iconPickerTierId, setIconPickerTierId] = useState<string | null>(null);
   const [giftSearchQuery, setGiftSearchQuery] = useState('');
@@ -229,95 +214,44 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
         />
       </div>
 
-      {/* Gift Badge Settings — global look for "Bonus gift" badge on gift items */}
-      <div style={{ padding: '12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: (config.giftBadgeEnabled !== false) ? 10 : 0 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>Gift Badge</span>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: '#6b7280' }}>
-            <span>{config.giftBadgeEnabled !== false ? 'Visible' : 'Hidden'}</span>
+      {/* Milestone Animation */}
+      <div style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: (config.milestoneAnimation !== false) ? 8 : 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>Milestone Animation</span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#6b7280' }}>
+            <span>{config.milestoneAnimation !== false ? 'On' : 'Off'}</span>
             <input
               type="checkbox"
-              checked={config.giftBadgeEnabled !== false}
-              onChange={e => onConfigChange({ giftBadgeEnabled: e.target.checked })}
-              style={{ width: 14, height: 14 }}
+              checked={config.milestoneAnimation !== false}
+              onChange={e => onConfigChange({ milestoneAnimation: e.target.checked, milestoneAnimationType: e.target.checked ? (config.milestoneAnimationType || 'pulse') : 'none' })}
+              style={{ width: 14, height: 14, cursor: 'pointer' }}
             />
           </label>
         </div>
-        {config.giftBadgeEnabled !== false && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {/* Badge Text */}
-            <div>
-              <span style={labelStyle}>Badge Text</span>
-              <input
-                type="text"
-                value={config.giftBadgeText ?? 'Bonus gift'}
-                onChange={e => onConfigChange({ giftBadgeText: e.target.value })}
-                placeholder="Bonus gift"
-                style={{ ...inputStyle }}
-              />
-            </div>
-            {/* Badge Icon */}
-            <div>
-              <span style={labelStyle}>Badge Icon</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {Object.entries(REWARD_ICONS).map(([key, icon]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => onConfigChange({ giftBadgeIcon: key })}
-                    title={icon.label}
-                    style={{
-                      width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      borderRadius: 6, cursor: 'pointer', border: '1px solid',
-                      background: (config.giftBadgeIcon ?? 'gift') === key ? '#7c3aed' : '#fff',
-                      borderColor: (config.giftBadgeIcon ?? 'gift') === key ? '#7c3aed' : '#d1d5db',
-                    }}
-                  >
-                    <span
-                      dangerouslySetInnerHTML={{ __html: icon.svg.replace('currentColor', (config.giftBadgeIcon ?? 'gift') === key ? '#fff' : '#6b7280') }}
-                      style={{ width: 18, height: 18, display: 'flex' }}
-                    />
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* Badge Colors */}
-            <div style={{ display: 'flex', gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <span style={labelStyle}>Text Color</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <input
-                    type="color"
-                    value={config.giftBadgeTextColor ?? '#1a7a1a'}
-                    onChange={e => onConfigChange({ giftBadgeTextColor: e.target.value })}
-                    style={{ width: 32, height: 28, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer' }}
-                  />
-                  <input
-                    type="text"
-                    value={config.giftBadgeTextColor ?? '#1a7a1a'}
-                    onChange={e => onConfigChange({ giftBadgeTextColor: e.target.value })}
-                    style={{ ...inputStyle, flex: 1, fontSize: 12 }}
-                  />
-                </div>
-              </div>
-              <div style={{ flex: 1 }}>
-                <span style={labelStyle}>Background Color</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <input
-                    type="color"
-                    value={config.giftBadgeBgColor ?? '#edf7ed'}
-                    onChange={e => onConfigChange({ giftBadgeBgColor: e.target.value })}
-                    style={{ width: 32, height: 28, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer' }}
-                  />
-                  <input
-                    type="text"
-                    value={config.giftBadgeBgColor ?? '#edf7ed'}
-                    onChange={e => onConfigChange({ giftBadgeBgColor: e.target.value })}
-                    style={{ ...inputStyle, flex: 1, fontSize: 12 }}
-                  />
-                </div>
-              </div>
-            </div>
+        {config.milestoneAnimation !== false && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {([
+              { key: 'pulse', label: 'Pulse', desc: 'Gentle scale up/down' },
+              { key: 'bounce', label: 'Bounce', desc: 'Playful bounce effect' },
+              { key: 'heartbeat', label: 'Heartbeat', desc: 'Double-tap heartbeat rhythm' },
+              { key: 'shake', label: 'Shake', desc: 'Quick attention shake' },
+            ] as const).map(anim => (
+              <button
+                key={anim.key}
+                type="button"
+                onClick={() => onConfigChange({ milestoneAnimationType: anim.key })}
+                title={anim.desc}
+                style={{
+                  padding: '6px 14px', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                  borderRadius: 6, border: '1px solid',
+                  background: (config.milestoneAnimationType ?? 'pulse') === anim.key ? '#7c3aed' : '#fff',
+                  color: (config.milestoneAnimationType ?? 'pulse') === anim.key ? '#fff' : '#374151',
+                  borderColor: (config.milestoneAnimationType ?? 'pulse') === anim.key ? '#7c3aed' : '#d1d5db',
+                }}
+              >
+                {anim.label}
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -373,7 +307,6 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                   onClick={() => {
                     const nextId = isEditing ? null : tier.id;
                     setEditingTierId(nextId);
-                    setPreviewingKey(null);
                     emitStaging(nextId, 'label');
                   }}
                 >
@@ -470,17 +403,17 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                     {/* Icon Picker */}
                     <div>
                       <span style={labelStyle}>Icon</span>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                         {Object.entries(REWARD_ICONS).map(([key, def]) => (
                           <button
                             key={key}
-                            onClick={() => { updateTier(tier.id, { icon: key }); setIconPickerTierId(null); }}
+                            onClick={() => { updateTier(tier.id, { icon: key, customIconUrl: undefined }); setIconPickerTierId(null); }}
                             style={{
                               width: 40,
                               height: 40,
                               borderRadius: 8,
-                              border: '2px solid ' + (tier.icon === key ? '#7c3aed' : '#e5e7eb'),
-                              background: tier.icon === key ? '#f5f3ff' : '#fff',
+                              border: '2px solid ' + (tier.icon === key && !tier.customIconUrl ? '#7c3aed' : '#e5e7eb'),
+                              background: tier.icon === key && !tier.customIconUrl ? '#f5f3ff' : '#fff',
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
@@ -489,10 +422,49 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                             }}
                             title={def.label}
                             dangerouslySetInnerHTML={{
-                              __html: def.svg.replace('currentColor', tier.icon === key ? '#7c3aed' : '#9ca3af'),
+                              __html: def.svg.replace('currentColor', tier.icon === key && !tier.customIconUrl ? '#7c3aed' : '#9ca3af'),
                             }}
                           />
                         ))}
+                        {/* Custom icon upload */}
+                        {tier.customIconUrl && (
+                          <div style={{
+                            width: 40, height: 40, borderRadius: 8, border: '2px solid #7c3aed',
+                            background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
+                          }}>
+                            <img src={tier.customIconUrl} alt="Custom" style={{ width: 22, height: 22, objectFit: 'contain' }} />
+                            <button
+                              onClick={() => updateTier(tier.id, { customIconUrl: undefined, icon: 'star' })}
+                              style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#ef4444', color: '#fff', border: 'none', fontSize: 10, cursor: 'pointer', lineHeight: '16px', padding: 0 }}
+                            >×</button>
+                          </div>
+                        )}
+                        <label
+                          title="Upload custom icon (SVG or PNG, max 10KB)"
+                          style={{
+                            width: 40, height: 40, borderRadius: 8, border: '2px dashed #d1d5db',
+                            background: '#fafafa', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 18, color: '#9ca3af', transition: 'all 0.15s',
+                          }}
+                        >
+                          +
+                          <input
+                            type="file"
+                            accept=".svg,.png,image/svg+xml,image/png"
+                            style={{ display: 'none' }}
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (file.size > 10240) { alert('Icon must be under 10KB'); return; }
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                updateTier(tier.id, { customIconUrl: reader.result as string, icon: 'custom' });
+                              };
+                              reader.readAsDataURL(file);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
                       </div>
                     </div>
 
@@ -522,24 +494,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
 
                     {/* Gift Products — multi-product picker with real Shopify images */}
                     <div onFocus={() => { emitStaging(tier.id, 'gift'); }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={labelStyle}>Gift Products (auto-added to cart when tier is reached)</span>
-                        {normalizeTier(tier).giftProducts.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); togglePreview(tier.id, 'gift'); }}
-                            style={{
-                              padding: '3px 10px', fontSize: 11, fontWeight: 500, cursor: 'pointer',
-                              border: '1px solid', borderRadius: 6, lineHeight: '18px',
-                              ...(previewingKey === `${tier.id}:gift`
-                                ? { background: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }
-                                : { background: '#fff', color: '#6b7280', borderColor: '#d1d5db' }),
-                            }}
-                          >
-                            {previewingKey === `${tier.id}:gift` ? 'Hide preview' : 'Preview in cart'}
-                          </button>
-                        )}
-                      </div>
+                      <span style={labelStyle}>Gift Products (auto-added to cart when tier is reached)</span>
 
                       {/* Selected gifts list */}
                       {normalizeTier(tier).giftProducts.length > 0 && (
@@ -673,6 +628,127 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                         )}
                       </div>
                     </div>
+
+                    {/* Gift Badge Settings — shown when tier has gifts */}
+                    {normalizeTier(tier).giftProducts.length > 0 && (
+                      <div style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: (config.giftBadgeEnabled !== false) ? 8 : 0 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>Gift Badge</span>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#6b7280' }}>
+                            <span>{config.giftBadgeEnabled !== false ? 'Visible' : 'Hidden'}</span>
+                            <input
+                              type="checkbox"
+                              checked={config.giftBadgeEnabled !== false}
+                              onChange={e => onConfigChange({ giftBadgeEnabled: e.target.checked })}
+                              style={{ width: 14, height: 14, cursor: 'pointer' }}
+                            />
+                          </label>
+                        </div>
+                        {config.giftBadgeEnabled !== false && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div>
+                              <span style={labelStyle}>Badge Text</span>
+                              <input
+                                type="text"
+                                value={config.giftBadgeText ?? 'Bonus gift'}
+                                onChange={e => onConfigChange({ giftBadgeText: e.target.value })}
+                                placeholder="Bonus gift"
+                                style={{ ...inputStyle }}
+                              />
+                            </div>
+                            <div>
+                              <span style={labelStyle}>Badge Icon</span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                                {Object.entries(REWARD_ICONS).map(([key, icon]) => (
+                                  <button
+                                    key={key}
+                                    type="button"
+                                    onClick={() => onConfigChange({ giftBadgeIcon: key, giftBadgeCustomIconUrl: undefined })}
+                                    title={icon.label}
+                                    style={{
+                                      width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      borderRadius: 5, cursor: 'pointer', border: '1px solid',
+                                      background: (config.giftBadgeIcon ?? 'gift') === key && !config.giftBadgeCustomIconUrl ? '#7c3aed' : '#fff',
+                                      borderColor: (config.giftBadgeIcon ?? 'gift') === key && !config.giftBadgeCustomIconUrl ? '#7c3aed' : '#d1d5db',
+                                    }}
+                                  >
+                                    <span
+                                      dangerouslySetInnerHTML={{ __html: icon.svg.replace('currentColor', (config.giftBadgeIcon ?? 'gift') === key && !config.giftBadgeCustomIconUrl ? '#fff' : '#6b7280') }}
+                                      style={{ width: 16, height: 16, display: 'flex' }}
+                                    />
+                                  </button>
+                                ))}
+                                {config.giftBadgeCustomIconUrl && (
+                                  <div style={{ width: 28, height: 28, borderRadius: 5, border: '1px solid #7c3aed', background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                                    <img src={config.giftBadgeCustomIconUrl} alt="Custom" style={{ width: 16, height: 16, objectFit: 'contain' }} />
+                                    <button
+                                      onClick={() => onConfigChange({ giftBadgeCustomIconUrl: undefined, giftBadgeIcon: 'gift' })}
+                                      style={{ position: 'absolute', top: -5, right: -5, width: 14, height: 14, borderRadius: '50%', background: '#ef4444', color: '#fff', border: 'none', fontSize: 8, cursor: 'pointer', lineHeight: '14px', padding: 0 }}
+                                    >×</button>
+                                  </div>
+                                )}
+                                <label
+                                  title="Upload custom icon (SVG or PNG, max 10KB)"
+                                  style={{ width: 28, height: 28, borderRadius: 5, border: '1px dashed #d1d5db', background: '#fafafa', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#9ca3af' }}
+                                >
+                                  +
+                                  <input
+                                    type="file"
+                                    accept=".svg,.png,image/svg+xml,image/png"
+                                    style={{ display: 'none' }}
+                                    onChange={e => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      if (file.size > 10240) { alert('Icon must be under 10KB'); return; }
+                                      const reader = new FileReader();
+                                      reader.onload = () => { onConfigChange({ giftBadgeCustomIconUrl: reader.result as string, giftBadgeIcon: 'custom' }); };
+                                      reader.readAsDataURL(file);
+                                      e.target.value = '';
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 10 }}>
+                              <div style={{ flex: 1 }}>
+                                <span style={labelStyle}>Text Color</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <input
+                                    type="color"
+                                    value={config.giftBadgeTextColor ?? '#1a7a1a'}
+                                    onChange={e => onConfigChange({ giftBadgeTextColor: e.target.value })}
+                                    style={{ width: 28, height: 26, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer' }}
+                                  />
+                                  <input
+                                    type="text"
+                                    value={config.giftBadgeTextColor ?? '#1a7a1a'}
+                                    onChange={e => onConfigChange({ giftBadgeTextColor: e.target.value })}
+                                    style={{ ...inputStyle, flex: 1, fontSize: 11 }}
+                                  />
+                                </div>
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <span style={labelStyle}>Background</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <input
+                                    type="color"
+                                    value={config.giftBadgeBgColor ?? '#edf7ed'}
+                                    onChange={e => onConfigChange({ giftBadgeBgColor: e.target.value })}
+                                    style={{ width: 28, height: 26, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer' }}
+                                  />
+                                  <input
+                                    type="text"
+                                    value={config.giftBadgeBgColor ?? '#edf7ed'}
+                                    onChange={e => onConfigChange({ giftBadgeBgColor: e.target.value })}
+                                    style={{ ...inputStyle, flex: 1, fontSize: 11 }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

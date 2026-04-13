@@ -41,6 +41,7 @@ export interface RewardTier {
   label: string;
   goal: number;
   icon: string;
+  customIconUrl?: string;
   beforeText: string;
   afterText: string;
   /** @deprecated Use giftProducts instead */
@@ -325,13 +326,15 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       thresholdMode: 'items',       // 'items' | 'dollars'
       highestTierOnly: false,        // only award highest eligible reward
       allRewardsUnlockedText: '🎉 You\'ve unlocked all rewards!',
+      milestoneAnimation: true,             // enable/disable milestone animation
+      milestoneAnimationType: 'pulse',      // 'pulse' | 'bounce' | 'glow' | 'shake' | 'none'
       tiers: [
         {
           id: 'tier-1',
           label: 'Free Shipping',
           goal: 1,
           icon: 'shipping',
-          beforeText: 'Add {remaining} more to unlock',
+          beforeText: 'Add <strong>{remaining}</strong> more to unlock',
           afterText: 'Free shipping unlocked!',
           giftProduct: null,         // { handle, variantId, title, imageUrl } or null
         },
@@ -340,7 +343,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
           label: '2+1 FREE',
           goal: 3,
           icon: 'tag',
-          beforeText: 'Add {remaining} more for FREE',
+          beforeText: 'Add <strong>{remaining}</strong> more for FREE',
           afterText: 'Bonus item unlocked!',
           giftProduct: null,
         },

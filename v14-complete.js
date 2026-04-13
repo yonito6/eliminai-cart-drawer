@@ -61,6 +61,12 @@
   var THRESHOLD_MODE = CFG.thresholdMode || 'items'; // 'items' or 'dollars'
   var HIGHEST_TIER_ONLY = !!CFG.highestTierOnly;
   var ALL_REWARDS_TEXT = CFG.allRewardsUnlockedText || '\uD83C\uDF89 You\u2019ve unlocked all rewards!';
+  var MILESTONE_ANIMATION = CFG.milestoneAnimation !== false;
+  var MILESTONE_ANIM_TYPE = CFG.milestoneAnimationType || 'pulse';
+  var GIFT_BADGE_ENABLED = CFG.giftBadgeEnabled !== false;
+  var GIFT_BADGE_TEXT = CFG.giftBadgeText || 'Bonus gift';
+  var GIFT_BADGE_TEXT_COLOR = CFG.giftBadgeTextColor || '#1a7a1a';
+  var GIFT_BADGE_BG_COLOR = CFG.giftBadgeBgColor || '#edf7ed';
   // Backwards compat: derive PROMO_GOAL from last tier's goal
   var PROMO_GOAL = REWARD_TIERS.length > 0 ? REWARD_TIERS[REWARD_TIERS.length - 1].goal : (CFG.promoGoal || 3);
   // Build a set of all gift handles across tiers
@@ -1085,11 +1091,13 @@
         var priceColEl = giftEl.querySelector('.ccd-item__price-col');
         if (priceColEl) priceColEl.style.marginLeft = 'auto';
 
-        // 3. Add "Bonus gift" badge
-        if (!giftEl.querySelector('.ccd-gift-badge')) {
+        // 3. Add configurable gift badge
+        if (GIFT_BADGE_ENABLED && !giftEl.querySelector('.ccd-gift-badge')) {
           var badge = document.createElement('span');
           badge.className = 'ccd-gift-badge';
-          badge.innerHTML = GIFT_SVG + ' Bonus gift';
+          badge.style.color = GIFT_BADGE_TEXT_COLOR;
+          badge.style.background = GIFT_BADGE_BG_COLOR;
+          badge.innerHTML = GIFT_SVG + ' ' + GIFT_BADGE_TEXT;
           var priceCol = giftEl.querySelector('.ccd-item__price-col');
           if (priceCol) priceCol.appendChild(badge);
         }
@@ -1474,7 +1482,7 @@
           if (nextTier && nextTier.beforeText) {
             var tierRem = Math.max(0, nextTier.goal - currentValue);
             var unit = THRESHOLD_MODE === 'dollars' ? '$' + tierRem.toFixed(0) : tierRem;
-            msgEl.innerHTML = nextTier.beforeText.replace('{remaining}', '<strong>' + unit + '</strong>');
+            msgEl.innerHTML = nextTier.beforeText.replace('{remaining}', unit);
           } else {
             msgEl.innerHTML = 'Add <strong>' + overallRemaining + '</strong> more for <strong>FREE</strong>';
           }
@@ -1516,13 +1524,20 @@
         requestAnimationFrame(function() { progressWrap.classList.remove('ccd-progress--instant'); });
       }
 
-      // Sync all milestone pulse animations to same cycle (skip on reopen to avoid blink)
+      // Sync all milestone animations to same cycle (skip on reopen to avoid blink)
       if (!skipAnim) {
         var reachedEls = document.querySelectorAll('.ccd-progress__icon--reached');
         if (reachedEls.length > 0) {
+          var animName = 'none';
+          if (MILESTONE_ANIMATION) {
+            if (MILESTONE_ANIM_TYPE === 'pulse') animName = 'ccdMilestonePulse 1.8s ease-in-out infinite';
+            else if (MILESTONE_ANIM_TYPE === 'bounce') animName = 'ccdMilestoneBounce 1.6s ease-in-out infinite';
+            else if (MILESTONE_ANIM_TYPE === 'heartbeat') animName = 'ccdMilestoneHeartbeat 1.8s ease-in-out infinite';
+            else if (MILESTONE_ANIM_TYPE === 'shake') animName = 'ccdMilestoneShake 1.5s ease-in-out infinite';
+          }
           reachedEls.forEach(function(el) { el.style.animation = 'none'; });
           void document.body.offsetHeight;
-          reachedEls.forEach(function(el) { el.style.animation = ''; });
+          reachedEls.forEach(function(el) { el.style.animation = animName; });
         }
       }
     },
@@ -1861,6 +1876,12 @@
       THRESHOLD_MODE = cfg.thresholdMode || 'items';
       HIGHEST_TIER_ONLY = !!cfg.highestTierOnly;
       ALL_REWARDS_TEXT = cfg.allRewardsUnlockedText || '\uD83C\uDF89 You\u2019ve unlocked all rewards!';
+      MILESTONE_ANIMATION = cfg.milestoneAnimation !== false;
+      MILESTONE_ANIM_TYPE = cfg.milestoneAnimationType || 'pulse';
+      GIFT_BADGE_ENABLED = cfg.giftBadgeEnabled !== false;
+      GIFT_BADGE_TEXT = cfg.giftBadgeText || 'Bonus gift';
+      GIFT_BADGE_TEXT_COLOR = cfg.giftBadgeTextColor || '#1a7a1a';
+      GIFT_BADGE_BG_COLOR = cfg.giftBadgeBgColor || '#edf7ed';
       PROMO_GOAL = REWARD_TIERS[REWARD_TIERS.length - 1].goal;
       // Rebuild gift handles map
       GIFT_HANDLES = {};
