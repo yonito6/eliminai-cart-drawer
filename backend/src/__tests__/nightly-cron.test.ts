@@ -56,6 +56,8 @@ vi.mock('../lib/prisma', () => ({
 vi.mock('../lib/thompson', () => ({
   calculateThompsonSampling: vi.fn(),
   buildCrossStorePriors: vi.fn().mockReturnValue({}),
+  calculateSampleTarget: vi.fn().mockReturnValue({ nPerVariant: 1980, totalNeeded: 3960, baselineRate: 0.03 }),
+  calculateConsistency: vi.fn().mockReturnValue({ score: 1, multiplier: 1.0, message: null }),
 }));
 
 import { prisma } from '../lib/prisma';
@@ -106,6 +108,8 @@ const DEFAULT_TS_RESULT = {
   liftPercent: 5,
   winnerId: null,
   trafficSplit: { control: 0.35, treatment: 0.65 },
+  minOrdersPerVariant: 25,
+  orderRates: { control: 0.05, treatment: 0.06 },
 };
 
 // Helper: mock groupBy to return arrays of { sessionId } with given lengths

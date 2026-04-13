@@ -251,7 +251,9 @@ describe('POST /api/proxy/config', () => {
       'MOBILE',
       true,
       'instagram',
-      'US'
+      'US',
+      1,
+      false
     );
   });
 
@@ -266,7 +268,9 @@ describe('POST /api/proxy/config', () => {
       'DESKTOP',
       false,
       undefined,
-      undefined
+      undefined,
+      1,
+      false
     );
   });
 });

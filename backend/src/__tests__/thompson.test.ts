@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateThompsonSampling, pickVariant } from '../lib/thompson';
+import { calculateThompsonSampling, pickVariant, calculateSampleTarget, calculateConsistency } from '../lib/thompson';
 
 describe('Thompson Sampling — order-based optimization', () => {
   it('returns 50/50 split with no data', () => {
@@ -14,16 +14,26 @@ describe('Thompson Sampling — order-based optimization', () => {
   });
 
   it('shifts traffic toward variant with more orders', () => {
-    // control: 10 orders out of 200 cart opens (5% order rate)
-    // treatment: 30 orders out of 200 cart opens (15% order rate)
-    // 200 per variant exceeds explorationMin — Thompson can steer
+    // control: 25 orders out of 500 cart opens (5% order rate)
+    // treatment: 60 orders out of 500 cart opens (12% order rate)
+    // Both have 25+ orders (minimum gate) and 500 visitors per variant
     const result = calculateThompsonSampling([
-      { id: 'control', successes: 10, failures: 190 },
-      { id: 'treatment', successes: 30, failures: 170 },
+      { id: 'control', successes: 25, failures: 475 },
+      { id: 'treatment', successes: 60, failures: 440 },
     ], { dailyTraffic: 500, minDaysRunning: 5 });
     expect(result.trafficSplit.treatment).toBeGreaterThan(0.7);
     expect(result.confidence).toBeGreaterThan(0.9);
     expect(result.winnerId).toBe('treatment');
+  });
+
+  it('does NOT declare winner with fewer than 25 orders per variant', () => {
+    // Even with high confidence, below 25-order minimum
+    const result = calculateThompsonSampling([
+      { id: 'control', successes: 3, failures: 197 },
+      { id: 'treatment', successes: 15, failures: 185 },
+    ], { dailyTraffic: 500, minDaysRunning: 5 });
+    expect(result.winnerId).toBeNull();
+    expect(result.reason).toContain('orders per variant');
   });
 
   it('reports low confidence with small samples', () => {
@@ -103,5 +113,87 @@ describe('pickVariant', () => {
     // Treatment should be picked ~70% of the time (with tolerance)
     expect(counts.treatment).toBeGreaterThan(600);
     expect(counts.treatment).toBeLessThan(800);
+  });
+});
+
+describe('calculateSampleTarget', () => {
+  it('calculates correct sample size for 3% baseline', () => {
+    const result = calculateSampleTarget(0.03, 2);
+    // At 3% baseline with 50% MDE → ~1,980 per variant
+    expect(result.nPerVariant).toBeGreaterThan(1500);
+    expect(result.nPerVariant).toBeLessThan(2500);
+    expect(result.totalNeeded).toBe(result.nPerVariant * 2);
+    expect(result.baselineRate).toBe(0.03);
+  });
+
+  it('needs fewer visitors for higher baseline rates', () => {
+    const low = calculateSampleTarget(0.03, 2);
+    const high = calculateSampleTarget(0.10, 2);
+    expect(high.nPerVariant).toBeLessThan(low.nPerVariant);
+  });
+
+  it('clamps to minimum 500 per variant', () => {
+    const result = calculateSampleTarget(0.50, 2);
+    expect(result.nPerVariant).toBeGreaterThanOrEqual(500);
+  });
+
+  it('clamps to maximum 20000 per variant', () => {
+    const result = calculateSampleTarget(0.005, 2);
+    expect(result.nPerVariant).toBeLessThanOrEqual(20000);
+  });
+});
+
+describe('calculateConsistency', () => {
+  it('returns perfect score with fewer than 2 days', () => {
+    const result = calculateConsistency([
+      { date: '2026-04-13', leaderId: 'A', liftPct: 10 },
+    ]);
+    expect(result.score).toBe(1);
+    expect(result.multiplier).toBe(1.0);
+    expect(result.message).toBeNull();
+  });
+
+  it('returns high consistency when same variant leads every day', () => {
+    const result = calculateConsistency([
+      { date: '2026-04-10', leaderId: 'A', liftPct: 12 },
+      { date: '2026-04-11', leaderId: 'A', liftPct: 8 },
+      { date: '2026-04-12', leaderId: 'A', liftPct: 15 },
+      { date: '2026-04-13', leaderId: 'A', liftPct: 10 },
+    ]);
+    expect(result.score).toBe(1);
+    expect(result.multiplier).toBe(1.0);
+    expect(result.message).toBeNull();
+  });
+
+  it('detects medium volatility and extends 1.5x', () => {
+    const result = calculateConsistency([
+      { date: '2026-04-10', leaderId: 'A', liftPct: 12 },
+      { date: '2026-04-11', leaderId: 'B', liftPct: 3 },
+      { date: '2026-04-12', leaderId: 'A', liftPct: 8 },
+      { date: '2026-04-13', leaderId: 'A', liftPct: 10 },
+      { date: '2026-04-14', leaderId: 'B', liftPct: 2 },
+    ]);
+    expect(result.score).toBe(0.6);
+    expect(result.multiplier).toBe(1.5);
+    expect(result.message).toContain('vary between days');
+  });
+
+  it('applies 2x multiplier when results flip frequently', () => {
+    const result = calculateConsistency([
+      { date: '2026-04-08', leaderId: 'A', liftPct: 5 },
+      { date: '2026-04-09', leaderId: 'B', liftPct: 3 },
+      { date: '2026-04-10', leaderId: 'A', liftPct: 2 },
+      { date: '2026-04-11', leaderId: 'B', liftPct: 4 },
+      { date: '2026-04-12', leaderId: 'B', liftPct: 1 },
+      { date: '2026-04-13', leaderId: 'A', liftPct: 6 },
+      { date: '2026-04-14', leaderId: 'B', liftPct: 2 },
+      { date: '2026-04-15', leaderId: 'A', liftPct: 3 },
+      { date: '2026-04-16', leaderId: 'B', liftPct: 1 },
+      { date: '2026-04-17', leaderId: 'A', liftPct: 4 },
+    ]);
+    // A: 5, B: 5 → 50% → 2x multiplier
+    expect(result.score).toBeLessThan(0.6);
+    expect(result.multiplier).toBe(2.0);
+    expect(result.message).toContain('keep flipping');
   });
 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { calculateSampleTarget, calculateConsistency } from '@/lib/thompson';
 
 // GET /api/stores/:id/addons/experiments — get active experiments per addon
 export async function GET(
@@ -56,13 +57,22 @@ export async function GET(
           };
         })
       );
-      // Calculate exploration min per experiment based on observed checkout rate
+      // Smart sample target based on observed purchase rate (orders/cart-opens)
       const totalCartOpens = variantStats.reduce((s: number, v: any) => s + v.cartOpens, 0);
-      const totalCheckouts = variantStats.reduce((s: number, v: any) => s + v.checkoutClicks, 0);
-      const observedRate = totalCartOpens > 0 ? totalCheckouts / totalCartOpens : 0.10;
-      const rateForCalc = Math.max(0.03, Math.min(observedRate, 0.50));
-      const statisticalMin = Math.ceil(rateForCalc * (1 - rateForCalc) / 0.000417);
-      const clampedMin = Math.max(25, Math.min(statisticalMin, 200));
+      const totalOrders = variantStats.reduce((s: number, v: any) => s + v.orders, 0);
+      const observedPurchaseRate = totalCartOpens > 0 ? totalOrders / totalCartOpens : 0.03;
+
+      // Get stored notes for daily leaders + consistency
+      const expNotes = (exp as any).notes || {};
+      const dailyLeaders = expNotes.dailyLeaders || [];
+      const consistency = calculateConsistency(dailyLeaders);
+
+      // Smart sample target with consistency multiplier
+      const sampleTarget = calculateSampleTarget(observedPurchaseRate, variants.length);
+      const adjustedTargetPerVariant = Math.ceil(sampleTarget.nPerVariant * consistency.multiplier);
+
+      // Legacy field for backward compat
+      const clampedMin = adjustedTargetPerVariant;
 
       // Per-segment visitor breakdown
       const segmentCounts = await prisma.variantAssignment.groupBy({
@@ -99,6 +109,16 @@ export async function GET(
         variantStats,
         segmentStats,
         explorationMinPerVariant: clampedMin,
+        // Smart sample size fields
+        sampleTargetPerVariant: adjustedTargetPerVariant,
+        sampleTargetTotal: adjustedTargetPerVariant * variants.length,
+        minOrdersPerVariant: 25,
+        baselinePurchaseRate: observedPurchaseRate,
+        // Consistency fields
+        dailyLeaders,
+        consistency: consistency.score,
+        consistencyMultiplier: consistency.multiplier,
+        consistencyMessage: consistency.message,
       };
     })
   );

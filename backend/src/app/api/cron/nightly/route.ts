@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { calculateThompsonSampling, buildCrossStorePriors } from '@/lib/thompson';
+import { calculateThompsonSampling, buildCrossStorePriors, calculateSampleTarget, calculateConsistency } from '@/lib/thompson';
 
 export async function POST(req: NextRequest) {
   // Verify cron secret
@@ -106,22 +106,56 @@ export async function POST(req: NextRequest) {
       minDaysRunning: daysRunning,
     });
 
-    // Decision logic — Thompson now handles winner declaration internally
-    // We just need to map its output to experiment status
+    // ── Track daily leader for consistency scoring ──
+    const existingNotes = (exp.notes as any) || {};
+    const dailyLeaders: Array<{ date: string; leaderId: string; liftPct: number }> =
+      existingNotes.dailyLeaders || [];
+
+    // Add today's leader (based on observed order rates)
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (ts.orderRates && Object.keys(ts.orderRates).length >= 2) {
+      const sortedByRate = Object.entries(ts.orderRates).sort((a, b) => b[1] - a[1]);
+      const todayLeader = sortedByRate[0][0];
+      const todayLift = sortedByRate[1][1] > 0
+        ? ((sortedByRate[0][1] - sortedByRate[1][1]) / sortedByRate[1][1]) * 100
+        : 0;
+      const existingIdx = dailyLeaders.findIndex(d => d.date === todayStr);
+      if (existingIdx >= 0) {
+        dailyLeaders[existingIdx] = { date: todayStr, leaderId: todayLeader, liftPct: todayLift };
+      } else {
+        dailyLeaders.push({ date: todayStr, leaderId: todayLeader, liftPct: todayLift });
+      }
+    }
+
+    // Calculate consistency score
+    const consistency = calculateConsistency(dailyLeaders);
+
+    // Calculate smart sample target based on observed purchase rate
+    const totalObs = variantStats.reduce((s, v) => s + v.successes + v.failures, 0);
+    const observedPurchaseRate = totalObs > 0
+      ? variantStats.reduce((s, v) => s + v.successes, 0) / totalObs
+      : 0.03;
+    const sampleTarget = calculateSampleTarget(observedPurchaseRate, variants.length);
+    const adjustedTarget = Math.ceil(sampleTarget.nPerVariant * consistency.multiplier);
+
+    // Decision logic — Thompson handles winner declaration internally
     let newStatus = exp.status;
     let winnerVariantId = exp.winnerVariantId;
     let endedAt = exp.endedAt;
 
-    if (ts.winnerId) {
+    // Consistency gate: don't declare winner if results flip too much
+    const consistencyOk = consistency.score > 0.70 || dailyLeaders.length < 3;
+
+    if (ts.winnerId && consistencyOk) {
       newStatus = 'WINNER_FOUND';
       winnerVariantId = ts.winnerId;
       endedAt = new Date();
+    } else if (ts.winnerId && !consistencyOk) {
+      // Thompson wants winner but results are too volatile — keep running
     } else if (ts.reason?.includes('No meaningful difference') || ts.reason?.includes('Low impact detected')) {
-      // Thompson flagged no meaningful difference or early low-impact stop
       newStatus = 'NO_DIFFERENCE';
       endedAt = new Date();
     } else if (daysRunning >= exp.maxDays && ts.confidence < 0.80) {
-      // Ran out of time with low confidence
       newStatus = 'NO_DIFFERENCE';
       endedAt = new Date();
     }
@@ -146,7 +180,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Update experiment
+    // Update experiment — persist daily leaders + sample target in notes
     await prisma.experiment.update({
       where: { id: exp.id },
       data: {
@@ -157,6 +191,16 @@ export async function POST(req: NextRequest) {
         status: newStatus as any,
         winnerVariantId,
         endedAt,
+        notes: {
+          ...existingNotes,
+          dailyLeaders,
+          consistency: consistency.score,
+          consistencyMultiplier: consistency.multiplier,
+          consistencyMessage: consistency.message,
+          sampleTargetPerVariant: adjustedTarget,
+          baselinePurchaseRate: observedPurchaseRate,
+          minOrdersPerVariant: ts.minOrdersPerVariant,
+        },
       },
     });
 
@@ -174,6 +218,8 @@ export async function POST(req: NextRequest) {
       crossStorePriors: Object.keys(priors).length > 0,
       orderRates: ts.orderRates,
       checkoutRates: ts.checkoutRates,
+      consistency: consistency.score,
+      sampleTarget: adjustedTarget,
     });
   }
 

@@ -1772,18 +1772,15 @@ function AddonsPage() {
                           const observedLift = secondRate > 0 ? ((bestRate - secondRate) / secondRate) * 100 : 0;
                           const liftHasData = vs.length >= 2 && (bestRate > 0 || secondRate > 0);
                           const liftAbs = Math.abs(observedLift);
-                          // Smart milestones — derived from observed conversion rate (API calculates)
-                          const minPerVariant = exp.explorationMinPerVariant || 30;
+                          // ── Smart milestones — order-based, not visitor-based ──
                           const numVariants = (exp.variantStats || []).length || 2;
-                          const minVisitors = minPerVariant * numVariants; // statistical minimum
-                          // Time estimate: how many days to reach min visitors at current traffic rate
-                          const daysToMin = dailyTraffic > 0 ? Math.ceil(minVisitors / dailyTraffic) : 7;
-                          // For conclusion, we want ~3x minimum for strong confidence
-                          const strongTarget = minPerVariant * numVariants * 3;
-                          const daysToStrong = dailyTraffic > 0 ? Math.ceil(strongTarget / dailyTraffic) : 14;
-                          const etaLabel = dailyTraffic > 0
-                            ? (daysToMin <= 1 ? 'less than a day' : daysToMin + ' days')
-                            : 'estimating...';
+                          const minOrdersPerVariant = exp.minOrdersPerVariant || 25;
+                          // Orders per variant (minimum across variants)
+                          const ordersPerVariant = vs.map((v: any) => v.orders ?? 0);
+                          const minOrders = Math.min(...ordersPerVariant);
+                          const totalOrders = ordersPerVariant.reduce((a: number, b: number) => a + b, 0);
+                          // Smart sample target (visitors) from API
+                          const sampleTargetTotal = exp.sampleTargetTotal || (totalV > 0 ? totalV * 3 : 4000);
 
                           // Time remaining for 3-day minimum
                           const hoursLeft = Math.max(0, 72 - hoursRunning);
@@ -1795,24 +1792,43 @@ function AddonsPage() {
                           const timeRunningLabel = daysRunningInt < 1 ? hoursRunning + 'h' : daysRunningInt + 'd ' + (hoursRunning % 24) + 'h';
                           const past3Days = daysRunningInt >= 3;
 
+                          // Consistency from API
+                          const dailyLeaders = (exp.dailyLeaders || []) as Array<{ date: string; leaderId: string; liftPct: number }>;
+                          const consistencyScore = exp.consistency ?? 1;
+                          const consistencyMsg = exp.consistencyMessage || null;
+
                           // Progress percentages for each step
-                          const visitorPct = Math.min(100, (totalV / minVisitors) * 100);
+                          const orderPct = Math.min(100, (minOrders / minOrdersPerVariant) * 100);
                           const timePct = Math.min(100, (hoursRunning / 72) * 100);
-                          const impactDone = past3Days && (confidence >= 60 || (liftHasData && totalV >= strongTarget && liftAbs < 3));
-                          const impactActive = past3Days && confidence < 60 && !(liftHasData && totalV >= strongTarget && liftAbs < 3);
+                          // Impact: based on orders + time
+                          const impactReady = past3Days && minOrders >= minOrdersPerVariant;
+                          const impactDone = impactReady && (confidence >= 60 || (liftHasData && liftAbs < 3 && minOrders >= 40));
+                          const impactActive = impactReady && !impactDone;
                           const impactPct = impactDone ? 100 : impactActive ? Math.min(95, (confidence / 60) * 100) : 0;
-                          const conclusionDone = (confidence >= 90 || winner || noDiff) && past3Days;
-                          const conclusionActive = past3Days && confidence >= 60 && confidence < 90;
+                          const conclusionDone = (confidence >= 90 || winner || noDiff) && past3Days && minOrders >= minOrdersPerVariant;
+                          const conclusionActive = impactDone && confidence >= 60 && confidence < 90;
                           const conclusionPct = conclusionDone ? 100 : conclusionActive ? Math.min(95, ((confidence - 60) / 30) * 100) : 0;
+
+                          // Display confidence adjusted by consistency
+                          const displayConfidence = Math.round(confidence * consistencyScore);
 
                           // "done" (checkmark) = ONLY when the whole test concludes
                           const testConcluded = winner || noDiff;
 
+                          // Impact detail: show consistency warning or lift calculation
+                          let impactDetail = impactActive ? 'Analyzing...' : 'Waiting';
+                          if (liftHasData && observedLiftPct > 0) {
+                            impactDetail = '+' + observedLiftPct.toFixed(0) + '% (' + runnerRate + '\u2192' + topRate + '%)';
+                          }
+                          if (consistencyMsg && dailyLeaders.length >= 3) {
+                            impactDetail = consistencyMsg.split(' — ')[0]; // short version
+                          }
+
                           const steps = [
-                            { label: 'Visitors', detail: totalV + '/' + minVisitors, pct: visitorPct, done: testConcluded && visitorPct >= 100, active: visitorPct < 100 },
-                            { label: '3-day min', detail: timeRunningLabel + ' / ' + timeLeftLabel, pct: timePct, done: testConcluded && past3Days, active: visitorPct >= 100 && !past3Days },
-                            { label: 'Impact', detail: liftHasData && observedLiftPct > 0 ? ('+' + observedLiftPct.toFixed(0) + '% (' + runnerRate + '\u2192' + topRate + '%)') : impactActive ? 'Analyzing...' : 'Waiting', pct: impactPct, done: testConcluded && impactDone, active: impactActive },
-                            { label: 'Conclusion', detail: conclusionDone ? (winner ? 'Winner!' : noDiff ? 'No diff' : 'Done') : conclusionActive ? (confidence + '% conf') : 'Waiting', pct: conclusionPct, done: testConcluded, active: conclusionActive },
+                            { label: 'Orders', detail: minOrders + '/' + minOrdersPerVariant + '/var', sub: totalV + ' visitors', pct: orderPct, done: testConcluded && orderPct >= 100, active: orderPct < 100 },
+                            { label: '3-day min', detail: timeRunningLabel + ' / ' + timeLeftLabel, sub: null as string | null, pct: timePct, done: testConcluded && past3Days, active: orderPct >= 100 && !past3Days },
+                            { label: 'Impact', detail: impactDetail, sub: dailyLeaders.length >= 2 ? null : null, pct: impactPct, done: testConcluded && impactDone, active: impactActive },
+                            { label: 'Conclusion', detail: conclusionDone ? (winner ? 'Winner!' : noDiff ? 'No diff' : 'Done') : conclusionActive ? (displayConfidence + '% conf') : 'Waiting', sub: null as string | null, pct: conclusionPct, done: testConcluded, active: conclusionActive },
                           ];
 
                           // SVG progress ring constants
@@ -1876,6 +1892,12 @@ function AddonsPage() {
                                         }}>
                                           {step.detail}
                                         </div>
+                                        {/* Secondary info (visitors under Orders) */}
+                                        {step.sub && (
+                                          <div style={{ fontSize: 8, color: '#b0b5bd', textAlign: 'center', marginTop: 1 }}>
+                                            {step.sub}
+                                          </div>
+                                        )}
                                       </div>
                                       {/* Connector arrow */}
                                       {si < steps.length - 1 && (
@@ -1885,9 +1907,29 @@ function AddonsPage() {
                                   );
                                 })}
                               </div>
-                              {liftHasData && totalV >= strongTarget && liftAbs < 3 && (
+                              {liftHasData && minOrders >= 40 && liftAbs < 3 && (
                                 <div style={{ marginTop: 8, padding: 8, background: '#fef3c7', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
                                   {'This feature shows less than 3% impact. The engine will auto-conclude soon so we can test the next dimension.'}
+                                </div>
+                              )}
+                              {/* Day-over-day consistency warning with daily dots */}
+                              {consistencyMsg && dailyLeaders.length >= 3 && (
+                                <div style={{ marginTop: 8, padding: 8, background: '#f3f0ff', borderRadius: 6, fontSize: 11, color: '#5b21b6' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <span>{consistencyMsg.split(' (')[0]}</span>
+                                    <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                                      {dailyLeaders.slice(-7).map((d, i) => {
+                                        const isOverallLeader = d.leaderId === (sortedByPurchase[0]?.id);
+                                        return (
+                                          <div key={i} title={d.date + ': ' + (isOverallLeader ? 'Leader' : 'Other') + ' +' + d.liftPct.toFixed(0) + '%'}
+                                            style={{
+                                              width: 8, height: 8, borderRadius: '50%',
+                                              background: isOverallLeader ? '#7c3aed' : '#d1d5db',
+                                            }} />
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>

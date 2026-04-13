@@ -40,6 +40,25 @@ interface ThompsonResult {
   orderRates?: Record<string, number>;     // Per-variant order rate (orders/cartOpens) — THE metric
   checkoutRates?: Record<string, number>;  // Per-variant checkout rate — display only
   explorationMinPerVariant?: number;       // Exported for dashboard progress display
+  minOrdersPerVariant: number;             // Minimum orders needed per variant (25)
+}
+
+interface DailyLeader {
+  date: string;       // ISO date (YYYY-MM-DD)
+  leaderId: string;   // variant ID that led this day
+  liftPct: number;    // observed lift that day
+}
+
+interface ConsistencyResult {
+  score: number;         // 0-1: fraction of days the current leader led
+  multiplier: number;    // 1.0, 1.5, or 2.0 — extends sample target
+  message: string | null; // null = stable, string = explanation for user
+}
+
+interface SampleTargetResult {
+  nPerVariant: number;    // visitors needed per variant
+  totalNeeded: number;    // total visitors across all variants
+  baselineRate: number;   // the purchase rate used for calculation
 }
 
 const NUM_SAMPLES = 10000;
@@ -162,9 +181,17 @@ export function calculateThompsonSampling(
   let winnerId: string | null = null;
   let reason = '';
 
+  // Minimum orders per variant — non-negotiable statistical floor
+  const MIN_ORDERS = 25;
+  const minOrdersPerArm = Math.min(...variants.map(v => v.successes));
+
   // Minimum calendar days check (day-of-week effects)
   if (minDaysRunning < 3) {
     reason = 'Need at least 3 days to capture traffic patterns';
+  }
+  // Minimum ORDERS check — the real statistical gate
+  else if (minOrdersPerArm < MIN_ORDERS) {
+    reason = `Need at least ${MIN_ORDERS} orders per variant (currently ${minOrdersPerArm})`;
   }
   // Minimum observations check (traffic-adaptive)
   else if (minObsPerArm < explorationMin) {
@@ -223,6 +250,9 @@ export function calculateThompsonSampling(
     }
   }
 
+  // Minimum orders per variant — the REAL gate for winner declaration
+  const MIN_ORDERS_PER_VARIANT = 25;
+
   return {
     trafficSplit,
     confidence,
@@ -233,6 +263,7 @@ export function calculateThompsonSampling(
     orderRates,
     checkoutRates: Object.keys(checkoutRates).length > 0 ? checkoutRates : undefined,
     explorationMinPerVariant: explorationMin,
+    minOrdersPerVariant: MIN_ORDERS_PER_VARIANT,
   };
 }
 
@@ -300,4 +331,78 @@ export function getOptimalBatchInterval(dailyTraffic: number): number {
   if (dailyTraffic >= 500) return 1;   // Hourly
   if (dailyTraffic >= 50) return 6;    // Every 6 hours
   return 24;                            // Daily
+}
+
+/**
+ * Calculate statistically-correct sample target per variant.
+ *
+ * Uses: n = (Z_α + Z_β)² × [p₁(1-p₁) + p₂(1-p₂)] / (p₂ - p₁)²
+ * With: 50% relative MDE, 80% power, 5% significance (one-sided)
+ */
+export function calculateSampleTarget(
+  baselineRate: number,
+  numVariants: number = 2,
+): SampleTargetResult {
+  const p1 = Math.max(0.005, Math.min(baselineRate, 0.50));
+  const p2 = p1 * 1.5; // 50% relative MDE
+
+  // Z-scores: α=0.05 one-sided → 1.645, β=0.20 → 0.84
+  const zSum = 1.645 + 0.84; // = 2.485
+  const zSumSq = zSum * zSum; // ≈ 6.175
+
+  const numerator = zSumSq * (p1 * (1 - p1) + p2 * (1 - p2));
+  const denominator = (p2 - p1) * (p2 - p1);
+
+  let nPerVariant = Math.ceil(numerator / denominator);
+
+  // Clamp to sensible bounds
+  nPerVariant = Math.max(500, Math.min(nPerVariant, 20000));
+
+  return {
+    nPerVariant,
+    totalNeeded: nPerVariant * numVariants,
+    baselineRate: p1,
+  };
+}
+
+/**
+ * Calculate day-over-day consistency score.
+ *
+ * Tracks which variant leads each day. If results flip frequently,
+ * the consistency score drops and we extend the test.
+ */
+export function calculateConsistency(
+  dailyLeaders: DailyLeader[],
+): ConsistencyResult {
+  if (dailyLeaders.length < 2) {
+    return { score: 1, multiplier: 1.0, message: null };
+  }
+
+  // Find the overall leading variant (most days in the lead)
+  const leaderCounts: Record<string, number> = {};
+  for (const d of dailyLeaders) {
+    leaderCounts[d.leaderId] = (leaderCounts[d.leaderId] || 0) + 1;
+  }
+  const overallLeader = Object.entries(leaderCounts)
+    .sort((a, b) => b[1] - a[1])[0][0];
+
+  // Consistency = fraction of days the overall leader actually led
+  const daysLeading = leaderCounts[overallLeader];
+  const score = daysLeading / dailyLeaders.length;
+
+  let multiplier: number;
+  let message: string | null;
+
+  if (score > 0.80) {
+    multiplier = 1.0;
+    message = null; // stable
+  } else if (score >= 0.60) {
+    multiplier = 1.5;
+    message = `Results vary between days — extending for reliability (${daysLeading}/${dailyLeaders.length} days favor the leader)`;
+  } else {
+    multiplier = 2.0;
+    message = `Daily results keep flipping — need more data to be confident (${daysLeading}/${dailyLeaders.length} days favor the leader)`;
+  }
+
+  return { score, multiplier, message };
 }
