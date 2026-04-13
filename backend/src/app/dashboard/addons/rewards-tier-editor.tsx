@@ -100,16 +100,20 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
     tiers.forEach(rawTier => {
       const tier = normalizeTier(rawTier);
       tier.giftProducts.forEach((gift, gi) => {
-        if (gift.handle && !gift.imageUrl) {
+        if (gift.handle && (!gift.imageUrl || !gift.price)) {
           fetch(`/api/stores/${storeId}/products/search?q=${encodeURIComponent(gift.title || gift.handle)}`)
             .then(r => r.ok ? r.json() : null)
             .then(data => {
               if (!data?.products?.length) return;
               const match = data.products.find((p: any) => p.handle === gift.handle) || data.products[0];
               const imgUrl = match?.image?.src || match?.images?.[0]?.src;
-              if (imgUrl) {
+              const price = match?.variants?.[0]?.price;
+              const patch: Partial<typeof gift> = {};
+              if (imgUrl && !gift.imageUrl) patch.imageUrl = imgUrl;
+              if (price && !gift.price) patch.price = price;
+              if (Object.keys(patch).length > 0) {
                 const updated = [...tier.giftProducts];
-                updated[gi] = { ...updated[gi], imageUrl: imgUrl };
+                updated[gi] = { ...updated[gi], ...patch };
                 updateTier(tier.id, { giftProducts: updated, giftProduct: updated[0] });
               }
             })
@@ -510,6 +514,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                               )}
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{gift.title}</div>
+                                {gift.price && <div style={{ fontSize: 11, color: '#6b7280' }}><span style={{ textDecoration: 'line-through' }}>${gift.price}</span> → <span style={{ color: '#16a34a', fontWeight: 600 }}>Free</span></div>}
                               </div>
                               <button
                                 onClick={() => {
@@ -597,7 +602,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                                   ) : (
                                     <button
                                       onClick={() => {
-                                        const newGift = { handle: product.handle, variantId: product.variants?.[0]?.id ?? 0, title: product.title, imageUrl: imgSrc };
+                                        const newGift = { handle: product.handle, variantId: product.variants?.[0]?.id ?? 0, title: product.title, imageUrl: imgSrc, price: product.variants?.[0]?.price || '' };
                                         let updated: any[];
                                         if (replacingGiftIndex !== null) {
                                           updated = [...normalizeTier(tier).giftProducts];
@@ -747,6 +752,27 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                             </div>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Show Compare Price — shown when tier has gifts */}
+                    {normalizeTier(tier).giftProducts.length > 0 && (
+                      <div style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>Show Compare Price</span>
+                            <div style={{ fontSize: 10, color: '#6b7280', marginTop: 1 }}>Show crossed-out original price next to "Free"</div>
+                          </div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#6b7280' }}>
+                            <span>{config.giftShowComparePrice !== false ? 'On' : 'Off'}</span>
+                            <input
+                              type="checkbox"
+                              checked={config.giftShowComparePrice !== false}
+                              onChange={e => onConfigChange({ giftShowComparePrice: e.target.checked })}
+                              style={{ width: 14, height: 14, cursor: 'pointer' }}
+                            />
+                          </label>
+                        </div>
                       </div>
                     )}
                   </div>

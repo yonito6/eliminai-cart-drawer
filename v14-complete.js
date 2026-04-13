@@ -67,6 +67,7 @@
   var GIFT_BADGE_TEXT = CFG.giftBadgeText || 'Bonus gift';
   var GIFT_BADGE_TEXT_COLOR = CFG.giftBadgeTextColor || '#1a7a1a';
   var GIFT_BADGE_BG_COLOR = CFG.giftBadgeBgColor || '#edf7ed';
+  var GIFT_SHOW_COMPARE_PRICE = CFG.giftShowComparePrice !== false;
   // Backwards compat: derive PROMO_GOAL from last tier's goal
   var PROMO_GOAL = REWARD_TIERS.length > 0 ? REWARD_TIERS[REWARD_TIERS.length - 1].goal : (CFG.promoGoal || 3);
   // Build a set of all gift handles across tiers
@@ -1110,7 +1111,7 @@
         }
         var origPrice = giftCartItem.original_price || giftCartItem.price || 0;
         var priceRow = giftEl.querySelector('.ccd-item__price-row') || (priceEl ? priceEl.parentElement : null);
-        if (priceRow && !priceRow.querySelector('.ccd-item__compare-price') && origPrice > 0) {
+        if (GIFT_SHOW_COMPARE_PRICE && priceRow && !priceRow.querySelector('.ccd-item__compare-price') && origPrice > 0) {
           var cp = document.createElement('span');
           cp.className = 'ccd-item__compare-price';
           cp.textContent = CCD.fmt(origPrice);
@@ -1882,6 +1883,7 @@
       GIFT_BADGE_TEXT = cfg.giftBadgeText || 'Bonus gift';
       GIFT_BADGE_TEXT_COLOR = cfg.giftBadgeTextColor || '#1a7a1a';
       GIFT_BADGE_BG_COLOR = cfg.giftBadgeBgColor || '#edf7ed';
+      GIFT_SHOW_COMPARE_PRICE = cfg.giftShowComparePrice !== false;
       PROMO_GOAL = REWARD_TIERS[REWARD_TIERS.length - 1].goal;
       // Rebuild gift handles map
       GIFT_HANDLES = {};

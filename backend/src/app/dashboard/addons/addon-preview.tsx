@@ -378,7 +378,7 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     // regular ccd-item with qty hidden, configurable badge, "Free" price
     // Shows automatically whenever the staged tier has gifts (no explicit toggle needed)
     if (stagedTier) {
-      const gifts: Array<{ title?: string; imageUrl?: string; handle?: string }> =
+      const gifts: Array<{ title?: string; imageUrl?: string; handle?: string; price?: string }> =
         stagedTier.giftProducts ?? (stagedTier.giftProduct ? [stagedTier.giftProduct] : []);
       if (gifts.length > 0) {
         // Badge config — use addon-level settings with defaults
@@ -394,6 +394,8 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
           .replace(/height="\d+"/, 'height="14"');
         const fallbackSvg = REWARD_ICONS['gift'].svg.replace('fill="currentColor"', 'fill="#6b7280"');
 
+        const showComparePrice = addonConfig.giftShowComparePrice !== false;
+
         let giftHtml = '';
         for (const gift of gifts) {
           const imgSrc = gift.imageUrl || '';
@@ -402,6 +404,9 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
             : `<div class="ccd-item__image" style="background:#f8f8f8;width:120px;min-width:120px;height:120px;border-radius:8px;display:flex;align-items:center;justify-content:center">${fallbackSvg}</div>`;
           const badgeHtml = badgeEnabled
             ? `<span class="ccd-gift-badge" style="color:${badgeTextColor};background:${badgeBgColor}">${badgeIconSvg} ${badgeText}</span>`
+            : '';
+          const comparePriceHtml = (showComparePrice && gift.price)
+            ? `<span class="ccd-item__compare-price">$${gift.price}</span>`
             : '';
           giftHtml += `<div class="ccd-item">`
             + imgBlock
@@ -412,7 +417,7 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
             + `<div class="ccd-item__bottom">`
             + `<div></div>`
             + `<div class="ccd-item__price-col">`
-            + `<div class="ccd-item__price-row"><span class="ccd-item__price ccd-item__price--free">Free</span></div>`
+            + `<div class="ccd-item__price-row">${comparePriceHtml}<span class="ccd-item__price ccd-item__price--free">Free</span></div>`
             + badgeHtml
             + `</div>`
             + `</div></div></div>`;

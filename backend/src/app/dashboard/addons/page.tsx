@@ -183,6 +183,8 @@ function AddonsPage() {
   const [promoting, setPromoting] = useState(false);
 
   const [addons, setAddons] = useState<Record<string, AddonState>>({});
+  // Track which addon has unsaved draft config so polling refresh doesn't overwrite it
+  const draftAddonKeyRef = useRef<string | null>(null);
   const [definitions, setDefinitions] = useState<AddonDefinition[]>([]);
   const [optimizeQueue, setOptimizeQueue] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -269,7 +271,20 @@ function AddonsPage() {
       );
       if (res.ok) {
         const json = await res.json();
-        setAddons(json.addons ?? {});
+        const serverAddons = json.addons ?? {};
+        // Preserve draft config for the addon being edited (unsaved changes)
+        const draftKey = draftAddonKeyRef.current;
+        if (draftKey && serverAddons[draftKey]) {
+          setAddons(prev => {
+            const merged = { ...serverAddons };
+            if (prev[draftKey]) {
+              merged[draftKey] = { ...serverAddons[draftKey], config: prev[draftKey].config };
+            }
+            return merged;
+          });
+        } else {
+          setAddons(serverAddons);
+        }
         setDefinitions(json.definitions ?? []);
         setOptimizeQueue(json.optimizeQueue ?? []);
       }
@@ -1521,8 +1536,13 @@ function AddonsPage() {
                       {def.key === 'freeShippingBar' && (
                         <RewardsTierEditorWithSave
                           savedConfig={addon.config ?? {}}
-                          onSave={(fullConfig) => updateAddonConfig(def.key, fullConfig)}
+                          onSave={(fullConfig) => {
+                            draftAddonKeyRef.current = null; // Saved — allow polling to refresh normally
+                            updateAddonConfig(def.key, fullConfig);
+                          }}
                           onPreviewChange={(draftConfig) => {
+                            // Mark this addon as having unsaved draft so polling refresh preserves it
+                            draftAddonKeyRef.current = def.key;
                             // Update preview instantly without persisting
                             setAddons(prev => {
                               const current = prev[def.key];
