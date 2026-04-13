@@ -1,11 +1,13 @@
 import { prisma } from './prisma';
 import { pickVariant } from './thompson';
+import { computeSegment } from './segment';
 
 interface AssignResult {
   experiment: { id: string; features: Record<string, any> } | null;
   variant: string | null;
   isNew: boolean;
   sessionId: string;
+  segment: string;
 }
 
 export async function assignVariant(
@@ -14,7 +16,9 @@ export async function assignVariant(
   deviceType: 'MOBILE' | 'DESKTOP' | 'TABLET',
   isReturning: boolean,
   referralSource?: string,
-  country?: string
+  country?: string,
+  visitCount?: number,
+  hasCustomerId?: boolean,
 ): Promise<AssignResult> {
   // 1. Find active experiment for this store
   const experiment = await prisma.experiment.findFirst({
@@ -22,17 +26,29 @@ export async function assignVariant(
     orderBy: { startedAt: 'desc' },
   });
 
-  // 2. Find or create visitor session (retry on unique constraint race)
+  // 2. Compute initial segment from client signals
+  const initialSegment = hasCustomerId ? 'EXISTING_CUSTOMER' as const
+    : isReturning ? 'RETURNING_BROWSER' as const
+    : 'NEW_VISITOR' as const;
+
+  // 3. Find or create visitor session (retry on unique constraint race)
   let session;
   try {
     session = await prisma.visitorSession.upsert({
       where: { sessionToken },
-      update: {},
+      update: {
+        // Update visit count if client reports higher
+        ...(visitCount && visitCount > 1 ? { visitCount } : {}),
+        ...(hasCustomerId ? { hasCustomerId: true } : {}),
+      },
       create: {
         storeId,
         sessionToken,
         deviceType,
         isReturning,
+        segment: initialSegment,
+        visitCount: visitCount || 1,
+        hasCustomerId: hasCustomerId || false,
         referralSource,
         country,
       },
@@ -47,9 +63,9 @@ export async function assignVariant(
     }
   }
 
-  // 3. No active experiment = baseline phase
+  // 4. No active experiment = baseline phase
   if (!experiment) {
-    return { experiment: null, variant: null, isNew: true, sessionId: session.id };
+    return { experiment: null, variant: null, isNew: true, sessionId: session.id, segment: session.segment };
   }
 
   // 4. Check for existing assignment (stickiness)
@@ -70,6 +86,7 @@ export async function assignVariant(
       variant: existing.variantId,
       isNew: false,
       sessionId: session.id,
+      segment: session.segment,
     };
   }
 
@@ -104,6 +121,7 @@ export async function assignVariant(
           variant: raceWinner.variantId,
           isNew: false,
           sessionId: session.id,
+          segment: session.segment,
         };
       }
     }
@@ -118,5 +136,6 @@ export async function assignVariant(
     variant: variantId,
     isNew: true,
     sessionId: session.id,
+    segment: session.segment,
   };
 }

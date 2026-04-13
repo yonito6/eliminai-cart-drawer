@@ -23,6 +23,8 @@ async function handleRequest(req: NextRequest) {
     const sessionToken = body.sessionToken || query.session_token || `anon-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const deviceType = body.deviceType || 'DESKTOP';
     const isReturning = body.isReturning || false;
+    const visitCount = typeof body.visitCount === 'number' ? body.visitCount : 1;
+    const hasCustomerId = body.hasCustomerId || false;
     const referralSource = body.referralSource;
     const country = body.country;
     const prefetch = body.prefetch === true; // Pre-fetch on page load — assign variant but skip CART_OPENED
@@ -40,7 +42,7 @@ async function handleRequest(req: NextRequest) {
 
     // 5. Assign variant
     const assignment = await assignVariant(
-      store.id, sessionToken, deviceType, isReturning, referralSource, country
+      store.id, sessionToken, deviceType, isReturning, referralSource, country, visitCount, hasCustomerId
     );
 
     // 6. Track CART_OPENED event server-side (guaranteed — no client race)
@@ -89,6 +91,7 @@ async function handleRequest(req: NextRequest) {
     return NextResponse.json({
       cartConfig,
       currency: store.currency,
+      segment: assignment.segment,
       experiment: assignment.experiment
         ? {
             id: assignment.experiment.id,

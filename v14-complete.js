@@ -1563,20 +1563,37 @@
 
     getSessionToken: function() {
       var STORAGE_KEY = 'ecart_session';
+      var VISIT_KEY = 'ecart_visits';
       var token = null;
       try { token = sessionStorage.getItem(STORAGE_KEY); } catch(e) {}
-      if (token) return { token: token, isReturning: false };
+      if (token) {
+        var vc = 1;
+        try { vc = parseInt(localStorage.getItem(VISIT_KEY)) || 1; } catch(e) {}
+        return { token: token, isReturning: false, visitCount: vc, hasCustomerId: this._detectCustomerId() };
+      }
       var isReturning = false;
+      var visitCount = 1;
       try {
         var prev = localStorage.getItem(STORAGE_KEY);
         if (prev) isReturning = true;
+        var vc = parseInt(localStorage.getItem(VISIT_KEY)) || 0;
+        visitCount = vc + 1;
+        localStorage.setItem(VISIT_KEY, String(visitCount));
       } catch(e) {}
       token = 'ecart_' + Math.random().toString(36).substr(2) + Date.now().toString(36);
       try {
         sessionStorage.setItem(STORAGE_KEY, token);
         localStorage.setItem(STORAGE_KEY, token);
       } catch(e) {}
-      return { token: token, isReturning: isReturning };
+      return { token: token, isReturning: isReturning, visitCount: visitCount, hasCustomerId: this._detectCustomerId() };
+    },
+
+    _detectCustomerId: function() {
+      try {
+        if (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.customerId) return true;
+        if (window.__st && window.__st.cid) return true;
+      } catch(e) {}
+      return false;
     },
 
     getDeviceType: function() {
@@ -1618,6 +1635,8 @@
           sessionToken: sess.token,
           deviceType: self.getDeviceType(),
           isReturning: sess.isReturning,
+          visitCount: sess.visitCount,
+          hasCustomerId: sess.hasCustomerId,
           referralSource: document.referrer || 'direct',
           country: window.Shopify && window.Shopify.country ? window.Shopify.country : null,
           themeId: window.Shopify && window.Shopify.theme ? window.Shopify.theme.id : null,
@@ -1661,6 +1680,7 @@
         experimentId: cached && cached.experiment ? cached.experiment.id : null,
         variantId: cached && cached.experiment ? cached.experiment.variant : null,
         eventType: eventType,
+        hasCustomerId: sess.hasCustomerId,
         hourOfDay: now.getHours(),
         dayOfWeek: now.getDay(),
         metadata: metadata || {}

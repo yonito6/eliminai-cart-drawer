@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAppProxySignature } from '@/lib/hmac';
 import { prisma } from '@/lib/prisma';
 import { sessionLimiter, storeLimiter } from '@/lib/rate-limit';
+import { updateSessionSegment } from '@/lib/segment';
 
 export async function POST(req: NextRequest) {
   // 1. Verify HMAC
@@ -82,6 +83,9 @@ export async function POST(req: NextRequest) {
       metadata: body.metadata || {},
     },
   });
+
+  // Recompute visitor segment after event (upgrades only: NEW → RETURNING → ABANDONER → CUSTOMER)
+  await updateSessionSegment(session.id, store.id, body.eventType, body.hasCustomerId);
 
   // Also track baseline checkout clicks
   if (body.eventType === 'CHECKOUT_CLICKED' && !body.experimentId) {

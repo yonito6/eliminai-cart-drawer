@@ -82,6 +82,17 @@ export async function GET(
     }
   }
 
+  // Segment distribution
+  const segmentBreakdown = await prisma.visitorSession.groupBy({
+    by: ['segment'],
+    where: { storeId: store.id },
+    _count: true,
+  });
+  const segments: Record<string, number> = {};
+  for (const sb of segmentBreakdown) {
+    segments[sb.segment] = sb._count;
+  }
+
   return NextResponse.json({
     store: {
       id: store.id,
@@ -90,6 +101,7 @@ export async function GET(
       baselineCheckoutRate: store.baselineCheckoutRate,
       baselineCartOpens: store.baselineCartOpens,
     },
+    segments,
     totals: {
       sessions: totalSessions,
       events: totalEvents,

@@ -30,6 +30,13 @@ enum EventType {
   ORDER_COMPLETED
 }
 
+enum VisitorSegment {
+  NEW_VISITOR
+  RETURNING_BROWSER
+  CHECKOUT_ABANDONER
+  EXISTING_CUSTOMER
+}
+
 model Store {
   id                    String    @id @default(cuid())
   shopDomain            String    @unique
@@ -77,20 +84,24 @@ model Experiment {
 }
 
 model VisitorSession {
-  id              String     @id @default(cuid())
+  id              String          @id @default(cuid())
   storeId         String
-  store           Store      @relation(fields: [storeId], references: [id])
-  sessionToken    String     @unique
-  deviceType      DeviceType @default(DESKTOP)
-  isReturning     Boolean    @default(false)
+  store           Store           @relation(fields: [storeId], references: [id])
+  sessionToken    String          @unique
+  deviceType      DeviceType      @default(DESKTOP)
+  isReturning     Boolean         @default(false)
+  segment         VisitorSegment  @default(NEW_VISITOR)
+  visitCount      Int             @default(1)
+  hasCustomerId   Boolean         @default(false)
   referralSource  String?
   country         String?
-  firstSeenAt     DateTime   @default(now())
+  firstSeenAt     DateTime        @default(now())
 
   assignments     VariantAssignment[]
   events          Event[]
 
   @@index([storeId])
+  @@index([storeId, segment])
 }
 
 model VariantAssignment {

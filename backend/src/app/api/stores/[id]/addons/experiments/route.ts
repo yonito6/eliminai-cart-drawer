@@ -64,6 +64,25 @@ export async function GET(
       const statisticalMin = Math.ceil(rateForCalc * (1 - rateForCalc) / 0.000417);
       const clampedMin = Math.max(25, Math.min(statisticalMin, 200));
 
+      // Per-segment visitor breakdown
+      const segmentCounts = await prisma.variantAssignment.groupBy({
+        by: ['variantId'],
+        where: { experimentId: exp.id },
+        _count: true,
+      });
+      // Get segment distribution across all visitors in this experiment
+      const segmentBreakdown = await prisma.visitorSession.groupBy({
+        by: ['segment'],
+        where: {
+          assignments: { some: { experimentId: exp.id } },
+        },
+        _count: true,
+      });
+      const segmentStats: Record<string, number> = {};
+      for (const sb of segmentBreakdown) {
+        segmentStats[sb.segment] = sb._count;
+      }
+
       return {
         id: exp.id,
         name: exp.name,
@@ -78,6 +97,7 @@ export async function GET(
         startedAt: exp.startedAt,
         endedAt: exp.endedAt,
         variantStats,
+        segmentStats,
         explorationMinPerVariant: clampedMin,
       };
     })
