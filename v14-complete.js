@@ -529,11 +529,13 @@
       var shouldAutoAdd = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
       if (!shouldAutoAdd) return;
       protectionDone = true;
+      // Immediately show toggle as ON so user never sees a flash of OFF
+      CCD.setToggleNoTransition(true);
       fetch('/cart.js')
       .then(function(r) { return r.json(); })
       .then(function(cart) {
         var rc = CCD.getRealCount(cart);
-        if (rc === 0) return;
+        if (rc === 0) { CCD.setToggleNoTransition(false); return; }
         var has = cart.items.some(function(i) { return i.handle === PROT; });
         if (!has) {
           fetch('/cart/add.js', {
@@ -1125,7 +1127,9 @@
       CCD.rebuildDiscountRow(cart);
       var protItem = cart.items.find(function(i) { return i.handle === PROT; });
       CCD._protKey = protItem ? protItem.key : null;
-      CCD.setToggleNoTransition(!!protItem);
+      // If defaultOn and protection is being auto-added, keep toggle ON to avoid flash
+      var defaultOnPending = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false && !protItem && CCD.getRealCount(cart) > 0;
+      CCD.setToggleNoTransition(!!protItem || defaultOnPending);
       var cie = document.querySelector('#CartDrawer .cart__items');
       if (cie) {
         cie.setAttribute('data-real-count', CCD.getRealCount(cart));
@@ -1164,6 +1168,11 @@
       var bubbleNum = document.querySelector('.cart-link__bubble-num');
       if (bubbleNum) bubbleNum.textContent = CCD.getRealCount(cart);
 
+      // Pre-set toggle to ON before morphDOM can flash it off
+      var shouldDefaultOn = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
+      if (shouldDefaultOn && CCD.getRealCount(cart) > 0) {
+        CCD.setToggleNoTransition(true);
+      }
       fetch('/cart?view=ajax')
       .then(function(r) { return r.text(); })
       .then(function(html) {
@@ -1173,6 +1182,16 @@
           var doc = parser.parseFromString(html, 'text/html');
           var ni = doc.querySelector('.cart__items');
           if (ni) {
+            // If defaultOn, pre-check the toggle in the incoming HTML so morphDOM doesn't flash it off
+            if (shouldDefaultOn) {
+              var incomingToggle = ni.querySelector('#ccd-shipping-toggle');
+              if (incomingToggle) {
+                incomingToggle.checked = true;
+                // Also add instant class to slider so there's no slide animation
+                var incomingSlider = incomingToggle.nextElementSibling;
+                if (incomingSlider) incomingSlider.classList.add('ccd-toggle--instant');
+              }
+            }
             CCD.morphDOM(pc, ni);
           }
         }
@@ -1188,7 +1207,9 @@
 
         var protItem = cart.items.find(function(i) { return i.handle === PROT; });
         CCD._protKey = protItem ? protItem.key : null;
-        CCD.setToggleNoTransition(!!protItem);
+        // If defaultOn and protection is being auto-added, keep toggle ON to avoid flash
+        var defaultOnPending = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false && !protItem && CCD.getRealCount(cart) > 0;
+        CCD.setToggleNoTransition(!!protItem || defaultOnPending);
 
         var cie = document.querySelector('#CartDrawer .cart__items');
         if (cie) {
@@ -1520,7 +1541,20 @@
     refreshOnOpen: function() {
       var self = this;
       this.loadExperiment(function(config) {
-        if (config) self.applyExperimentFeatures(config);
+        if (config) {
+          self.applyExperimentFeatures(config);
+          // Merge backend addon config into CFG so all stores get the right settings
+          // (not just stores using Liquid theme settings)
+          if (config.cartConfig && config.cartConfig.addons) {
+            var sp = config.cartConfig.addons.shippingProtection;
+            if (sp && sp.config) {
+              if ('defaultOn' in sp.config) CFG.protectionDefaultOn = sp.config.defaultOn;
+              if ('price' in sp.config) CFG.protectionPrice = sp.config.price;
+            }
+          }
+        }
+        // Now that backend config is merged, safe to run ensureProtection
+        CCD.ensureProtection();
         // Track CART_OPENED on first actual cart open (not on pre-fetch)
         if (!self._cartOpenTracked) {
           self._cartOpenTracked = true;
@@ -1869,7 +1903,8 @@
           window._ccdReturnUrl = window.location.href;
         }
         CCD.refreshOnOpen();
-        CCD.ensureProtection();
+        // ensureProtection is now called INSIDE refreshOnOpen's loadExperiment callback
+        // so it runs AFTER backend config (defaultOn) is loaded
       } else if (m.target.id === 'CartDrawer' && !m.target.classList.contains('drawer--is-open')) {
         // Clear when drawer closes so next open captures fresh URL
         window._ccdReturnUrl = null;
@@ -1884,16 +1919,12 @@
     observer.observe(drawerEl, { attributes: true, attributeFilter: ['class'] });
     if (drawerEl.classList.contains('drawer--is-open')) {
       CCD.refreshOnOpen();
-      CCD.ensureProtection();
+      // ensureProtection runs inside refreshOnOpen after backend config loads
     }
   }
 
-  setTimeout(function() {
-    var d = document.getElementById('CartDrawer');
-    if (d && d.classList.contains('drawer--is-open')) {
-      CCD.ensureProtection();
-    }
-  }, 1000);
+  // Protection is handled inside refreshOnOpen's loadExperiment callback
+  // No standalone timeout needed — ensureProtection runs after config loads
 
   window.CustomCartDrawer = CCD;
 })();

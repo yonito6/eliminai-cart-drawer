@@ -182,6 +182,22 @@ function AddonsPage() {
   } | null>(null);
   const [winnerActionLoading, setWinnerActionLoading] = useState(false);
 
+  // ── Custom confirm dialog (replaces native browser confirm()) ────────────
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    variant?: 'warning' | 'danger' | 'info';
+    resolve: (value: boolean) => void;
+  } | null>(null);
+
+  function showConfirm(opts: { title: string; message: string; confirmLabel?: string; cancelLabel?: string; variant?: 'warning' | 'danger' | 'info' }): Promise<boolean> {
+    return new Promise((resolve) => {
+      setConfirmDialog({ ...opts, resolve });
+    });
+  }
+
   // ── Edit-triggers-test modal state ───────────────────────────────────────
   const [editTestModal, setEditTestModal] = useState<{
     type: 'suggest-test' | 'hard-block';
@@ -442,13 +458,13 @@ function AddonsPage() {
       const bestLabel = best.label?.replace(' (current)', '') ?? best.id;
       const secondLabel = second.label?.replace(' (current)', '') ?? second.id;
 
-      const pickBest = confirm(
-        `No clear winner yet.\n\n` +
-        `"${bestLabel}" — ${bestRate}% checkout rate (${best.cartOpens ?? 0} cart opens)\n` +
-        `"${secondLabel}" — ${secondRate}% checkout rate (${second.cartOpens ?? 0} cart opens)\n\n` +
-        `Apply "${bestLabel}" as the winner?\n\n` +
-        `OK = Apply "${bestLabel}"\nCancel = Apply "${secondLabel}"`
-      );
+      const pickBest = await showConfirm({
+        title: 'No clear winner yet',
+        message: `"${bestLabel}" — ${bestRate}% checkout rate (${best.cartOpens ?? 0} cart opens)\n"${secondLabel}" — ${secondRate}% checkout rate (${second.cartOpens ?? 0} cart opens)`,
+        confirmLabel: `Apply "${bestLabel}"`,
+        cancelLabel: `Apply "${secondLabel}"`,
+        variant: 'info',
+      });
 
       const chosen = pickBest ? best : second;
       const chosenLabel = chosen.label?.replace(' (current)', '') ?? chosen.id;
@@ -472,8 +488,15 @@ function AddonsPage() {
         const leader = sorted[0]?.label?.replace(' (current)', '') ?? 'Variant A';
         msg += `\n"${leader}" is leading with ${lift > 0 ? '+' : ''}${lift.toFixed(1)}% lift.`;
       }
-      msg += '\n\nStarting a new test will stop the current one and apply the best-performing variant.\n\nProceed?';
-      if (!confirm(msg)) return;
+      msg += '\nStarting a new test will stop the current one and apply the best-performing variant.';
+      const proceed = await showConfirm({
+        title: 'Test already running',
+        message: msg,
+        confirmLabel: 'Stop & start new test',
+        cancelLabel: 'Keep current test',
+        variant: 'warning',
+      });
+      if (!proceed) return;
       // Apply the current test's best variant before starting new test
       await resolveTestOutcome(addonKey);
     }
@@ -502,9 +525,21 @@ function AddonsPage() {
 
   async function stopTest(addonKey: string) {
     if (!STORE_ID) return;
-    const first = confirm('Are you sure you want to stop this test? You can resume it later, or the system will apply the best variant.');
+    const first = await showConfirm({
+      title: 'Stop this test?',
+      message: 'You can resume it later, or the system will apply the best variant.',
+      confirmLabel: 'Stop test',
+      cancelLabel: 'Keep running',
+      variant: 'warning',
+    });
     if (!first) return;
-    const second = confirm('This will pause the experiment and apply the leading variant. Confirm to proceed.');
+    const second = await showConfirm({
+      title: 'Confirm: apply leading variant',
+      message: 'This will pause the experiment and apply the leading variant to your store.',
+      confirmLabel: 'Apply & stop',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+    });
     if (!second) return;
     try {
       const res = await fetch(
@@ -1054,7 +1089,14 @@ function AddonsPage() {
             <button
               onClick={async () => {
                 if (!STORE_ID || promoting) return;
-                if (!confirm('Push all DEMO settings to LIVE? This will update your real store.')) return;
+                const ok = await showConfirm({
+                  title: 'Push to LIVE?',
+                  message: 'This will copy all DEMO settings to your live store. Visitors will see the changes immediately.',
+                  confirmLabel: 'Push to LIVE',
+                  cancelLabel: 'Cancel',
+                  variant: 'warning',
+                });
+                if (!ok) return;
                 setPromoting(true);
                 try {
                   await fetch(API + '/api/stores/' + STORE_ID + '/addons/promote-demo', { method: 'POST' });
@@ -1288,7 +1330,7 @@ function AddonsPage() {
             const isTesting = activeExp?.status === 'RUNNING';
             const hasWinner = activeExp?.status === 'WINNER_FOUND';
             const badgeColor = isTesting ? '#7c3aed' : hasWinner ? '#16a34a' : addon.enabled ? '#7c3aed' : '#9ca3af';
-            const badgeLabel = isTesting ? 'Smart Optimizing' : hasWinner ? 'Winner Found' : addon.enabled ? 'Active' : 'Off';
+            const badgeLabel = isTesting ? 'Testing now' : hasWinner ? 'Winner Found' : addon.enabled ? 'Active' : 'Off';
 
             return (
               <div
@@ -1344,8 +1386,19 @@ function AddonsPage() {
                           color: badgeColor,
                           textTransform: 'uppercase' as const,
                           letterSpacing: 0.3,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
                         }}
                       >
+                        {isTesting && (
+                          <span style={{
+                            width: 6, height: 6, borderRadius: '50%',
+                            background: '#7c3aed',
+                            animation: 'badgePulse 1.5s ease-in-out infinite',
+                            display: 'inline-block',
+                          }} />
+                        )}
                         {badgeLabel}
                       </span>
                     </div>
@@ -1637,6 +1690,13 @@ function AddonsPage() {
                   const winner = exp.status === 'WINNER_FOUND';
                   const noDiff = exp.status === 'NO_DIFFERENCE';
 
+                  // Observed lift from actual purchase rates (matches variant cards)
+                  const allVs = (exp.variantStats || []) as any[];
+                  const sortedVs = [...allVs].sort((a: any, b: any) => (b.purchaseRate ?? 0) - (a.purchaseRate ?? 0));
+                  const topRate = sortedVs[0]?.purchaseRate ?? 0;
+                  const runnerRate = sortedVs[1]?.purchaseRate ?? 0;
+                  const observedLiftPct = runnerRate > 0 ? ((topRate - runnerRate) / runnerRate) * 100 : 0;
+
                   return (
                     <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
                       {/* Header */}
@@ -1687,7 +1747,10 @@ function AddonsPage() {
                         </div>
                         <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
                           {confidence >= 90
-                            ? (winner ? 'Winner confirmed with high confidence!' : 'High confidence — no meaningful difference detected')
+                            ? (winner ? 'Winner confirmed with high confidence!'
+                              : noDiff ? 'High confidence — no meaningful difference detected'
+                              : observedLiftPct > 5 ? 'High confidence — a winner is emerging!'
+                              : 'High confidence — variants are performing similarly')
                             : confidence >= 60 ? 'Almost there — the engine is narrowing it down'
                             : confidence === 0 ? (testing ? 'Waiting for visitor data...' : paused ? 'Test paused — resume to continue collecting data' : 'No data collected')
                             : testing ? "Learning from your visitors' behavior..." : paused ? 'Test paused — results preserved' : 'Optimization ended'}
@@ -1700,8 +1763,15 @@ function AddonsPage() {
                           const hoursRunning = Math.floor(msRunning / 3600000);
                           const daysRunning = msRunning / 86400000;
                           const daysRunningInt = Math.floor(daysRunning);
-                          const liftHasData = exp.liftPercent != null;
-                          const liftAbs = Math.abs(exp.liftPercent ?? 0);
+                          // Calculate OBSERVED lift from actual variant stats (not Thompson posterior means)
+                          // This matches the numbers users see in the variant cards
+                          const vs = (exp.variantStats || []) as any[];
+                          const sortedByPurchase = [...vs].sort((a: any, b: any) => (b.purchaseRate ?? 0) - (a.purchaseRate ?? 0));
+                          const bestRate = sortedByPurchase[0]?.purchaseRate ?? 0;
+                          const secondRate = sortedByPurchase[1]?.purchaseRate ?? 0;
+                          const observedLift = secondRate > 0 ? ((bestRate - secondRate) / secondRate) * 100 : 0;
+                          const liftHasData = vs.length >= 2 && (bestRate > 0 || secondRate > 0);
+                          const liftAbs = Math.abs(observedLift);
                           // Smart milestones — derived from observed conversion rate (API calculates)
                           const minPerVariant = exp.explorationMinPerVariant || 30;
                           const numVariants = (exp.variantStats || []).length || 2;
@@ -1728,24 +1798,58 @@ function AddonsPage() {
                           const steps = [
                             { label: 'Collecting visitors', detail: totalV + '/' + minVisitors + ' visitors (' + minPerVariant + ' per variant)' + (totalV < minVisitors && dailyTraffic > 0 ? ' · ~' + etaLabel + ' left' : ''), done: totalV >= minVisitors, active: totalV < minVisitors },
                             { label: '3-day minimum', detail: timeRunningLabel + ' running · ' + timeLeftLabel, done: past3Days, active: totalV >= minVisitors && !past3Days },
-                            { label: 'Detecting impact', detail: liftHasData && liftAbs > 0 ? (liftAbs.toFixed(1) + '% difference so far') : 'Measuring...', done: past3Days && (confidence >= 60 || (liftHasData && totalV >= strongTarget && liftAbs < 3)), active: past3Days && confidence < 60 && !(liftHasData && totalV >= strongTarget && liftAbs < 3) },
+                            { label: 'Detecting impact', detail: liftHasData && observedLiftPct > 0 ? ('+' + observedLiftPct.toFixed(0) + '% purchase rate (' + runnerRate + '% \u2192 ' + topRate + '%)') : liftHasData && liftAbs > 0 ? (liftAbs.toFixed(1) + '% difference') : 'Measuring...', done: past3Days && (confidence >= 60 || (liftHasData && totalV >= strongTarget && liftAbs < 3)), active: past3Days && confidence < 60 && !(liftHasData && totalV >= strongTarget && liftAbs < 3) },
                             { label: 'Conclusion', detail: !past3Days ? 'Waiting for 3-day minimum' : confidence >= 90 ? 'Clear winner found!' : (liftHasData && totalV >= strongTarget && liftAbs < 3) ? 'Low impact — ready to move on' : (dailyTraffic > 0 && daysToStrong > daysRunningInt ? '~' + (daysToStrong - daysRunningInt) + ' days at current traffic' : 'Need more data'), done: (confidence >= 90 || winner || noDiff) && past3Days, active: past3Days && confidence >= 60 && confidence < 90 },
                           ];
                           return (
                             <div style={{ marginTop: 12, borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Test Progress</div>
-                              {steps.map((step, si) => (
-                                <div key={si} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: si < steps.length - 1 ? 6 : 0 }}>
-                                  <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid ' + (step.done ? '#16a34a' : step.active ? '#7c3aed' : '#d1d5db'), background: step.done ? '#16a34a' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
-                                    {step.done && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>{'✓'}</span>}
-                                    {step.active && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#7c3aed' }} />}
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 12, fontWeight: step.active ? 600 : 500, color: step.done ? '#16a34a' : step.active ? '#111827' : '#9ca3af' }}>{step.label}</div>
-                                    <div style={{ fontSize: 10, color: '#9ca3af' }}>{step.detail}</div>
-                                  </div>
-                                </div>
-                              ))}
+                              {/* Compact horizontal stepper */}
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0 }}>
+                                {steps.map((step, si) => {
+                                  const dotColor = step.done ? '#16a34a' : step.active ? '#7c3aed' : '#d1d5db';
+                                  const lineColor = step.done ? '#16a34a' : '#e5e7eb';
+                                  return (
+                                    <React.Fragment key={si}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                                        {/* Dot */}
+                                        <div style={{
+                                          width: 20, height: 20, borderRadius: '50%',
+                                          border: '2px solid ' + dotColor,
+                                          background: step.done ? '#16a34a' : step.active ? '#7c3aed' : 'transparent',
+                                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          flexShrink: 0,
+                                          boxShadow: step.active ? '0 0 0 3px rgba(124,58,237,0.15)' : 'none',
+                                        }}>
+                                          {step.done && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>{'\u2713'}</span>}
+                                          {step.active && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
+                                        </div>
+                                        {/* Label */}
+                                        <div style={{
+                                          fontSize: 10, fontWeight: step.active ? 700 : 500, textAlign: 'center',
+                                          color: step.done ? '#16a34a' : step.active ? '#111827' : '#9ca3af',
+                                          marginTop: 4, lineHeight: 1.2, padding: '0 2px',
+                                        }}>
+                                          {step.label}
+                                        </div>
+                                        {/* Detail */}
+                                        <div style={{
+                                          fontSize: 9, color: step.active ? '#6b7280' : '#9ca3af', textAlign: 'center',
+                                          marginTop: 2, lineHeight: 1.3, padding: '0 2px',
+                                        }}>
+                                          {step.detail}
+                                        </div>
+                                      </div>
+                                      {/* Connector line */}
+                                      {si < steps.length - 1 && (
+                                        <div style={{
+                                          flex: '0 0 auto', width: 24, height: 2,
+                                          background: lineColor, marginTop: 9, borderRadius: 1,
+                                        }} />
+                                      )}
+                                    </React.Fragment>
+                                  );
+                                })}
+                              </div>
                               {liftHasData && totalV >= strongTarget && liftAbs < 3 && (
                                 <div style={{ marginTop: 8, padding: 8, background: '#fef3c7', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
                                   {'This feature shows less than 3% impact. The engine will auto-conclude soon so we can test the next dimension.'}
@@ -1867,13 +1971,27 @@ function AddonsPage() {
 
 
                       {/* Lift summary — only show when confidence is meaningful (traffic-independent) */}
-                      {(winner || (exp.liftPercent && exp.liftPercent > 0 && confidence >= 60)) && (
-                        <div style={{ marginTop: 16, padding: 12, background: winner ? '#f0fdf4' : '#faf5ff', border: '1px solid ' + (winner ? '#bbf7d0' : '#d8b4fe'), borderRadius: 8, textAlign: 'center' }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: winner ? '#16a34a' : '#7c3aed' }}>
-                            {winner ? 'Winner' : 'Leading variant'}: +{(exp.liftPercent ?? 0).toFixed(1)}% conversion lift
-                          </span>
-                        </div>
-                      )}
+                      {(winner || (observedLiftPct > 0 && confidence >= 60)) && (() => {
+                        const leaderLabel = sortedVs[0]?.label?.replace(' (current)', '') ?? 'Variant A';
+                        const isPositive = observedLiftPct > 0;
+                        const bgColor = winner ? '#f0fdf4' : isPositive ? '#f0fdf4' : '#fef2f2';
+                        const borderColor = winner ? '#bbf7d0' : isPositive ? '#bbf7d0' : '#fecaca';
+                        const accentColor = winner ? '#16a34a' : isPositive ? '#16a34a' : '#dc2626';
+                        return (
+                          <div style={{ marginTop: 16, padding: 14, background: bgColor, border: '1px solid ' + borderColor, borderRadius: 10, textAlign: 'center' }}>
+                            <div style={{ fontSize: 11, fontWeight: 500, color: '#6b7280', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              {winner ? 'Winner' : 'Leading so far'}
+                            </div>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: accentColor, lineHeight: 1.2 }}>
+                              +{observedLiftPct.toFixed(0)}% purchase rate
+                            </div>
+                            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                              <span style={{ fontWeight: 600, color: '#374151' }}>{leaderLabel}</span>
+                              {' '}converts at {topRate}% vs {runnerRate}%
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })()}
@@ -1974,6 +2092,125 @@ function AddonsPage() {
           Eliminai Cart Optimizer
         </div>
       </div>
+
+      {/* ── Custom Confirm Dialog Modal ──────────────────────────────────── */}
+      {confirmDialog && (
+        <div
+          onClick={() => { confirmDialog.resolve(false); setConfirmDialog(null); }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.55)',
+            backdropFilter: 'blur(4px)',
+            animation: 'confirmFadeIn 0.15s ease-out',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1f2937',
+              borderRadius: 16,
+              padding: '28px 32px 24px',
+              maxWidth: 420,
+              width: '90%',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)',
+              animation: 'confirmSlideIn 0.2s ease-out',
+            }}
+          >
+            {/* Icon */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 18,
+                background: confirmDialog.variant === 'danger' ? 'rgba(239,68,68,0.15)' :
+                  confirmDialog.variant === 'info' ? 'rgba(139,92,246,0.15)' : 'rgba(245,158,11,0.15)',
+              }}>
+                {confirmDialog.variant === 'danger' ? '\u26A0' : confirmDialog.variant === 'info' ? '\u2139' : '\u26A1'}
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#f9fafb' }}>
+                {confirmDialog.title}
+              </div>
+            </div>
+
+            {/* Message */}
+            <div style={{
+              fontSize: 13,
+              lineHeight: 1.6,
+              color: '#9ca3af',
+              marginBottom: 24,
+              whiteSpace: 'pre-line',
+            }}>
+              {confirmDialog.message}
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { confirmDialog.resolve(false); setConfirmDialog(null); }}
+                style={{
+                  padding: '9px 18px',
+                  borderRadius: 10,
+                  border: '1px solid #374151',
+                  background: 'transparent',
+                  color: '#d1d5db',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#374151')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                {confirmDialog.cancelLabel || 'Cancel'}
+              </button>
+              <button
+                onClick={() => { confirmDialog.resolve(true); setConfirmDialog(null); }}
+                style={{
+                  padding: '9px 18px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: confirmDialog.variant === 'danger' ? '#dc2626' :
+                    confirmDialog.variant === 'info' ? '#7c3aed' : '#7c3aed',
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'opacity 0.15s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              >
+                {confirmDialog.confirmLabel || 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Animations */}
+      <style>{`
+        @keyframes confirmFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes confirmSlideIn {
+          from { opacity: 0; transform: scale(0.95) translateY(8px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes badgePulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+      `}</style>
     </div>
   );
 }
