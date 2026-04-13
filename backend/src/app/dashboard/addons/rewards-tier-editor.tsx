@@ -498,7 +498,12 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
 
                     {/* Gift Products — multi-product picker with real Shopify images */}
                     <div onFocus={() => { emitStaging(tier.id, 'gift'); }}>
-                      <span style={labelStyle}>Gift Products (auto-added to cart when tier is reached)</span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <span style={labelStyle}>Gift Products</span>
+                          <div style={{ fontSize: 10, color: '#6b7280', marginTop: -2, marginBottom: 4 }}>Auto-added to cart when tier is reached. You can add multiple gifts.</div>
+                        </div>
+                      </div>
 
                       {/* Selected gifts list */}
                       {normalizeTier(tier).giftProducts.length > 0 && (
