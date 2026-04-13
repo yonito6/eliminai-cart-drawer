@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { REWARD_ICONS } from '@/lib/addon-definitions';
 import type { RewardTier } from '@/lib/addon-definitions';
-import RichTextEditor from './rich-text-editor';
+import RichTextEditor, { applyDefaultColor } from './rich-text-editor';
 
 interface RewardsTierEditorProps {
   config: Record<string, any>;
@@ -557,12 +557,30 @@ interface WithSaveProps {
 }
 
 export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange, storeId, successColor, messageColor, themeFont }: WithSaveProps) {
-  const [draft, setDraft] = useState<Record<string, any>>(() => ({ ...savedConfig }));
+  // Migrate plain text → colorized HTML on initial load (both draft AND saved baseline)
+  const migrateColors = useCallback((config: Record<string, any>) => {
+    const sColor = successColor || '#1a7a1a';
+    const mColor = messageColor || '#333333';
+    const migrated = { ...config };
+    if (migrated.allRewardsUnlockedText) {
+      migrated.allRewardsUnlockedText = applyDefaultColor(migrated.allRewardsUnlockedText, sColor);
+    }
+    if (migrated.tiers) {
+      migrated.tiers = migrated.tiers.map((t: any) => ({
+        ...t,
+        beforeText: t.beforeText ? applyDefaultColor(t.beforeText, mColor) : t.beforeText,
+        afterText: t.afterText ? applyDefaultColor(t.afterText, sColor) : t.afterText,
+      }));
+    }
+    return migrated;
+  }, [successColor, messageColor]);
+
+  const [draft, setDraft] = useState<Record<string, any>>(() => migrateColors({ ...savedConfig }));
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
-  const savedRef = useRef(savedConfig);
+  const savedRef = useRef(migrateColors(savedConfig));
   // Snapshot of what was ACTUALLY saved (persisted to DB) — not polluted by preview updates
-  const savedJsonRef = useRef(JSON.stringify(savedConfig));
+  const savedJsonRef = useRef(JSON.stringify(migrateColors(savedConfig)));
   // Track whether we are the source of preview updates (to ignore our own prop changes)
   const isPreviewingRef = useRef(false);
 
