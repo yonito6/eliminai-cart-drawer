@@ -249,16 +249,10 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
     background: themeBg || 'transparent',
   };
 
-  // Basic hard color presets — bright, obvious colors
+  // Basic color presets — 11 swatches, fits one row
   const basicColors = [
     '#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00',
-    '#ff00ff', '#00ffff', '#ff6600', '#9900ff', '#006600', '#990000',
-  ];
-
-  // Extended swatches
-  const extendedColors = [
-    '#ef4444','#f97316','#eab308','#22c55e','#1a7a1a','#3b82f6',
-    '#8b5cf6','#ec4899','#6b7280','#d1d5db','#fef08a','#bbf7d0',
+    '#ff00ff', '#00ffff', '#ff6600', '#9900ff', '#006600',
   ];
 
   const renderColorPicker = () => (
@@ -269,18 +263,8 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
     }}>
       {/* Basic color grid — click applies immediately */}
       <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, fontWeight: 500 }}>Basic colors</div>
-        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 3 }}>
           {basicColors.map(c => (
-            <button key={c} type="button" onMouseDown={preventFocusLoss} onClick={() => handleSwatchClick(c)}
-              style={{ width: 20, height: 20, borderRadius: 3, border: hexInput === c ? '2px solid #7c3aed' : '1px solid #ccc', background: c, cursor: 'pointer', padding: 0 }} />
-          ))}
-        </div>
-      </div>
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, fontWeight: 500 }}>Extended</div>
-        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-          {extendedColors.map(c => (
             <button key={c} type="button" onMouseDown={preventFocusLoss} onClick={() => handleSwatchClick(c)}
               style={{ width: 20, height: 20, borderRadius: 3, border: hexInput === c ? '2px solid #7c3aed' : '1px solid #ccc', background: c, cursor: 'pointer', padding: 0 }} />
           ))}
