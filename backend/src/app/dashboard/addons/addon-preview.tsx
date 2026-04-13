@@ -288,11 +288,17 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
         progressMsg = `Add <strong>${unit}${remaining}${suffix}</strong> more for <strong>${nextTier.label}</strong>`;
       }
     } else if (sortedTiers.length > 0) {
-      // All tiers reached — show the highest tier's afterText or generic message
+      // All tiers reached — when staging for "allUnlocked", always show the
+      // allRewardsUnlockedText so the user sees exactly what they're editing.
+      // Otherwise prefer the highest tier's afterText, then fall back to generic.
       const highest = sortedTiers[sortedTiers.length - 1];
-      progressMsg = highest.afterText
-        ? fillTemplate(highest.afterText, highest)
-        : (addonConfig.allRewardsUnlockedText || 'All rewards unlocked!');
+      if (stagingHint?.context === 'allUnlocked' && addonConfig.allRewardsUnlockedText) {
+        progressMsg = addonConfig.allRewardsUnlockedText;
+      } else {
+        progressMsg = highest.afterText
+          ? fillTemplate(highest.afterText, highest)
+          : (addonConfig.allRewardsUnlockedText || 'All rewards unlocked!');
+      }
     } else {
       progressMsg = 'Set up reward tiers';
     }
