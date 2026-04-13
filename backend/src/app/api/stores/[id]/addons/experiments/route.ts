@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: { id: string } },
 ) {
   const experiments = await prisma.experiment.findMany({
-    where: { storeId: params.id, status: { in: ['RUNNING', 'WINNER_FOUND', 'NO_DIFFERENCE'] } },
+    where: { storeId: params.id, status: { in: ['RUNNING', 'PAUSED', 'WINNER_FOUND', 'NO_DIFFERENCE'] } },
     orderBy: { startedAt: 'desc' },
     include: {
       _count: { select: { assignments: true } },

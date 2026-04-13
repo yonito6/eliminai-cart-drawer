@@ -428,6 +428,10 @@ function AddonsPage() {
 
   async function stopTest(addonKey: string) {
     if (!STORE_ID) return;
+    const first = confirm('Are you sure you want to stop this test? You can resume it later.');
+    if (!first) return;
+    const second = confirm('This will pause the experiment. Confirm to proceed.');
+    if (!second) return;
     try {
       const res = await fetch(
         API + '/api/stores/' + STORE_ID + '/addons/test?addonKey=' + addonKey,
@@ -438,6 +442,21 @@ function AddonsPage() {
       }
     } catch (e) {
       console.error('Failed to stop test', e);
+    }
+  }
+
+  async function resumeTest(addonKey: string) {
+    if (!STORE_ID) return;
+    try {
+      const res = await fetch(
+        API + '/api/stores/' + STORE_ID + '/addons/test?addonKey=' + addonKey,
+        { method: 'PATCH' },
+      );
+      if (res.ok) {
+        await fetchExperiments();
+      }
+    } catch (e) {
+      console.error('Failed to resume test', e);
     }
   }
 
@@ -1491,6 +1510,41 @@ function AddonsPage() {
                           </div>
                         </div>
                       )}
+                      {addon.enabled && experiments[def.key]?.status === 'PAUSED' && (
+                        <div style={{ marginTop: 16, padding: 14, background: '#fefce8', border: '1px solid #fde68a', borderRadius: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#d97706' }} />
+                            <div style={{ fontSize: 13, color: '#92400e', fontWeight: 600 }}>
+                              Test Paused
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#a16207', marginBottom: 12 }}>
+                            {experiments[def.key]?.totalVisitors ?? 0} visitors collected · Results preserved
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              onClick={() => resumeTest(def.key)}
+                              style={{
+                                flex: 1, padding: '8px 16px', background: '#7c3aed', color: '#fff',
+                                border: 'none', borderRadius: 8, fontSize: 12,
+                                fontWeight: 600, cursor: 'pointer',
+                              }}
+                            >
+                              Resume Test
+                            </button>
+                            <button
+                              onClick={() => { setExpandedView('results'); }}
+                              style={{
+                                flex: 1, padding: '8px 16px', background: '#fff', color: '#92400e',
+                                border: '1px solid #fde68a', borderRadius: 8, fontSize: 12,
+                                fontWeight: 600, cursor: 'pointer',
+                              }}
+                            >
+                              View Results
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1503,6 +1557,7 @@ function AddonsPage() {
                   const rawConf = exp.confidence ?? 0;
                   const confidence = Math.round(Math.max(0, (rawConf - 0.5) / 0.5) * 100);
                   const testing = exp.status === 'RUNNING';
+                  const paused = exp.status === 'PAUSED';
                   const winner = exp.status === 'WINNER_FOUND';
                   const noDiff = exp.status === 'NO_DIFFERENCE';
 
@@ -1523,6 +1578,14 @@ function AddonsPage() {
                               style={{ padding: '6px 14px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 500, color: '#6b7280', cursor: 'pointer' }}
                             >
                               Stop Test
+                            </button>
+                          )}
+                          {paused && (
+                            <button
+                              onClick={() => resumeTest(def.key)}
+                              style={{ padding: '6px 14px', background: '#7c3aed', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#fff', cursor: 'pointer' }}
+                            >
+                              Resume Test
                             </button>
                           )}
                           {(winner || noDiff) && (
@@ -1550,8 +1613,8 @@ function AddonsPage() {
                           {confidence >= 90
                             ? (winner ? 'Winner confirmed with high confidence!' : 'High confidence — no meaningful difference detected')
                             : confidence >= 60 ? 'Almost there — the engine is narrowing it down'
-                            : confidence === 0 ? (testing ? 'Waiting for visitor data...' : 'No data collected')
-                            : testing ? "Learning from your visitors' behavior..." : 'Optimization ended'}
+                            : confidence === 0 ? (testing ? 'Waiting for visitor data...' : paused ? 'Test paused — resume to continue collecting data' : 'No data collected')
+                            : testing ? "Learning from your visitors' behavior..." : paused ? 'Test paused — results preserved' : 'Optimization ended'}
                         </div>
 
                         {/* Status timeline */}

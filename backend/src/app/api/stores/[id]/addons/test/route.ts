@@ -147,3 +147,32 @@ export async function DELETE(
 
   return NextResponse.json({ stopped: updated.count });
 }
+
+// PATCH /api/stores/:id/addons/test?addonKey=xxx — resume a paused test
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const addonKey = req.nextUrl.searchParams.get('addonKey');
+  if (!addonKey) {
+    return NextResponse.json({ error: 'addonKey required' }, { status: 400 });
+  }
+
+  // Find the most recent paused experiment for this slot
+  const paused = await prisma.experiment.findFirst({
+    where: { storeId: params.id, slot: addonKey, status: 'PAUSED' },
+    orderBy: { startedAt: 'desc' },
+  });
+
+  if (!paused) {
+    return NextResponse.json({ error: 'No paused test found' }, { status: 404 });
+  }
+
+  // Resume: set status back to RUNNING, clear endedAt
+  await prisma.experiment.update({
+    where: { id: paused.id },
+    data: { status: 'RUNNING', endedAt: null },
+  });
+
+  return NextResponse.json({ resumed: true, experimentId: paused.id });
+}

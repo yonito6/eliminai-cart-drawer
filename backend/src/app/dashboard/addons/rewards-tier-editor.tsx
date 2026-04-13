@@ -564,9 +564,10 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
     setDraft(prev => {
       const next = { ...prev, ...patch };
       onPreviewChange(next);
+      // Auto-detect if draft matches saved — hide Save/Discard when user undoes changes
+      setHasChanges(JSON.stringify(next) !== JSON.stringify(savedRef.current));
       return next;
     });
-    setHasChanges(true);
   }, [onPreviewChange]);
 
   const [discountStatus, setDiscountStatus] = useState<string | null>(null);
