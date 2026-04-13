@@ -802,6 +802,8 @@ function AddonsPage() {
             value={val ?? ''}
             placeholder={dim.placeholder}
             onChange={(v) => updateAddonConfig(addonKey, { [dim.key]: v })}
+            themeColor={themeSettings?.ccd_color_primary}
+            themeFont={themeSettings?.ccd_font_family}
           />
         );
 
@@ -1526,6 +1528,8 @@ function AddonsPage() {
                             });
                           }}
                           storeId={STORE_ID}
+                          themeColor={themeSettings?.ccd_color_primary}
+                          themeFont={themeSettings?.ccd_font_family}
                         />
                       )}
 

@@ -9,9 +9,11 @@ interface RewardsTierEditorProps {
   config: Record<string, any>;
   onConfigChange: (patch: Record<string, any>) => void;
   storeId: string;
+  themeColor?: string;
+  themeFont?: string;
 }
 
-export default function RewardsTierEditor({ config, onConfigChange, storeId }: RewardsTierEditorProps) {
+export default function RewardsTierEditor({ config, onConfigChange, storeId, themeColor, themeFont }: RewardsTierEditorProps) {
   const tiers: RewardTier[] = config.tiers ?? [];
   const thresholdMode: 'items' | 'dollars' = config.thresholdMode ?? 'items';
   const highestTierOnly: boolean = config.highestTierOnly ?? false;
@@ -187,6 +189,8 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId }: R
           value={allRewardsUnlockedText}
           onChange={v => onConfigChange({ allRewardsUnlockedText: v })}
           placeholder="e.g. You've unlocked all rewards!"
+          themeColor={themeColor}
+          themeFont={themeFont}
         />
       </div>
 
@@ -366,6 +370,8 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId }: R
                         value={tier.beforeText}
                         onChange={v => updateTier(tier.id, { beforeText: v })}
                         placeholder="Add {remaining} more to unlock"
+                        themeColor={themeColor}
+                        themeFont={themeFont}
                       />
                     </div>
 
@@ -376,6 +382,8 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId }: R
                         value={tier.afterText}
                         onChange={v => updateTier(tier.id, { afterText: v })}
                         placeholder="Free shipping unlocked!"
+                        themeColor={themeColor}
+                        themeFont={themeFont}
                       />
                     </div>
 
@@ -540,9 +548,11 @@ interface WithSaveProps {
   onSave: (fullConfig: Record<string, any>) => void;
   onPreviewChange: (draftConfig: Record<string, any>) => void;
   storeId: string;
+  themeColor?: string;
+  themeFont?: string;
 }
 
-export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange, storeId }: WithSaveProps) {
+export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange, storeId, themeColor, themeFont }: WithSaveProps) {
   const [draft, setDraft] = useState<Record<string, any>>(() => ({ ...savedConfig }));
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -619,7 +629,7 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
 
   return (
     <div>
-      <RewardsTierEditor config={draft} onConfigChange={handleConfigChange} storeId={storeId} />
+      <RewardsTierEditor config={draft} onConfigChange={handleConfigChange} storeId={storeId} themeColor={themeColor} themeFont={themeFont} />
       {hasChanges && (
         <div style={{ display: 'flex', gap: 8, marginTop: 16, padding: '12px 14px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 10, alignItems: 'center' }}>
           <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#92400e' }}>Unsaved changes</div>
