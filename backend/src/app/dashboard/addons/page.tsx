@@ -1912,7 +1912,7 @@ function AddonsPage() {
                               </div>
                               {orderPct < 100 && (
                                 <div style={{ marginTop: 6, fontSize: 10, color: '#9ca3af', textAlign: 'center' }}>
-                                  Based on your store{'\u2019'}s {(baselinePurchaseRate * 100).toFixed(1)}% purchase rate — adapts as data grows
+                                  Calculated for your store — adapts automatically as more orders come in
                                 </div>
                               )}
                               {liftHasData && minOrders >= 40 && liftAbs < 3 && (
