@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { REWARD_ICONS } from '@/lib/addon-definitions';
 import type { RewardTier } from '@/lib/addon-definitions';
+import RichTextEditor from './rich-text-editor';
 
 interface RewardsTierEditorProps {
   config: Record<string, any>;
@@ -182,12 +183,10 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId }: R
       {/* All Rewards Unlocked Text */}
       <div>
         <span style={labelStyle}>Text when all rewards unlocked</span>
-        <input
-          type="text"
+        <RichTextEditor
           value={allRewardsUnlockedText}
-          onChange={e => onConfigChange({ allRewardsUnlockedText: e.target.value })}
+          onChange={v => onConfigChange({ allRewardsUnlockedText: v })}
           placeholder="e.g. You've unlocked all rewards!"
-          style={inputStyle}
         />
       </div>
 
@@ -363,24 +362,20 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId }: R
                     {/* Before Text */}
                     <div>
                       <span style={labelStyle}>Text before achieving <span style={{ color: '#9ca3af' }}>({'{remaining}'} = items left)</span></span>
-                      <input
-                        type="text"
+                      <RichTextEditor
                         value={tier.beforeText}
-                        onChange={e => updateTier(tier.id, { beforeText: e.target.value })}
+                        onChange={v => updateTier(tier.id, { beforeText: v })}
                         placeholder="Add {remaining} more to unlock"
-                        style={inputStyle}
                       />
                     </div>
 
                     {/* After Text */}
                     <div>
                       <span style={labelStyle}>Text after achieving</span>
-                      <input
-                        type="text"
+                      <RichTextEditor
                         value={tier.afterText}
-                        onChange={e => updateTier(tier.id, { afterText: e.target.value })}
+                        onChange={v => updateTier(tier.id, { afterText: v })}
                         placeholder="Free shipping unlocked!"
-                        style={inputStyle}
                       />
                     </div>
 
