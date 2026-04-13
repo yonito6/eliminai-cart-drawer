@@ -587,13 +587,14 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
   useEffect(() => {
     // Only update saved snapshot from external saves (not from our own preview updates)
     if (isPreviewingRef.current) return;
-    const newJson = JSON.stringify(savedConfig);
+    const migrated = migrateColors(savedConfig);
+    const newJson = JSON.stringify(migrated);
     if (newJson !== savedJsonRef.current) {
-      savedRef.current = savedConfig;
+      savedRef.current = migrated;
       savedJsonRef.current = newJson;
-      if (!hasChanges) setDraft({ ...savedConfig });
+      if (!hasChanges) setDraft({ ...migrated });
     }
-  }, [savedConfig, hasChanges]);
+  }, [savedConfig, hasChanges, migrateColors]);
 
   const handleConfigChange = useCallback((patch: Record<string, any>) => {
     setDraft(prev => {
