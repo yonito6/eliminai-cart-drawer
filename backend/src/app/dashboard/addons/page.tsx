@@ -1795,56 +1795,88 @@ function AddonsPage() {
                           const timeRunningLabel = daysRunningInt < 1 ? hoursRunning + 'h' : daysRunningInt + 'd ' + (hoursRunning % 24) + 'h';
                           const past3Days = daysRunningInt >= 3;
 
+                          // Progress percentages for each step
+                          const visitorPct = Math.min(100, (totalV / minVisitors) * 100);
+                          const timePct = Math.min(100, (hoursRunning / 72) * 100);
+                          const impactDone = past3Days && (confidence >= 60 || (liftHasData && totalV >= strongTarget && liftAbs < 3));
+                          const impactActive = past3Days && confidence < 60 && !(liftHasData && totalV >= strongTarget && liftAbs < 3);
+                          const impactPct = impactDone ? 100 : impactActive ? Math.min(95, (confidence / 60) * 100) : 0;
+                          const conclusionDone = (confidence >= 90 || winner || noDiff) && past3Days;
+                          const conclusionActive = past3Days && confidence >= 60 && confidence < 90;
+                          const conclusionPct = conclusionDone ? 100 : conclusionActive ? Math.min(95, ((confidence - 60) / 30) * 100) : 0;
+
                           const steps = [
-                            { label: 'Collecting visitors', detail: totalV + '/' + minVisitors + ' visitors (' + minPerVariant + ' per variant)' + (totalV < minVisitors && dailyTraffic > 0 ? ' · ~' + etaLabel + ' left' : ''), done: totalV >= minVisitors, active: totalV < minVisitors },
-                            { label: '3-day minimum', detail: timeRunningLabel + ' running · ' + timeLeftLabel, done: past3Days, active: totalV >= minVisitors && !past3Days },
-                            { label: 'Detecting impact', detail: liftHasData && observedLiftPct > 0 ? ('+' + observedLiftPct.toFixed(0) + '% purchase rate (' + runnerRate + '% \u2192 ' + topRate + '%)') : liftHasData && liftAbs > 0 ? (liftAbs.toFixed(1) + '% difference') : 'Measuring...', done: past3Days && (confidence >= 60 || (liftHasData && totalV >= strongTarget && liftAbs < 3)), active: past3Days && confidence < 60 && !(liftHasData && totalV >= strongTarget && liftAbs < 3) },
-                            { label: 'Conclusion', detail: !past3Days ? 'Waiting for 3-day minimum' : confidence >= 90 ? 'Clear winner found!' : (liftHasData && totalV >= strongTarget && liftAbs < 3) ? 'Low impact — ready to move on' : (dailyTraffic > 0 && daysToStrong > daysRunningInt ? '~' + (daysToStrong - daysRunningInt) + ' days at current traffic' : 'Need more data'), done: (confidence >= 90 || winner || noDiff) && past3Days, active: past3Days && confidence >= 60 && confidence < 90 },
+                            { label: 'Visitors', detail: totalV + '/' + minVisitors, pct: visitorPct, done: visitorPct >= 100, active: visitorPct < 100 },
+                            { label: '3-day min', detail: timeRunningLabel + ' / ' + timeLeftLabel, pct: timePct, done: past3Days, active: visitorPct >= 100 && !past3Days },
+                            { label: 'Impact', detail: liftHasData && observedLiftPct > 0 ? ('+' + observedLiftPct.toFixed(0) + '%') : 'Measuring', pct: impactPct, done: impactDone, active: impactActive },
+                            { label: 'Conclusion', detail: conclusionDone ? (winner ? 'Winner!' : noDiff ? 'No diff' : 'Done') : confidence >= 60 ? confidence + '%' : '\u2014', pct: conclusionPct, done: conclusionDone, active: conclusionActive },
                           ];
+
+                          // SVG progress ring constants
+                          const ringSize = 28;
+                          const strokeW = 2.5;
+                          const radius = (ringSize - strokeW) / 2;
+                          const circumference = 2 * Math.PI * radius;
+
                           return (
                             <div style={{ marginTop: 12, borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
-                              {/* Compact horizontal stepper */}
-                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0 }}>
+                              {/* Compact horizontal stepper with progress rings */}
+                              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                                 {steps.map((step, si) => {
-                                  const dotColor = step.done ? '#16a34a' : step.active ? '#7c3aed' : '#d1d5db';
-                                  const lineColor = step.done ? '#16a34a' : '#e5e7eb';
+                                  const accent = step.done ? '#16a34a' : step.active ? '#7c3aed' : '#d1d5db';
+                                  const dashOffset = circumference - (circumference * Math.min(step.pct, 100) / 100);
                                   return (
                                     <React.Fragment key={si}>
                                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 0 }}>
-                                        {/* Dot */}
-                                        <div style={{
-                                          width: 20, height: 20, borderRadius: '50%',
-                                          border: '2px solid ' + dotColor,
-                                          background: step.done ? '#16a34a' : step.active ? '#7c3aed' : 'transparent',
-                                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                          flexShrink: 0,
-                                          boxShadow: step.active ? '0 0 0 3px rgba(124,58,237,0.15)' : 'none',
-                                        }}>
-                                          {step.done && <span style={{ color: '#fff', fontSize: 10, fontWeight: 700 }}>{'\u2713'}</span>}
-                                          {step.active && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
+                                        {/* Progress ring */}
+                                        <div style={{ position: 'relative', width: ringSize, height: ringSize, flexShrink: 0 }}>
+                                          <svg width={ringSize} height={ringSize} style={{ transform: 'rotate(-90deg)' }}>
+                                            {/* Background track */}
+                                            <circle cx={ringSize / 2} cy={ringSize / 2} r={radius} fill="none" stroke="#e5e7eb" strokeWidth={strokeW} />
+                                            {/* Progress arc */}
+                                            {step.pct > 0 && (
+                                              <circle cx={ringSize / 2} cy={ringSize / 2} r={radius} fill="none"
+                                                stroke={accent} strokeWidth={strokeW} strokeLinecap="round"
+                                                strokeDasharray={circumference} strokeDashoffset={dashOffset}
+                                                style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+                                            )}
+                                          </svg>
+                                          {/* Center icon */}
+                                          <div style={{
+                                            position: 'absolute', inset: 0,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          }}>
+                                            {step.done ? (
+                                              <span style={{ color: '#16a34a', fontSize: 12, fontWeight: 700 }}>{'\u2713'}</span>
+                                            ) : step.active ? (
+                                              <div style={{
+                                                width: 6, height: 6, borderRadius: '50%', background: '#7c3aed',
+                                                animation: 'badgePulse 1.5s ease-in-out infinite',
+                                              }} />
+                                            ) : step.pct > 0 ? (
+                                              <span style={{ fontSize: 7, fontWeight: 700, color: '#9ca3af' }}>{Math.round(step.pct)}%</span>
+                                            ) : null}
+                                          </div>
                                         </div>
                                         {/* Label */}
                                         <div style={{
-                                          fontSize: 10, fontWeight: step.active ? 700 : 500, textAlign: 'center',
+                                          fontSize: 10, fontWeight: step.active ? 700 : step.done ? 600 : 500, textAlign: 'center',
                                           color: step.done ? '#16a34a' : step.active ? '#111827' : '#9ca3af',
-                                          marginTop: 4, lineHeight: 1.2, padding: '0 2px',
+                                          marginTop: 3, lineHeight: 1.2,
                                         }}>
                                           {step.label}
                                         </div>
                                         {/* Detail */}
                                         <div style={{
                                           fontSize: 9, color: step.active ? '#6b7280' : '#9ca3af', textAlign: 'center',
-                                          marginTop: 2, lineHeight: 1.3, padding: '0 2px',
+                                          marginTop: 1, lineHeight: 1.2,
                                         }}>
                                           {step.detail}
                                         </div>
                                       </div>
-                                      {/* Connector line */}
+                                      {/* Connector arrow */}
                                       {si < steps.length - 1 && (
-                                        <div style={{
-                                          flex: '0 0 auto', width: 24, height: 2,
-                                          background: lineColor, marginTop: 9, borderRadius: 1,
-                                        }} />
+                                        <div style={{ flex: '0 0 auto', marginTop: 10, color: '#d1d5db', fontSize: 10 }}>{'\u203A'}</div>
                                       )}
                                     </React.Fragment>
                                   );
