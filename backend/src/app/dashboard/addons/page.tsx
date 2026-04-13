@@ -1,10 +1,38 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AddonPreview from './addon-preview';
 import RewardsTierEditor, { RewardsTierEditorWithSave } from './rewards-tier-editor';
 import { useStore } from '@/lib/hooks/use-store';
+
+// ─── Animated Number Component ──────────────────────────────────────────────
+function AnimatedNum({ value, suffix = '', prefix = '', decimals = 0, color, size = 20 }: {
+  value: number; suffix?: string; prefix?: string; decimals?: number; color?: string; size?: number;
+}) {
+  const [display, setDisplay] = useState(value);
+  const prev = useRef(value);
+  useEffect(() => {
+    if (prev.current === value) return;
+    const start = prev.current;
+    const diff = value - start;
+    const duration = 600;
+    const t0 = performance.now();
+    let raf: number;
+    const step = (now: number) => {
+      const elapsed = now - t0;
+      const progress = Math.min(elapsed / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      setDisplay(start + diff * ease);
+      if (progress < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    prev.current = value;
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  const formatted = decimals > 0 ? display.toFixed(decimals) : Math.round(display).toLocaleString();
+  return <span style={{ fontSize: size, fontWeight: 700, color: color || '#111827', fontVariantNumeric: 'tabular-nums' }}>{prefix}{formatted}{suffix}</span>;
+}
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -221,6 +249,7 @@ function AddonsPage() {
   // ── Experiment data for timeline notes ──────────────────────────────────
   const [experiments, setExperiments] = useState<Record<string, any>>({});
   const [dailyTraffic, setDailyTraffic] = useState(0);
+  const [estimatedDailyOrders, setEstimatedDailyOrders] = useState(0);
   const [logEventInput, setLogEventInput] = useState<Record<string, string>>({});
   const [showLogEvent, setShowLogEvent] = useState<Record<string, boolean>>({});
 
@@ -252,6 +281,7 @@ function AddonsPage() {
         const json = await res.json();
         setExperiments(json.experiments ?? {});
         if (json.dailyTraffic) setDailyTraffic(json.dailyTraffic);
+        if (json.estimatedDailyOrders) setEstimatedDailyOrders(json.estimatedDailyOrders);
       }
     } catch (e) {
       console.error('Failed to load experiments', e);
@@ -1911,6 +1941,13 @@ function AddonsPage() {
                                               <div>About <strong>{(baselinePurchaseRate * 100).toFixed(1)}%</strong> of cart openers buy.</div>
                                               <div style={{ marginTop: 3 }}>At that rate, ~{dynamicOrdersPerVariant} orders per variant ({numVariants} variants = ~{dynamicOrdersTotal}) lets us detect a real difference.</div>
                                               <div style={{ marginTop: 3 }}>This can <strong>go up or down</strong> as your data changes — more orders may lower it, inconsistent results may raise it.</div>
+                                              {estimatedDailyOrders > 0 && (() => {
+                                                const ordersRemaining = Math.max(0, dynamicOrdersTotal - totalOrders);
+                                                const estDays = Math.ceil(ordersRemaining / estimatedDailyOrders);
+                                                return ordersRemaining > 0 ? (
+                                                  <div style={{ marginTop: 3, fontWeight: 600 }}>Estimated ~{estDays} day{estDays !== 1 ? 's' : ''} remaining ({estimatedDailyOrders} orders/day).</div>
+                                                ) : null;
+                                              })()}
                                               {consistencyScore < 1 && dailyLeaders.length >= 3 && (
                                                 <div style={{ marginTop: 3, color: '#92400e' }}>Extended ×{exp.consistencyMultiplier?.toFixed(1) || '1.0'} due to inconsistent daily results.</div>
                                               )}
@@ -2018,30 +2055,30 @@ function AddonsPage() {
                               {/* Stats row */}
                               <div style={{ padding: '0 16px 12px', display: 'flex', gap: 24 }}>
                                 <div>
-                                  <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{v.checkoutRate}%</div>
+                                  <div><AnimatedNum value={v.checkoutRate ?? 0} suffix="%" decimals={1} /></div>
                                   <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Checkout Rate</div>
                                 </div>
                                 {v.purchaseRate !== undefined && (
                                   <div>
-                                    <div style={{ fontSize: 20, fontWeight: 700, color: '#7c3aed' }}>{v.purchaseRate}%</div>
+                                    <div><AnimatedNum value={v.purchaseRate ?? 0} suffix="%" decimals={1} color="#7c3aed" /></div>
                                     <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Purchase Rate</div>
                                   </div>
                                 )}
                                 <div>
-                                  <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{v.visitors}</div>
+                                  <div><AnimatedNum value={v.visitors ?? 0} /></div>
                                   <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Visitors</div>
                                 </div>
                                 <div>
-                                  <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{v.cartOpens}</div>
+                                  <div><AnimatedNum value={v.cartOpens ?? 0} /></div>
                                   <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Cart Opens</div>
                                 </div>
                                 <div>
-                                  <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>{v.checkoutClicks}</div>
+                                  <div><AnimatedNum value={v.checkoutClicks ?? 0} /></div>
                                   <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Checkouts</div>
                                 </div>
                                 {v.orders !== undefined && v.orders > 0 && (
                                   <div>
-                                    <div style={{ fontSize: 20, fontWeight: 700, color: '#7c3aed' }}>{v.orders}</div>
+                                    <div><AnimatedNum value={v.orders ?? 0} color="#7c3aed" /></div>
                                     <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Orders</div>
                                   </div>
                                 )}

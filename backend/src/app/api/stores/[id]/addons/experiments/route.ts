@@ -139,7 +139,17 @@ export async function GET(
     }
   }
 
-  return NextResponse.json({ experiments: bySlot, dailyTraffic });
+  // Estimated daily orders: from real experiment data, or Shopify baseline, or fallback
+  const store = await prisma.store.findUnique({ where: { id: params.id }, select: { config: true } });
+  const storeConfig = (store?.config as any) || {};
+  const recentOrderSessions = await prisma.event.groupBy({
+    by: ['sessionId'],
+    where: { storeId: params.id, eventType: 'ORDER_COMPLETED', createdAt: { gte: sevenDaysAgo } },
+  });
+  const observedDailyOrders = recentOrderSessions.length > 0 ? Math.max(1, Math.round(recentOrderSessions.length / 7)) : 0;
+  const estimatedDailyOrders = observedDailyOrders || storeConfig.estimatedDailyOrders || 10;
+
+  return NextResponse.json({ experiments: bySlot, dailyTraffic, estimatedDailyOrders });
 }
 
 // PATCH /api/stores/:id/addons/experiments — rebalance a running experiment
