@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AddonPreview from './addon-preview';
+import RewardsTierEditor, { RewardsTierEditorWithSave } from './rewards-tier-editor';
 import { useStore } from '@/lib/hooks/use-store';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -142,6 +143,12 @@ function AddonsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  // ── DEMO / LIVE config target ───────────────────────────────────────────
+  // Demo mode only available on localhost — production always uses live
+  const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const [configTarget, setConfigTarget] = useState<'demo' | 'live'>(isLocalDev ? 'demo' : 'live');
+  const [promoting, setPromoting] = useState(false);
+
   const [addons, setAddons] = useState<Record<string, AddonState>>({});
   const [definitions, setDefinitions] = useState<AddonDefinition[]>([]);
   const [optimizeQueue, setOptimizeQueue] = useState<string[]>([]);
@@ -149,6 +156,8 @@ function AddonsPage() {
   const [expandedView, setExpandedView] = useState<'edit' | 'results'>('edit');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [saveToast, setSaveToast] = useState<string | null>(null);
+  const saveToastTimer = useRef<any>(null);
   const [themeSettings, setThemeSettings] = useState<Record<string, any> | null>(null);
   const [startingTest, setStartingTest] = useState<Record<string, boolean>>({});
 
@@ -204,7 +213,7 @@ function AddonsPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch(
-        API + '/api/stores/' + STORE_ID + '/addons',
+        API + '/api/stores/' + STORE_ID + '/addons?target=' + configTarget,
       );
       if (res.ok) {
         const json = await res.json();
@@ -217,7 +226,7 @@ function AddonsPage() {
     } finally {
       setLoading(false);
     }
-  }, [STORE_ID]);
+  }, [STORE_ID, configTarget]);
 
   const fetchExperiments = useCallback(async () => {
     if (!STORE_ID) return;
@@ -314,14 +323,18 @@ function AddonsPage() {
     return () => clearInterval(interval);
   }, [refreshAll]);
 
-  // ── Restore edit view from URL param on mount ──────────────────────────
+  // ── Restore edit view from URL param on mount (once only) ──────────────
+  const didRestoreFromUrl = useRef(false);
   useEffect(() => {
-    const editKey = searchParams.get('edit');
+    if (didRestoreFromUrl.current) return;
+    let editKey = searchParams.get('edit');
+    if (editKey === 'rewards') editKey = 'freeShippingBar';
     if (editKey && definitions.length > 0) {
       const def = definitions.find(d => d.key === editKey);
       if (def) {
         setExpanded(editKey);
         setExpandedView('edit');
+        didRestoreFromUrl.current = true;
       }
     }
   }, [searchParams, definitions]);
@@ -448,8 +461,7 @@ function AddonsPage() {
 
   async function patchAddonWithSafety(key: string, data: any) {
     if (!STORE_ID) return;
-    // First try a dry-run to check risk
-    const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons', {
+    const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons?target=' + configTarget, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ addonKey: key, ...data }),
@@ -481,7 +493,7 @@ function AddonsPage() {
     if (!STORE_ID) return;
     setSaving(s => ({ ...s, [key]: true }));
     try {
-      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons', {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons?target=' + configTarget, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -501,10 +513,16 @@ function AddonsPage() {
 
   // ── API helpers ─────────────────────────────────────────────────────────
 
+  function showSaveToast(msg = 'Saved!') {
+    setSaveToast(msg);
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2200);
+  }
+
   async function patchAddon(key: string, data: any) {
     setSaving((s) => ({ ...s, [key]: true }));
     try {
-      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons', {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons?target=' + configTarget, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ addonKey: key, ...data }),
@@ -512,8 +530,10 @@ function AddonsPage() {
       const json = await res.json();
       setAddons(json.addons ?? {});
       setOptimizeQueue(json.optimizeQueue ?? []);
+      showSaveToast();
     } catch (e) {
       console.error('Failed to patch addon', e);
+      showSaveToast('Save failed!');
     } finally {
       setSaving((s) => ({ ...s, [key]: false }));
     }
@@ -832,8 +852,17 @@ function AddonsPage() {
         color: '#111827',
         padding: '24px 32px',
         fontFamily: 'system-ui, sans-serif',
+        position: 'relative',
       }}
     >
+      {/* Global save toast */}
+      {saveToast && (
+        <div style={{ position: 'fixed', top: 20, right: 24, zIndex: 9999, padding: '10px 24px', background: saveToast.includes('fail') ? '#fef2f2' : '#f0fdf4', border: '1px solid ' + (saveToast.includes('fail') ? '#fca5a5' : '#86efac'), borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', display: 'flex', alignItems: 'center', gap: 8, animation: 'toastIn 0.3s ease-out' }}>
+          <span style={{ fontSize: 14 }}>{saveToast.includes('fail') ? '\u274c' : '\u2705'}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: saveToast.includes('fail') ? '#991b1b' : '#166534' }}>{saveToast}</span>
+        </div>
+      )}
+      <style>{`@keyframes toastIn { from { transform: translateX(80px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div
@@ -896,6 +925,59 @@ function AddonsPage() {
             </span>
           </div>
         </div>
+
+        {/* ── DEMO / LIVE config toggle (localhost only) ──────────────── */}
+        {isLocalDev && (<div style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20,
+          padding: '10px 16px', background: configTarget === 'demo' ? '#fefce8' : '#f0fdf4',
+          border: '1px solid ' + (configTarget === 'demo' ? '#fde68a' : '#86efac'),
+          borderRadius: 10,
+        }}>
+          <div style={{ display: 'flex', background: '#e5e7eb', borderRadius: 8, padding: 2 }}>
+            {(['demo', 'live'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => { setConfigTarget(t); setLoading(true); }}
+                style={{
+                  padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6,
+                  border: 'none', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em',
+                  background: configTarget === t ? (t === 'demo' ? '#f59e0b' : '#22c55e') : 'transparent',
+                  color: configTarget === t ? '#fff' : '#6b7280',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <span style={{ fontSize: 13, color: '#6b7280' }}>
+            {configTarget === 'demo'
+              ? 'Editing DEMO config \u2014 changes only affect the demo theme'
+              : 'Editing LIVE config \u2014 changes affect your live store'}
+          </span>
+          {configTarget === 'demo' && (
+            <button
+              onClick={async () => {
+                if (!STORE_ID || promoting) return;
+                if (!confirm('Push all DEMO settings to LIVE? This will update your real store.')) return;
+                setPromoting(true);
+                try {
+                  await fetch(API + '/api/stores/' + STORE_ID + '/addons/promote-demo', { method: 'POST' });
+                  showSaveToast('Demo promoted to Live!');
+                } catch (e) { showSaveToast('Promote failed!'); }
+                finally { setPromoting(false); }
+              }}
+              disabled={promoting}
+              style={{
+                marginLeft: 'auto', padding: '6px 16px', fontSize: 12, fontWeight: 600,
+                background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8,
+                cursor: promoting ? 'wait' : 'pointer', opacity: promoting ? 0.6 : 1,
+              }}
+            >
+              {promoting ? 'Pushing...' : 'Push to Live'}
+            </button>
+          )}
+        </div>)}
 
         {/* ── Recommended Setup Banner ─────────────────────────────── */}
         {allDisabled && (
@@ -1209,7 +1291,8 @@ function AddonsPage() {
                       onClick={() => {
                         if (isExpanded && expandedView === 'edit') { setExpanded(null); }
                         else { setExpanded(def.key); setExpandedView('edit'); }
-                        const url = isExpanded && expandedView === 'edit' ? window.location.pathname : '?edit=' + def.key;
+                        const urlKey = def.key === 'freeShippingBar' ? 'rewards' : def.key;
+                        const url = isExpanded && expandedView === 'edit' ? window.location.pathname : '?edit=' + urlKey;
                         window.history.replaceState({}, '', url);
                       }}
                       style={{
@@ -1251,11 +1334,30 @@ function AddonsPage() {
 
                     {/* Right: Edit controls */}
                     <div>
+                      {/* Rewards addon gets the custom tier editor with Save/Discard */}
+                      {def.key === 'freeShippingBar' && (
+                        <RewardsTierEditorWithSave
+                          savedConfig={addon.config ?? {}}
+                          onSave={(fullConfig) => updateAddonConfig(def.key, fullConfig)}
+                          onPreviewChange={(draftConfig) => {
+                            // Update preview instantly without persisting
+                            setAddons(prev => {
+                              const current = prev[def.key];
+                              if (!current) return prev;
+                              return { ...prev, [def.key]: { ...current, config: draftConfig } };
+                            });
+                          }}
+                          storeId={STORE_ID}
+                        />
+                      )}
+
+                      {/* Standard dimensions (for rewards, only position remains) */}
                       <div
                         style={{
                           display: 'flex',
                           flexDirection: 'column' as const,
                           gap: 14,
+                          marginTop: def.key === 'freeShippingBar' ? 16 : 0,
                         }}
                       >
                         {def.dimensions.map((dim) => (
@@ -1455,7 +1557,11 @@ function AddonsPage() {
                         {/* Status timeline */}
                         {testing && (() => {
                           const totalV = exp.totalVisitors ?? 0;
-                          const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
+                          const msRunning = Date.now() - new Date(exp.startedAt).getTime();
+                          const hoursRunning = Math.floor(msRunning / 3600000);
+                          const daysRunning = msRunning / 86400000;
+                          const daysRunningInt = Math.floor(daysRunning);
+                          const liftHasData = exp.liftPercent != null;
                           const liftAbs = Math.abs(exp.liftPercent ?? 0);
                           // Smart milestones — derived from observed conversion rate (API calculates)
                           const minPerVariant = exp.explorationMinPerVariant || 30;
@@ -1470,11 +1576,21 @@ function AddonsPage() {
                             ? (daysToMin <= 1 ? 'less than a day' : daysToMin + ' days')
                             : 'estimating...';
 
+                          // Time remaining for 3-day minimum
+                          const hoursLeft = Math.max(0, 72 - hoursRunning);
+                          const daysLeft = Math.floor(hoursLeft / 24);
+                          const remainingHours = hoursLeft % 24;
+                          const timeLeftLabel = hoursLeft <= 0 ? 'Complete'
+                            : daysLeft > 0 ? daysLeft + 'd ' + remainingHours + 'h left'
+                            : remainingHours + 'h left';
+                          const timeRunningLabel = daysRunningInt < 1 ? hoursRunning + 'h' : daysRunningInt + 'd ' + (hoursRunning % 24) + 'h';
+                          const past3Days = daysRunningInt >= 3;
+
                           const steps = [
                             { label: 'Collecting visitors', detail: totalV + '/' + minVisitors + ' visitors (' + minPerVariant + ' per variant)' + (totalV < minVisitors && dailyTraffic > 0 ? ' · ~' + etaLabel + ' left' : ''), done: totalV >= minVisitors, active: totalV < minVisitors },
-                            { label: '3-day minimum', detail: daysRunning + '/3 days (weekday + weekend patterns)', done: daysRunning >= 3, active: totalV >= minVisitors && daysRunning < 3 },
-                            { label: 'Detecting impact', detail: liftAbs > 0 ? (liftAbs.toFixed(1) + '% difference so far') : 'Measuring...', done: confidence >= 60 || (totalV >= strongTarget && liftAbs < 3), active: daysRunning >= 3 && confidence < 60 && !(totalV >= strongTarget && liftAbs < 3) },
-                            { label: 'Conclusion', detail: confidence >= 90 ? 'Clear winner found!' : (totalV >= strongTarget && liftAbs < 3) ? 'Low impact — ready to move on' : (dailyTraffic > 0 && daysToStrong > daysRunning ? '~' + (daysToStrong - daysRunning) + ' days at current traffic' : 'Need more data'), done: confidence >= 90 || winner || noDiff, active: confidence >= 60 && confidence < 90 },
+                            { label: '3-day minimum', detail: timeRunningLabel + ' running · ' + timeLeftLabel, done: past3Days, active: totalV >= minVisitors && !past3Days },
+                            { label: 'Detecting impact', detail: liftHasData && liftAbs > 0 ? (liftAbs.toFixed(1) + '% difference so far') : 'Measuring...', done: past3Days && (confidence >= 60 || (liftHasData && totalV >= strongTarget && liftAbs < 3)), active: past3Days && confidence < 60 && !(liftHasData && totalV >= strongTarget && liftAbs < 3) },
+                            { label: 'Conclusion', detail: !past3Days ? 'Waiting for 3-day minimum' : confidence >= 90 ? 'Clear winner found!' : (liftHasData && totalV >= strongTarget && liftAbs < 3) ? 'Low impact — ready to move on' : (dailyTraffic > 0 && daysToStrong > daysRunningInt ? '~' + (daysToStrong - daysRunningInt) + ' days at current traffic' : 'Need more data'), done: (confidence >= 90 || winner || noDiff) && past3Days, active: past3Days && confidence >= 60 && confidence < 90 },
                           ];
                           return (
                             <div style={{ marginTop: 12, borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
@@ -1491,7 +1607,7 @@ function AddonsPage() {
                                   </div>
                                 </div>
                               ))}
-                              {totalV >= strongTarget && liftAbs < 3 && (
+                              {liftHasData && totalV >= strongTarget && liftAbs < 3 && (
                                 <div style={{ marginTop: 8, padding: 8, background: '#fef3c7', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
                                   {'This feature shows less than 3% impact. The engine will auto-conclude soon so we can test the next dimension.'}
                                 </div>

@@ -26,6 +26,7 @@ async function handleRequest(req: NextRequest) {
     const referralSource = body.referralSource;
     const country = body.country;
     const prefetch = body.prefetch === true; // Pre-fetch on page load — assign variant but skip CART_OPENED
+    const themeId = body.themeId || null; // Shopify.theme.id — used to serve demo vs live config
 
     if (!shopDomain) {
       return NextResponse.json({ error: 'Missing shop' }, { status: 400 });
@@ -78,9 +79,15 @@ async function handleRequest(req: NextRequest) {
       }
     }
 
-    // 7. Return config + experiment assignment
+    // 7. Choose demo vs live config based on theme ID
+    const isDemo = themeId && store.demoThemeId && String(themeId) === String(store.demoThemeId);
+    const cartConfig = isDemo && store.demoConfig && Object.keys(store.demoConfig as any).length > 0
+      ? store.demoConfig
+      : store.config;
+
+    // 8. Return config + experiment assignment
     return NextResponse.json({
-      cartConfig: store.config,
+      cartConfig,
       currency: store.currency,
       experiment: assignment.experiment
         ? {

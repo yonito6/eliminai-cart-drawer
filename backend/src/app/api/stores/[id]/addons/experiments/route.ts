@@ -71,7 +71,7 @@ export async function GET(
         status: exp.status,
         confidence: exp.confidence,
         expectedLoss: (exp as any).expectedLoss ?? null,
-        liftPercent: exp.liftPercent ?? 0,
+        liftPercent: exp.liftPercent,
         winnerVariantId: exp.winnerVariantId,
         trafficSplit: exp.trafficSplit,
         totalVisitors: exp._count.assignments,

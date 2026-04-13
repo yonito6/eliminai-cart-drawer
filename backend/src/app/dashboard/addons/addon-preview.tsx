@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { REAL_CART_CSS, CONTROL_HTML } from '../cart-constants';
+import { REWARD_ICONS, RewardTier } from '@/lib/addon-definitions';
 
 const FOCUS_AREAS: Record<string, { scrollTo: string; height: number }> = {
   trustBadges: { scrollTo: 'ccd-trust-badges', height: 220 },
@@ -199,25 +200,112 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     }
   }
 
-  // ── Rewards (freeShippingBar): milestone-based progress bar ────
+  // ── Rewards (freeShippingBar): dynamic tier-based progress bar ────
   if (addonKey === 'freeShippingBar') {
-    const m1Label = addonConfig.milestone1Label || themeSettings?.ccd_milestone1_label || 'Free shipping';
-    const m2Label = addonConfig.milestone2Label || themeSettings?.ccd_milestone2_label || '2+1 FREE';
+    const tiers: RewardTier[] = addonConfig.tiers || [];
+    const thresholdMode: string = addonConfig.thresholdMode || 'items';
     const position = addonConfig.position || 'above-items';
 
-    // Demo cart has 2 items — milestone 1 reached, milestone 2 not yet
-    const rewardsHtml = '<div class="ccd-progress" data-ccd-progress style="padding:10px 0">'
-      + '<div class="ccd-progress__message" style="text-align:center;font-size:12px;margin-bottom:10px">Add <strong>1</strong> more for <strong>FREE</strong></div>'
-      + '<div class="ccd-progress__bar-wrap" style="display:flex;align-items:center;gap:0;padding:0 8px">'
-      + '<div style="flex:1;height:3px;background:var(--ccd-success,#22c55e);border-radius:2px"></div>'
-      + '<div style="display:flex;flex-direction:column;align-items:center;margin:0 4px">'
-      + '<div style="width:28px;height:28px;border-radius:50%;background:var(--ccd-success,#22c55e);display:flex;align-items:center;justify-content:center;font-size:14px">\uD83D\uDE9A</div>'
-      + '<span style="font-size:10px;color:#111;font-weight:600;margin-top:2px">' + m1Label + '</span></div>'
-      + '<div style="flex:1;height:3px;background:linear-gradient(to right,var(--ccd-success,#22c55e) 50%,#e5e5e5 50%);border-radius:2px"></div>'
-      + '<div style="display:flex;flex-direction:column;align-items:center;margin:0 4px">'
-      + '<div style="width:28px;height:28px;border-radius:50%;background:#e5e5e5;display:flex;align-items:center;justify-content:center;font-size:14px">\uD83C\uDFF7\uFE0F</div>'
-      + '<span style="font-size:10px;color:#999;margin-top:2px">' + m2Label + '</span></div>'
-      + '</div></div>';
+    // FIRST: strip the hardcoded progress bar from the base template.
+    // The ccd-progress block has nested divs so we track depth to find the end.
+    const progressStart = cartHtml.indexOf('<div class="ccd-progress">');
+    if (progressStart !== -1) {
+      let depth = 0;
+      let progressEnd = -1;
+      for (let i = progressStart; i < cartHtml.length; i++) {
+        if (cartHtml.startsWith('<div', i)) depth++;
+        if (cartHtml.startsWith('</div>', i)) {
+          depth--;
+          if (depth === 0) { progressEnd = i + 6; break; }
+        }
+      }
+      if (progressEnd !== -1) {
+        cartHtml = cartHtml.substring(0, progressStart) + cartHtml.substring(progressEnd);
+      }
+    }
+
+    // Demo cart: 2 items, $80 total — determine which tiers are reached
+    const demoValue = thresholdMode === 'dollars' ? 80 : 2;
+    const sortedTiers = [...tiers].sort((a, b) => a.goal - b.goal);
+
+    // Find highest reached tier
+    let highestReachedIdx = -1;
+    for (let i = 0; i < sortedTiers.length; i++) {
+      if (demoValue >= sortedTiers[i].goal) highestReachedIdx = i;
+    }
+
+    // Helper: replace {remaining} token with actual value for a tier
+    const fillTemplate = (text: string, tier: RewardTier) => {
+      const remaining = Math.max(0, tier.goal - demoValue);
+      const remainStr = thresholdMode === 'dollars' ? `$${remaining}` : `${remaining}`;
+      return text.replace(/\{remaining\}/g, remainStr);
+    };
+
+    // Next unreached tier for the top progress message
+    const nextTier = sortedTiers.find(t => demoValue < t.goal);
+
+    // The top message uses the next tier's beforeText (with tokens replaced),
+    // or falls back to a simple "Add X more for LABEL" format
+    let progressMsg: string;
+    if (nextTier) {
+      if (nextTier.beforeText) {
+        progressMsg = fillTemplate(nextTier.beforeText, nextTier);
+      } else {
+        const remaining = nextTier.goal - demoValue;
+        const unit = thresholdMode === 'dollars' ? '$' : '';
+        const suffix = thresholdMode === 'items' && remaining !== 1 ? ' items' : thresholdMode === 'items' ? ' item' : '';
+        progressMsg = `Add <strong>${unit}${remaining}${suffix}</strong> more for <strong>${nextTier.label}</strong>`;
+      }
+    } else if (sortedTiers.length > 0) {
+      // All tiers reached — show the highest tier's afterText or generic message
+      const highest = sortedTiers[sortedTiers.length - 1];
+      progressMsg = highest.afterText
+        ? fillTemplate(highest.afterText, highest)
+        : (addonConfig.allRewardsUnlockedText || 'All rewards unlocked!');
+    } else {
+      progressMsg = 'Set up reward tiers';
+    }
+
+    // Build milestone circles + bar segments using the SAME CSS classes as the
+    // live theme (black icons, pulse animation, proper sizing from REAL_CART_CSS)
+    let barHtml = '';
+    for (let i = 0; i < sortedTiers.length; i++) {
+      const tier = sortedTiers[i];
+      const reached = demoValue >= tier.goal;
+      const iconDef = REWARD_ICONS[tier.icon] || REWARD_ICONS['star'];
+      // Show label under the icon — use tier label (short name), NOT the template text
+      const displayText = tier.label;
+
+      // Line segment before this milestone
+      const lineFilled = reached || (i > 0 && demoValue >= sortedTiers[i - 1].goal);
+      const lineHalf = !reached && i > 0 && demoValue >= sortedTiers[i - 1].goal;
+      const lineClasses = ['ccd-progress__line'];
+      if (i === 0 && reached) lineClasses.push('ccd-progress__line--filled');
+      else if (lineFilled && !lineHalf) lineClasses.push('ccd-progress__line--filled');
+      else if (lineHalf) lineClasses.push('ccd-progress__line--half');
+      barHtml += `<div class="${lineClasses.join(' ')}"></div>`;
+
+      // Milestone icon + label — uses theme CSS classes for black circles + pulse
+      const msClasses = ['ccd-progress__milestone'];
+      if (reached) msClasses.push('ccd-progress__milestone--reached');
+      const iconClasses = ['ccd-progress__icon'];
+      if (reached) iconClasses.push('ccd-progress__icon--reached');
+
+      barHtml += `<div class="${msClasses.join(' ')}">`
+        + `<div class="${iconClasses.join(' ')}">${iconDef.svg}</div>`
+        + `<span class="ccd-progress__label">${displayText}</span>`
+        + `</div>`;
+    }
+
+    const allDone = sortedTiers.length > 0 && !nextTier;
+    const msgClass = allDone ? 'ccd-progress__message ccd-progress__message--done' : 'ccd-progress__message';
+
+    const rewardsHtml = sortedTiers.length > 0
+      ? `<div class="ccd-progress" data-ccd-progress>`
+        + `<div class="${msgClass}">${progressMsg}</div>`
+        + `<div class="ccd-progress__bar-wrap">${barHtml}</div>`
+        + `</div>`
+      : '<div class="ccd-progress" data-ccd-progress style="text-align:center;font-size:12px;color:#999;padding:10px 0">No reward tiers configured</div>';
 
     if (position === 'header') {
       cartHtml = cartHtml.replace(

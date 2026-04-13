@@ -56,10 +56,26 @@
   var CFG = window.CCD_CONFIG || {};
   var PROT = CFG.protectionHandle || 'shipping-protection-1';
   var PROT_VID = parseInt(CFG.protectionVariantId) || 47779174023419;
-  var PROMO_GOAL = CFG.promoGoal || 3;
-  var WATCH_CASE_HANDLE = CFG.giftHandle || 'eleganto-premium-watch-organizer';
-  var WATCH_CASE_VID = parseInt(CFG.giftVariantId) || 46941745742075;
-  var WATCH_GOAL = CFG.giftGoal || 3;
+  // ── Dynamic reward tiers (from dashboard config) ──
+  var REWARD_TIERS = CFG.tiers || [];
+  var THRESHOLD_MODE = CFG.thresholdMode || 'items'; // 'items' or 'dollars'
+  var HIGHEST_TIER_ONLY = !!CFG.highestTierOnly;
+  var ALL_REWARDS_TEXT = CFG.allRewardsUnlockedText || '\uD83C\uDF89 You\u2019ve unlocked all rewards!';
+  // Backwards compat: derive PROMO_GOAL from last tier's goal
+  var PROMO_GOAL = REWARD_TIERS.length > 0 ? REWARD_TIERS[REWARD_TIERS.length - 1].goal : (CFG.promoGoal || 3);
+  // Build a set of all gift handles across tiers
+  var GIFT_HANDLES = {};
+  var GIFT_TIERS = []; // tiers that have a gift product
+  REWARD_TIERS.forEach(function(t) {
+    if (t.giftProduct && t.giftProduct.handle) {
+      GIFT_HANDLES[t.giftProduct.handle] = true;
+      GIFT_TIERS.push(t);
+    }
+  });
+  // Legacy single gift (backwards compat for stores not yet using tiers)
+  var WATCH_CASE_HANDLE = CFG.giftHandle || (GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].giftProduct.handle : 'eleganto-premium-watch-organizer');
+  var WATCH_CASE_VID = parseInt(CFG.giftVariantId) || (GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].giftProduct.variantId : 46941745742075);
+  var WATCH_GOAL = CFG.giftGoal || (GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].goal : 3);
   var busy = false;
   var _pendingOp = null; // queued operation when busy
   var protectionDone = false;
@@ -75,6 +91,30 @@
   var CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>';
   var WARN_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>';
   var GIFT_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1z"/></svg>';
+
+  // ── Reward icon SVGs (must match addon-definitions.ts REWARD_ICONS) ──
+  var REWARD_ICON_SVGS = {
+    shipping: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>',
+    tag: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>',
+    gift: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1z"/></svg>',
+    star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>',
+    heart: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
+    crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>',
+    percent: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>',
+    fire: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/></svg>',
+    trophy: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg>',
+    box: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 3H4c-1.1 0-2 .9-2 2v2h20V5c0-1.1-.9-2-2-2zM2 19c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9H2v10zm8-8h4v2h-4v-2z"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>',
+    ribbon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 2v18l8-4 8 4V2H4zm14 14.47l-6-3-6 3V4h12v12.47z"/></svg>',
+    sparkle: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2z"/><path d="M19 1l-1.26 2.75L15 5l2.74 1.26L19 9l1.25-2.74L23 5l-2.75-1.25z" opacity=".6"/><path d="M19 15l-.62 1.38L17 17l1.38.62L19 19l.62-1.38L21 17l-1.38-.62z" opacity=".6"/></svg>',
+    diamond: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5L2 9l10 12L22 9l-3-6zM9.62 8l1.5-3h1.76l1.5 3H9.62zM11 10v6.68L5.44 10H11zm2 0h5.56L13 16.68V10zm6.26-2h-2.65l-1.5-3h2.65l1.5 3zM6.24 5h2.65l-1.5 3H4.74l1.5-3z"/></svg>',
+    lock: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>',
+    cart: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>',
+    truck: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5H15V3H3c-1.1 0-2 .9-2 2v9h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2V9.65l-3.08-3.64zM6 15.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm12 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM3 7h4v4H1V7h2zm14 0h1.5l2.09 2.53H17V7z"/></svg>',
+    coins: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/><path d="M3 12c0-2.61 1.67-4.83 4-5.65V4.26C3.55 5.15 1 8.27 1 12s2.55 6.85 6 7.74v-2.09c-2.33-.82-4-3.04-4-5.65z"/><path d="M15 8h-2v3h-3v2h3v3h2v-3h3v-2h-3z"/></svg>',
+    medal: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm0 1l1.27 2.58L16 11.2l-2 1.95.47 2.76L12 14.69l-2.47 1.22L10 13.15l-2-1.95 2.73-.62L12 8z"/><path d="M20 2H4v2l4.86 3.64a6.95 6.95 0 016.28 0L20 4V2z"/></svg>'
+  };
 
   var CCD = {
 
@@ -116,6 +156,7 @@
       this.bindEvents();
       this.interceptAddToCart();
       this.setupScrollIndicator();
+      this.buildProgressBar();
       this.updateProgress();
       this.checkOverflow();
       // Pre-fetch experiment config on page load so cart opens instantly
@@ -131,11 +172,15 @@
       }
     },
 
+    _isExcludedHandle: function(handle) {
+      return handle === PROT || handle === WATCH_CASE_HANDLE || !!GIFT_HANDLES[handle];
+    },
+
     getRealCount: function(cart) {
       var c = 0;
       if (cart && cart.items) {
         cart.items.forEach(function(i) {
-          if (i.handle !== PROT && i.handle !== WATCH_CASE_HANDLE) c += i.quantity;
+          if (!CCD._isExcludedHandle(i.handle)) c += i.quantity;
         });
       }
       return c;
@@ -145,7 +190,7 @@
       var seen = {}, count = 0;
       if (cart && cart.items) {
         cart.items.forEach(function(i) {
-          if (i.handle !== PROT && i.handle !== WATCH_CASE_HANDLE && !seen[i.variant_id]) {
+          if (!CCD._isExcludedHandle(i.handle) && !seen[i.variant_id]) {
             seen[i.variant_id] = true;
             count++;
           }
@@ -159,7 +204,7 @@
       var wh = CCD._watchHandles || [];
       if (cart && cart.items) {
         cart.items.forEach(function(i) {
-          if (i.handle !== PROT && i.handle !== WATCH_CASE_HANDLE) {
+          if (!CCD._isExcludedHandle(i.handle)) {
             var isWatch = (i.product_type && i.product_type.toLowerCase() === "watch") ||
                           wh.indexOf(i.handle) !== -1;
             if (isWatch) count += i.quantity;
@@ -711,31 +756,61 @@
 
     checkWatchCase: function(cart) {
       if (watchCaseBusy) return;
+      if (!cart || !cart.items) return;
 
-      var watchCount = CCD.getWatchCount(cart);
-      var hasCase = false;
-      var caseKey = null;
-      var caseQty = 0;
+      var score = THRESHOLD_MODE === 'dollars'
+        ? (cart.total_price / 100)
+        : CCD.getRealCount(cart);
 
-      if (cart && cart.items) {
-        cart.items.forEach(function(i) {
-          if (i.handle === WATCH_CASE_HANDLE) {
-            hasCase = true;
-            caseKey = i.key;
-            caseQty = i.quantity;
-            CCD._caseKey = i.key;
+      // Build map of gift handles currently in cart
+      var giftInCart = {}; // handle → { key, qty }
+      cart.items.forEach(function(i) {
+        if (GIFT_HANDLES[i.handle]) {
+          giftInCart[i.handle] = { key: i.key, qty: i.quantity };
+        }
+        // Legacy single gift compat
+        if (i.handle === WATCH_CASE_HANDLE) {
+          giftInCart[i.handle] = { key: i.key, qty: i.quantity };
+        }
+      });
+
+      // Determine which gifts SHOULD be in cart
+      var shouldHave = {}; // handle → variantId
+      if (GIFT_TIERS.length > 0) {
+        // New tier-based gifts
+        var eligibleGifts = [];
+        GIFT_TIERS.forEach(function(t) {
+          if (t.giftProduct && t.giftProduct.handle && score >= t.goal) {
+            eligibleGifts.push(t);
           }
         });
-        if (!hasCase) CCD._caseKey = null;
+        if (HIGHEST_TIER_ONLY && eligibleGifts.length > 0) {
+          // Only keep the highest tier gift
+          var highest = eligibleGifts[eligibleGifts.length - 1];
+          shouldHave[highest.giftProduct.handle] = highest.giftProduct.variantId;
+        } else {
+          eligibleGifts.forEach(function(t) {
+            shouldHave[t.giftProduct.handle] = t.giftProduct.variantId;
+          });
+        }
+      } else if (WATCH_CASE_HANDLE && WATCH_CASE_VID) {
+        // Legacy single gift
+        if (score >= WATCH_GOAL) {
+          shouldHave[WATCH_CASE_HANDLE] = WATCH_CASE_VID;
+        }
       }
 
-      // GUARD: If someone got qty > 1 (manual add, race condition), force back to 1
-      if (hasCase && caseQty > 1 && caseKey) {
+      // GUARD: Fix qty > 1 on any gift
+      var fixKey = null;
+      Object.keys(giftInCart).forEach(function(h) {
+        if (giftInCart[h].qty > 1) fixKey = giftInCart[h].key;
+      });
+      if (fixKey) {
         watchCaseBusy = true;
         fetch('/cart/change.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: caseKey, quantity: 1 })
+          body: JSON.stringify({ id: fixKey, quantity: 1 })
         })
         .then(function(r) { return r.json(); })
         .then(function(c) { watchCaseBusy = false; CCD.refresh(c); })
@@ -743,37 +818,74 @@
         return;
       }
 
-      if (watchCount >= WATCH_GOAL && !hasCase && !caseDismissed) {
+      // ADD gifts that should be in cart but aren't
+      var toAdd = [];
+      Object.keys(shouldHave).forEach(function(h) {
+        if (!giftInCart[h] && !caseDismissed) {
+          toAdd.push({ id: shouldHave[h], quantity: 1, properties: { _eliminai_gift: 'true' } });
+        }
+      });
+
+      // REMOVE gifts that are in cart but shouldn't be
+      var toRemove = [];
+      Object.keys(giftInCart).forEach(function(h) {
+        if (!shouldHave[h]) {
+          toRemove.push(giftInCart[h].key);
+        }
+      });
+
+      // Reset dismiss when no gifts should be present
+      if (Object.keys(shouldHave).length === 0 && !Object.keys(giftInCart).length) {
+        caseDismissed = false;
+        try { sessionStorage.removeItem('ccd_case_dismissed'); } catch(e) {}
+      }
+
+      // Execute removals first, then adds
+      if (toRemove.length > 0) {
         watchCaseBusy = true;
-        fetch('/cart/add.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: [{ id: WATCH_CASE_VID, quantity: 1 }] })
+        // Instantly hide from DOM
+        document.querySelectorAll('#CartDrawer .ccd-item[data-gift="1"]').forEach(function(el) { el.remove(); });
+        var removeChain = Promise.resolve();
+        toRemove.forEach(function(key) {
+          removeChain = removeChain.then(function() {
+            return fetch('/cart/change.js', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: key, quantity: 0 })
+            });
+          });
+        });
+        removeChain.then(function() {
+          if (toAdd.length > 0) {
+            return fetch('/cart/add.js', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ items: toAdd })
+            });
+          }
         })
         .then(function() { return fetch('/cart.js'); })
         .then(function(r) { return r.json(); })
         .then(function(c) { watchCaseBusy = false; CCD.refresh(c); })
         .catch(function() { watchCaseBusy = false; });
-      } else if (watchCount < WATCH_GOAL && !hasCase) {
-        // Reset dismiss when below goal so it re-adds if user adds watches again
-        caseDismissed = false;
-        try { sessionStorage.removeItem('ccd_case_dismissed'); } catch(e) {}
-      } else if (watchCount < WATCH_GOAL && hasCase && caseKey) {
+      } else if (toAdd.length > 0) {
         watchCaseBusy = true;
-        // Instantly hide gift from DOM (old template or new format)
-        var giftEl = document.querySelector('#CartDrawer .ccd-gift-item');
-        if (giftEl) giftEl.remove();
-        var giftEl2 = document.querySelector('#CartDrawer .ccd-item[data-gift="1"]');
-        if (giftEl2) giftEl2.remove();
-        fetch('/cart/change.js', {
+        fetch('/cart/add.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: caseKey, quantity: 0 })
+          body: JSON.stringify({ items: toAdd })
         })
+        .then(function() { return fetch('/cart.js'); })
         .then(function(r) { return r.json(); })
-        .then(function(c) { CCD._caseKey = null; watchCaseBusy = false; CCD.refresh(c); })
+        .then(function(c) { watchCaseBusy = false; CCD.refresh(c); })
         .catch(function() { watchCaseBusy = false; });
       }
+
+      // Update _caseKey for dismiss tracking (use first gift found)
+      CCD._caseKey = null;
+      Object.keys(giftInCart).forEach(function(h) {
+        if (!CCD._caseKey) CCD._caseKey = giftInCart[h].key;
+      });
     },
 
     /* Smart DOM morph — updates items in-place, preserves images (no blink) */
@@ -932,62 +1044,69 @@
     enforceGiftItem: function(cart) {
       var container = document.querySelector("#CartDrawer .cart__items");
       if (!container) return;
-      var giftCartItem = null;
+
+      // Find ALL gift items in cart
+      var giftItems = [];
       if (cart && cart.items) {
-        giftCartItem = cart.items.find(function(i) { return i.handle === WATCH_CASE_HANDLE; });
+        cart.items.forEach(function(i) {
+          if (GIFT_HANDLES[i.handle] || i.handle === WATCH_CASE_HANDLE) {
+            giftItems.push(i);
+          }
+        });
       }
-      if (!giftCartItem) return;
-      var giftKey = giftCartItem.key;
+      if (giftItems.length === 0) return;
 
       // If already a .ccd-gift-item (old template), convert to regular format
       var oldGift = container.querySelector('.ccd-gift-item');
       if (oldGift) oldGift.remove();
 
-      // Find the gift rendered as a regular .ccd-item
-      var giftEl = null;
-      container.querySelectorAll('.ccd-item').forEach(function(el) {
-        var rmBtn = el.querySelector('.ccd-item__remove');
-        if (rmBtn && rmBtn.dataset.key === giftKey) giftEl = el;
-      });
-      if (!giftEl) return;
+      giftItems.forEach(function(giftCartItem) {
+        var giftKey = giftCartItem.key;
 
-      // 1. Move to bottom
-      if (giftEl.nextElementSibling) container.appendChild(giftEl);
+        // Find the gift rendered as a regular .ccd-item
+        var giftEl = null;
+        container.querySelectorAll('.ccd-item').forEach(function(el) {
+          var rmBtn = el.querySelector('.ccd-item__remove');
+          if (rmBtn && rmBtn.dataset.key === giftKey) giftEl = el;
+        });
+        if (!giftEl) return;
 
-      // 2. Hide qty buttons, show locked qty of 1
-      var qtyWrap = giftEl.querySelector('.ccd-qty');
-      if (qtyWrap) qtyWrap.style.display = 'none';
-      // Make price col float right when qty is hidden
-      var priceColEl = giftEl.querySelector('.ccd-item__price-col');
-      if (priceColEl) priceColEl.style.marginLeft = 'auto';
+        // 1. Move to bottom
+        if (giftEl.nextElementSibling) container.appendChild(giftEl);
 
-      // 3. Add "Bonus gift" badge below the price (like discount badges on regular items)
-      if (!giftEl.querySelector('.ccd-gift-badge')) {
-        var badge = document.createElement('span');
-        badge.className = 'ccd-gift-badge';
-        badge.innerHTML = GIFT_SVG + ' Bonus gift';
-        var priceCol = giftEl.querySelector('.ccd-item__price-col');
-        if (priceCol) {
-          priceCol.appendChild(badge);
+        // 2. Hide qty buttons
+        var qtyWrap = giftEl.querySelector('.ccd-qty');
+        if (qtyWrap) qtyWrap.style.display = 'none';
+        var priceColEl = giftEl.querySelector('.ccd-item__price-col');
+        if (priceColEl) priceColEl.style.marginLeft = 'auto';
+
+        // 3. Add "Bonus gift" badge
+        if (!giftEl.querySelector('.ccd-gift-badge')) {
+          var badge = document.createElement('span');
+          badge.className = 'ccd-gift-badge';
+          badge.innerHTML = GIFT_SVG + ' Bonus gift';
+          var priceCol = giftEl.querySelector('.ccd-item__price-col');
+          if (priceCol) priceCol.appendChild(badge);
         }
-      }
 
-      // 4. Set price to "Free" with compare price
-      var priceEl = giftEl.querySelector('.ccd-item__price');
-      if (priceEl) {
-        priceEl.textContent = 'Free';
-        priceEl.classList.add('ccd-item__price--free');
-      }
-      var priceRow = giftEl.querySelector('.ccd-item__price-row') || (priceEl ? priceEl.parentElement : null);
-      if (priceRow && !priceRow.querySelector('.ccd-item__compare-price')) {
-        var cp = document.createElement('span');
-        cp.className = 'ccd-item__compare-price';
-        cp.textContent = String.fromCharCode(36) + '49.99';
-        priceRow.insertBefore(cp, priceRow.firstChild);
-      }
+        // 4. Set price to "Free" with compare price
+        var priceEl = giftEl.querySelector('.ccd-item__price');
+        if (priceEl) {
+          priceEl.textContent = 'Free';
+          priceEl.classList.add('ccd-item__price--free');
+        }
+        var origPrice = giftCartItem.original_price || giftCartItem.price || 0;
+        var priceRow = giftEl.querySelector('.ccd-item__price-row') || (priceEl ? priceEl.parentElement : null);
+        if (priceRow && !priceRow.querySelector('.ccd-item__compare-price') && origPrice > 0) {
+          var cp = document.createElement('span');
+          cp.className = 'ccd-item__compare-price';
+          cp.textContent = CCD.fmt(origPrice);
+          priceRow.insertBefore(cp, priceRow.firstChild);
+        }
 
-      // 5. Mark gift for dismiss tracking
-      giftEl.setAttribute('data-gift', '1');
+        // 5. Mark gift for dismiss tracking
+        giftEl.setAttribute('data-gift', '1');
+      });
     },
     // Lightweight refresh: update totals, progress, empty state — NO morphDOM
     refreshLight: function(cart) {
@@ -1020,7 +1139,7 @@
       var ft = document.querySelector('[data-ccd-footer]');
       if (rc === 0) {
         if (cart.item_count > 0) {
-          cart.items.filter(function(i) { return i.handle === PROT || i.handle === WATCH_CASE_HANDLE; }).forEach(function(pi) {
+          cart.items.filter(function(i) { return CCD._isExcludedHandle(i.handle); }).forEach(function(pi) {
             fetch('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pi.key, quantity: 0 }) });
           });
         }
@@ -1093,7 +1212,7 @@
         if (rc === 0) {
           if (cart.item_count > 0) {
             var toRemove = cart.items.filter(function(i) {
-              return i.handle === PROT || i.handle === WATCH_CASE_HANDLE;
+              return CCD._isExcludedHandle(i.handle);
             });
             toRemove.forEach(function(pi) {
               fetch('/cart/change.js', {
@@ -1133,7 +1252,7 @@
       if (!cart || !cart.items) return;
 
       var realItems = cart.items.filter(function(it) {
-        return it.handle !== PROT && it.handle !== WATCH_CASE_HANDLE;
+        return !CCD._isExcludedHandle(it.handle);
       });
       var targetVid = null;
       var target = CFG.scarcityTarget || '2';
@@ -1253,76 +1372,134 @@
       });
     },
 
+    // Rebuild progress bar milestones from dynamic tier config
+    buildProgressBar: function(force) {
+      var tiers = REWARD_TIERS;
+      if (!tiers || tiers.length === 0) return; // keep legacy HTML
+      var wrap = document.querySelector('.ccd-progress__bar-wrap');
+      if (!wrap) return;
+      // Don't rebuild if already built with dynamic classes (unless forced by config update)
+      if (!force && wrap.querySelector('.ccd-progress__milestone--tier-0')) return;
+      wrap.innerHTML = '';
+      tiers.forEach(function(tier, idx) {
+        // Line segment before milestone
+        var line = document.createElement('div');
+        line.className = 'ccd-progress__line ccd-progress__line--tier-' + idx;
+        wrap.appendChild(line);
+        // Milestone circle + label
+        var ms = document.createElement('div');
+        ms.className = 'ccd-progress__milestone ccd-progress__milestone--tier-' + idx;
+        var iconSvg = REWARD_ICON_SVGS[tier.icon] || REWARD_ICON_SVGS.star;
+        ms.innerHTML = '<div class="ccd-progress__icon">' + iconSvg + '</div>' +
+          '<span class="ccd-progress__label">' + (tier.label || '') + '</span>';
+        wrap.appendChild(ms);
+      });
+    },
+
+    _lastProgressValue: null,
+
     updateProgress: function(cart) {
-      var rc, uv;
+      var rc, uv, cartTotal;
       if (cart && cart._optimisticCount !== undefined) {
         rc = cart._optimisticCount;
-        uv = rc; // approximate
+        uv = rc;
+        cartTotal = 0;
       } else if (cart) {
         rc = CCD.getRealCount(cart);
         uv = CCD.getUniqueVariants(cart);
+        cartTotal = (cart.total_price || 0) / 100;
       } else {
         var a = document.querySelector('[data-real-count]');
         rc = a ? parseInt(a.getAttribute('data-real-count') || '0') : 0;
         uv = a ? parseInt(a.getAttribute('data-unique-count') || '0') : 0;
+        cartTotal = a ? parseInt(a.getAttribute('data-cart-subtotal') || '0') / 100 : 0;
         if (!a || !a.getAttribute('data-unique-count')) uv = rc;
       }
 
-      var shippingOK = rc >= 1;
-      var promoOK = rc >= PROMO_GOAL;
-      var remaining = Math.max(0, PROMO_GOAL - rc);
+      var tiers = REWARD_TIERS;
+      var currentValue = THRESHOLD_MODE === 'dollars' ? cartTotal : rc;
+
+      // Skip animation if progress hasn't changed (cart reopened, not a new item)
+      var progressWrap = document.querySelector('.ccd-progress');
+      var skipAnim = (this._lastProgressValue !== null && this._lastProgressValue === currentValue);
+      if (skipAnim && progressWrap) {
+        progressWrap.classList.add('ccd-progress--instant');
+      }
+      this._lastProgressValue = currentValue;
+
+      // Legacy fallback when no dynamic tiers configured
+      if (!tiers || tiers.length === 0) {
+        tiers = [
+          { id: 'legacy-1', goal: 1, label: '', icon: 'shipping', beforeText: '', afterText: '' },
+          { id: 'legacy-2', goal: PROMO_GOAL, label: '', icon: 'tag', beforeText: 'Add {remaining} more for FREE', afterText: '' }
+        ];
+      }
+
+      var allReached = tiers.every(function(t) { return currentValue >= t.goal; });
+      var lastTier = tiers[tiers.length - 1];
+      var overallRemaining = Math.max(0, lastTier.goal - currentValue);
 
       var msgEl = document.querySelector('[data-ccd-progress-msg]');
       if (msgEl) {
-        if (promoOK) {
-          msgEl.innerHTML = '\uD83C\uDF89 You\u2019ve unlocked all rewards <strong>(expires soon)</strong>';
+        if (allReached) {
+          msgEl.innerHTML = ALL_REWARDS_TEXT;
           msgEl.classList.add('ccd-progress__message--done');
         } else {
-          msgEl.innerHTML = 'Add <strong>' + remaining + '</strong> more for <strong>FREE</strong>';
+          var nextTier = null;
+          for (var ti = 0; ti < tiers.length; ti++) { if (currentValue < tiers[ti].goal) { nextTier = tiers[ti]; break; } }
+          if (nextTier && nextTier.beforeText) {
+            var tierRem = Math.max(0, nextTier.goal - currentValue);
+            var unit = THRESHOLD_MODE === 'dollars' ? '$' + tierRem.toFixed(0) : tierRem;
+            msgEl.innerHTML = nextTier.beforeText.replace('{remaining}', '<strong>' + unit + '</strong>');
+          } else {
+            msgEl.innerHTML = 'Add <strong>' + overallRemaining + '</strong> more for <strong>FREE</strong>';
+          }
           msgEl.classList.remove('ccd-progress__message--done');
         }
       }
 
-      var sm = document.querySelector('.ccd-progress__milestone--shipping');
-      var sl = document.querySelector('.ccd-progress__line--first');
-      if (sm) {
-        var si = sm.querySelector('.ccd-progress__icon');
-        if (shippingOK) {
-          sm.classList.add('ccd-progress__milestone--reached');
-          if (si) si.classList.add('ccd-progress__icon--reached');
-          if (sl) sl.classList.add('ccd-progress__line--filled');
-        } else {
-          sm.classList.remove('ccd-progress__milestone--reached');
-          if (si) si.classList.remove('ccd-progress__icon--reached');
-          if (sl) sl.classList.remove('ccd-progress__line--filled');
-        }
-      }
+      // Update each milestone (supports both legacy and dynamic class names)
+      tiers.forEach(function(tier, idx) {
+        var tierReached = currentValue >= tier.goal;
+        var ms = document.querySelector('.ccd-progress__milestone--tier-' + idx);
+        var line = document.querySelector('.ccd-progress__line--tier-' + idx);
+        if (!ms && idx === 0) ms = document.querySelector('.ccd-progress__milestone--shipping');
+        if (!ms && idx === 1) ms = document.querySelector('.ccd-progress__milestone--promo');
+        if (!line && idx === 0) line = document.querySelector('.ccd-progress__line--first');
+        if (!line && idx === 1) line = document.querySelector('.ccd-progress__line--second');
 
-      var pm = document.querySelector('.ccd-progress__milestone--promo');
-      var pl = document.querySelector('.ccd-progress__line--second');
-      if (pm) {
-        var pi2 = pm.querySelector('.ccd-progress__icon');
-        if (promoOK) {
-          pm.classList.add('ccd-progress__milestone--reached');
-          if (pi2) pi2.classList.add('ccd-progress__icon--reached');
-          if (pl) { pl.classList.add('ccd-progress__line--filled'); pl.classList.remove('ccd-progress__line--half'); }
-        } else {
-          pm.classList.remove('ccd-progress__milestone--reached');
-          if (pi2) pi2.classList.remove('ccd-progress__icon--reached');
-          if (pl) {
-            pl.classList.remove('ccd-progress__line--filled');
-            if (remaining === 1) { pl.classList.add('ccd-progress__line--half'); } else { pl.classList.remove('ccd-progress__line--half'); }
+        if (ms) {
+          var icon = ms.querySelector('.ccd-progress__icon');
+          if (tierReached) {
+            ms.classList.add('ccd-progress__milestone--reached');
+            if (icon) icon.classList.add('ccd-progress__icon--reached');
+            if (line) { line.classList.add('ccd-progress__line--filled'); line.classList.remove('ccd-progress__line--half'); }
+          } else {
+            ms.classList.remove('ccd-progress__milestone--reached');
+            if (icon) icon.classList.remove('ccd-progress__icon--reached');
+            if (line) {
+              line.classList.remove('ccd-progress__line--filled');
+              var tierRem2 = tier.goal - currentValue;
+              if (tierRem2 === 1 && THRESHOLD_MODE === 'items') { line.classList.add('ccd-progress__line--half'); }
+              else { line.classList.remove('ccd-progress__line--half'); }
+            }
           }
         }
+      });
+
+      // Remove instant class after a frame so future changes animate normally
+      if (skipAnim && progressWrap) {
+        requestAnimationFrame(function() { progressWrap.classList.remove('ccd-progress--instant'); });
       }
 
-      // Sync all milestone pulse animations to same cycle
-      var reached = document.querySelectorAll('.ccd-progress__icon--reached');
-      if (reached.length > 0) {
-        reached.forEach(function(el) { el.style.animation = 'none'; });
-        // Force reflow then restart all at same instant
-        void document.body.offsetHeight;
-        reached.forEach(function(el) { el.style.animation = ''; });
+      // Sync all milestone pulse animations to same cycle (skip on reopen to avoid blink)
+      if (!skipAnim) {
+        var reachedEls = document.querySelectorAll('.ccd-progress__icon--reached');
+        if (reachedEls.length > 0) {
+          reachedEls.forEach(function(el) { el.style.animation = 'none'; });
+          void document.body.offsetHeight;
+          reachedEls.forEach(function(el) { el.style.animation = ''; });
+        }
       }
     },
 
@@ -1411,7 +1588,18 @@
 
     loadExperiment: function(callback, prefetch) {
       var cached = null;
-      try { cached = JSON.parse(sessionStorage.getItem('ecart_config')); } catch(e) {}
+      try {
+        var raw = sessionStorage.getItem('ecart_config');
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          // Cache expires after 5 minutes so dashboard changes propagate quickly
+          if (parsed._ts && Date.now() - parsed._ts < 5 * 60 * 1000) {
+            cached = parsed;
+          } else {
+            sessionStorage.removeItem('ecart_config');
+          }
+        }
+      } catch(e) {}
 
       var sess = this.getSessionToken();
       var self = this;
@@ -1432,12 +1620,13 @@
           isReturning: sess.isReturning,
           referralSource: document.referrer || 'direct',
           country: window.Shopify && window.Shopify.country ? window.Shopify.country : null,
+          themeId: window.Shopify && window.Shopify.theme ? window.Shopify.theme.id : null,
           prefetch: !!prefetch
         })
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        try { sessionStorage.setItem('ecart_config', JSON.stringify(data)); } catch(e) {}
+        try { data._ts = Date.now(); sessionStorage.setItem('ecart_config', JSON.stringify(data)); } catch(e) {}
         callback(data);
         self.writeCartAttributes(sess.token, data);
       })
@@ -1602,9 +1791,37 @@
     if (document.getElementById('ccd-scarcity-timer')) return;
     // TODO: implement scarcity countdown timer
   };
+  CCD._lastTiersJSON = '';
   CCD.injectFreeShippingBar = function(cfg) {
-    if (document.getElementById('ccd-free-shipping-bar')) return;
-    // TODO: implement free shipping progress bar
+    // Apply dynamic tier config from dashboard when it arrives via API
+    if (cfg && cfg.tiers && cfg.tiers.length > 0) {
+      // Check if tiers actually changed (avoid DOM rebuild on cart reopen)
+      var newJSON = JSON.stringify(cfg.tiers);
+      var tiersChanged = (newJSON !== CCD._lastTiersJSON);
+      CCD._lastTiersJSON = newJSON;
+
+      REWARD_TIERS = cfg.tiers;
+      THRESHOLD_MODE = cfg.thresholdMode || 'items';
+      HIGHEST_TIER_ONLY = !!cfg.highestTierOnly;
+      ALL_REWARDS_TEXT = cfg.allRewardsUnlockedText || '\uD83C\uDF89 You\u2019ve unlocked all rewards!';
+      PROMO_GOAL = REWARD_TIERS[REWARD_TIERS.length - 1].goal;
+      // Rebuild gift handles map
+      GIFT_HANDLES = {};
+      GIFT_TIERS = [];
+      REWARD_TIERS.forEach(function(t) {
+        if (t.giftProduct && t.giftProduct.handle) {
+          GIFT_HANDLES[t.giftProduct.handle] = true;
+          GIFT_TIERS.push(t);
+        }
+      });
+      // Only force-rebuild progress bar if tiers changed (not on every cart open)
+      CCD.buildProgressBar(tiersChanged);
+      // Refresh progress state
+      fetch('/cart.js').then(function(r) { return r.json(); }).then(function(cart) {
+        CCD.updateProgress(cart);
+        CCD.checkWatchCase(cart);
+      }).catch(function() {});
+    }
   };
   CCD.injectSocialProof = function(cfg) {
     if (document.getElementById('ccd-social-proof')) return;

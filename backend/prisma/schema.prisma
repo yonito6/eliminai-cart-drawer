@@ -37,6 +37,8 @@ model Store {
   accessToken           String
   currency              String    @default("USD")
   config                Json      @default("{}")
+  demoConfig            Json      @default("{}")
+  demoThemeId           String?
   baselineCheckoutRate  Float?
   baselineCartOpens     Int       @default(0)
   isActive              Boolean   @default(true)

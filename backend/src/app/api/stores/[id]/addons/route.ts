@@ -33,6 +33,21 @@ function buildOptimizeQueue(
     .map(([key]) => key);
 }
 
+// --- Helpers: demo vs live config ----------------------------------------
+
+function getConfigField(req: NextRequest): 'config' | 'demoConfig' {
+  const url = new URL(req.url);
+  return url.searchParams.get('target') === 'demo' ? 'demoConfig' : 'config';
+}
+
+function parseTargetConfig(store: any, field: 'config' | 'demoConfig'): Record<string, any> {
+  const raw = store[field];
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch { return {}; }
+  }
+  return (raw as Record<string, any>) ?? {};
+}
+
 // --- GET /api/stores/:id/addons -----------------------------------------
 
 export async function GET(
@@ -44,14 +59,18 @@ export async function GET(
     return NextResponse.json({ error: "Store not found" }, { status: 404 });
   }
 
-  const cfg = parseStoreConfig(store);
-  const addons = cfg.addons ?? getDefaultAddonsConfig().addons;
+  const field = getConfigField(req);
+  const cfg = parseTargetConfig(store, field);
+  // If demo config is empty, fall back to live config as starting point
+  const addons = cfg.addons ?? (field === 'demoConfig' ? parseStoreConfig(store).addons : null) ?? getDefaultAddonsConfig().addons;
   const optimizeQueue = buildOptimizeQueue(addons);
 
   return NextResponse.json({
     addons,
     optimizeQueue,
     definitions: ADDON_DEFINITIONS,
+    target: field === 'demoConfig' ? 'demo' : 'live',
+    demoThemeId: store.demoThemeId || null,
   });
 }
 
@@ -113,10 +132,13 @@ export async function PATCH(
     );
   }
 
-  // Read current config
-  const cfg = parseStoreConfig(store);
+  // Read current config (demo or live based on ?target=demo)
+  const field = getConfigField(req);
+  const cfg = parseTargetConfig(store, field);
+  // If demo config is empty, start from live config
+  const liveCfg = field === 'demoConfig' ? parseStoreConfig(store) : cfg;
   const defaults = getDefaultAddonsConfig();
-  const addons: Record<string, any> = cfg.addons ?? defaults.addons;
+  const addons: Record<string, any> = cfg.addons ?? liveCfg.addons ?? defaults.addons;
 
   // Ensure addon entry exists
   if (!addons[addonKey]) {
@@ -170,14 +192,14 @@ export async function PATCH(
     addon.config = { ...addon.config, ...patchConfig };
   }
 
-  // Save back
+  // Save back to the correct field (demo or live)
   const updatedCfg = { ...cfg, addons };
   await prisma.store.update({
     where: { id: params.id },
-    data: { config: updatedCfg },
+    data: { [field]: updatedCfg },
   });
 
   const optimizeQueue = buildOptimizeQueue(addons);
 
-  return NextResponse.json({ addons, optimizeQueue, changeRisk });
+  return NextResponse.json({ addons, optimizeQueue, changeRisk, target: field === 'demoConfig' ? 'demo' : 'live' });
 }
