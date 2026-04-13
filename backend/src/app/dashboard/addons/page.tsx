@@ -1825,7 +1825,7 @@ function AddonsPage() {
                           }
 
                           const steps = [
-                            { label: 'Orders', detail: ordersPerVariant.join(' · ') + ' of ' + minOrdersPerVariant, sub: totalV.toLocaleString() + ' visitors', pct: orderPct, done: testConcluded && orderPct >= 100, active: orderPct < 100 },
+                            { label: 'Orders', detail: vs.map((v: any) => (v.label?.replace(' (current)', '') ?? v.id).split(' ').pop() + ': ' + (v.orders ?? 0)).join(', '), sub: 'need ' + minOrdersPerVariant + ' each · ' + totalV.toLocaleString() + ' visits', pct: orderPct, done: testConcluded && orderPct >= 100, active: orderPct < 100 },
                             { label: '3-day min', detail: timeRunningLabel + ' / ' + timeLeftLabel, sub: null as string | null, pct: timePct, done: testConcluded && past3Days, active: orderPct >= 100 && !past3Days },
                             { label: 'Impact', detail: impactDetail, sub: dailyLeaders.length >= 2 ? null : null, pct: impactPct, done: testConcluded && impactDone, active: impactActive },
                             { label: 'Conclusion', detail: conclusionDone ? (winner ? 'Winner!' : noDiff ? 'No diff' : 'Done') : conclusionActive ? (displayConfidence + '% conf') : 'Waiting', sub: null as string | null, pct: conclusionPct, done: testConcluded, active: conclusionActive },
