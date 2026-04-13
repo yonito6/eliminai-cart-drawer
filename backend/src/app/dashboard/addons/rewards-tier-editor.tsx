@@ -727,13 +727,14 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                                     type="color"
                                     value={config.giftBadgeTextColor ?? '#1a7a1a'}
                                     onChange={e => onConfigChange({ giftBadgeTextColor: e.target.value })}
-                                    style={{ width: 28, height: 26, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer' }}
+                                    style={{ width: 28, height: 28, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer', flexShrink: 0 }}
                                   />
                                   <input
                                     type="text"
                                     value={config.giftBadgeTextColor ?? '#1a7a1a'}
                                     onChange={e => onConfigChange({ giftBadgeTextColor: e.target.value })}
-                                    style={{ ...inputStyle, flex: 1, fontSize: 11 }}
+                                    placeholder="#1a7a1a"
+                                    style={{ ...inputStyle, flex: 1, fontSize: 11, fontFamily: 'monospace', padding: '6px 8px' }}
                                   />
                                 </div>
                               </div>
@@ -744,13 +745,14 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                                     type="color"
                                     value={config.giftBadgeBgColor ?? '#edf7ed'}
                                     onChange={e => onConfigChange({ giftBadgeBgColor: e.target.value })}
-                                    style={{ width: 28, height: 26, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer' }}
+                                    style={{ width: 28, height: 28, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer', flexShrink: 0 }}
                                   />
                                   <input
                                     type="text"
                                     value={config.giftBadgeBgColor ?? '#edf7ed'}
                                     onChange={e => onConfigChange({ giftBadgeBgColor: e.target.value })}
-                                    style={{ ...inputStyle, flex: 1, fontSize: 11 }}
+                                    placeholder="#edf7ed"
+                                    style={{ ...inputStyle, flex: 1, fontSize: 11, fontFamily: 'monospace', padding: '6px 8px' }}
                                   />
                                 </div>
                               </div>
