@@ -275,10 +275,28 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     // Next unreached tier for the top progress message
     const nextTier = sortedTiers.find(t => demoValue < t.goal);
 
-    // The top message uses the next tier's beforeText (with tokens replaced),
-    // or falls back to a simple "Add X more for LABEL" format
+    // ── Build the top progress message ────────────────────────────────
+    // When staging for a specific tier/field, force-show THAT tier's exact
+    // text so the preview matches what the user sees in the rich text editor.
     let progressMsg: string;
-    if (nextTier) {
+    const stagedTier = (stagingHint?.context === 'tier' && stagingHint.tierIndex != null)
+      ? sortedTiers[stagingHint.tierIndex] : null;
+
+    if (stagingHint?.context === 'allUnlocked' && addonConfig.allRewardsUnlockedText) {
+      // Editing "all rewards unlocked" — show exactly that text
+      progressMsg = addonConfig.allRewardsUnlockedText;
+    } else if (stagedTier && stagingHint?.field === 'before') {
+      // Editing a tier's beforeText — show that tier's beforeText
+      progressMsg = stagedTier.beforeText
+        ? fillTemplate(stagedTier.beforeText, stagedTier)
+        : `Add more for <strong>${stagedTier.label}</strong>`;
+    } else if (stagedTier && (stagingHint?.field === 'after' || stagingHint?.field === 'gift')) {
+      // Editing a tier's afterText or gifts — show that tier's afterText
+      progressMsg = stagedTier.afterText
+        ? fillTemplate(stagedTier.afterText, stagedTier)
+        : `${stagedTier.label} unlocked!`;
+    } else if (nextTier) {
+      // Default: show next unreached tier's beforeText
       if (nextTier.beforeText) {
         progressMsg = fillTemplate(nextTier.beforeText, nextTier);
       } else {
@@ -288,17 +306,11 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
         progressMsg = `Add <strong>${unit}${remaining}${suffix}</strong> more for <strong>${nextTier.label}</strong>`;
       }
     } else if (sortedTiers.length > 0) {
-      // All tiers reached — when staging for "allUnlocked", always show the
-      // allRewardsUnlockedText so the user sees exactly what they're editing.
-      // Otherwise prefer the highest tier's afterText, then fall back to generic.
+      // All tiers reached — show highest tier's afterText or allRewardsUnlockedText
       const highest = sortedTiers[sortedTiers.length - 1];
-      if (stagingHint?.context === 'allUnlocked' && addonConfig.allRewardsUnlockedText) {
-        progressMsg = addonConfig.allRewardsUnlockedText;
-      } else {
-        progressMsg = highest.afterText
-          ? fillTemplate(highest.afterText, highest)
-          : (addonConfig.allRewardsUnlockedText || 'All rewards unlocked!');
-      }
+      progressMsg = highest.afterText
+        ? fillTemplate(highest.afterText, highest)
+        : (addonConfig.allRewardsUnlockedText || 'All rewards unlocked!');
     } else {
       progressMsg = 'Set up reward tiers';
     }
