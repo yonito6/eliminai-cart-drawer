@@ -1911,9 +1911,19 @@ function AddonsPage() {
                                 })}
                               </div>
                               {orderPct < 100 && (
-                                <div style={{ marginTop: 6, fontSize: 10, color: '#9ca3af', textAlign: 'center' }}>
-                                  Calculated for your store — adapts automatically as more orders come in
-                                </div>
+                                <details style={{ marginTop: 6, textAlign: 'center' }}>
+                                  <summary style={{ fontSize: 10, color: '#7c3aed', cursor: 'pointer', listStyle: 'none' }}>
+                                    Why ~{dynamicOrdersTotal}?
+                                  </summary>
+                                  <div style={{ marginTop: 6, padding: 8, background: '#f5f3ff', borderRadius: 6, fontSize: 11, color: '#4b5563', textAlign: 'left', lineHeight: 1.5 }}>
+                                    <div>About <strong>{(baselinePurchaseRate * 100).toFixed(1)}%</strong> of people who open your cart end up buying.</div>
+                                    <div style={{ marginTop: 4 }}>At that rate, we need <strong>~{dynamicOrdersPerVariant} orders per variant</strong> ({numVariants} variants = ~{dynamicOrdersTotal} total) to reliably detect if one version sells better than the other.</div>
+                                    <div style={{ marginTop: 4 }}>This number is <strong>unique to your store</strong> — a store with a higher buy rate needs fewer orders. It updates as more data comes in.</div>
+                                    {consistencyScore < 1 && dailyLeaders.length >= 3 && (
+                                      <div style={{ marginTop: 4, color: '#92400e' }}>Results have been inconsistent between days, so the target was extended ×{exp.consistencyMultiplier?.toFixed(1) || '1.0'} to be safe.</div>
+                                    )}
+                                  </div>
+                                </details>
                               )}
                               {liftHasData && minOrders >= 40 && liftAbs < 3 && (
                                 <div style={{ marginTop: 8, padding: 8, background: '#fef3c7', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
