@@ -6,8 +6,9 @@ import { Suspense } from 'react';
 import AppBridgeProvider from './app-bridge-provider';
 
 const NAV = [
-  { href: '/dashboard', label: 'Overview', icon: '≡' },
-  { href: '/dashboard/addons', label: 'Addons', icon: '⚙' },
+  { href: '/dashboard', label: 'Overview', icon: '\u2261' },
+  { href: '/dashboard/addons', label: 'Addons', icon: '\u2699' },
+  { href: '/dashboard/results', label: 'Test History', icon: '\uD83D\uDCCA' },
 ];
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {

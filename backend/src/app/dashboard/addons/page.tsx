@@ -1805,11 +1805,14 @@ function AddonsPage() {
                           const conclusionActive = past3Days && confidence >= 60 && confidence < 90;
                           const conclusionPct = conclusionDone ? 100 : conclusionActive ? Math.min(95, ((confidence - 60) / 30) * 100) : 0;
 
+                          // "done" (checkmark) = ONLY when the whole test concludes
+                          const testConcluded = winner || noDiff;
+
                           const steps = [
-                            { label: 'Visitors', detail: totalV + '/' + minVisitors, pct: visitorPct, done: visitorPct >= 100, active: visitorPct < 100 },
-                            { label: '3-day min', detail: timeRunningLabel + ' / ' + timeLeftLabel, pct: timePct, done: past3Days, active: visitorPct >= 100 && !past3Days },
-                            { label: 'Impact', detail: liftHasData && observedLiftPct > 0 ? ('+' + observedLiftPct.toFixed(0) + '%') : 'Measuring', pct: impactPct, done: impactDone, active: impactActive },
-                            { label: 'Conclusion', detail: conclusionDone ? (winner ? 'Winner!' : noDiff ? 'No diff' : 'Done') : confidence >= 60 ? confidence + '%' : '\u2014', pct: conclusionPct, done: conclusionDone, active: conclusionActive },
+                            { label: 'Visitors', detail: totalV + '/' + minVisitors, pct: visitorPct, done: testConcluded && visitorPct >= 100, active: visitorPct < 100 },
+                            { label: '3-day min', detail: timeRunningLabel + ' / ' + timeLeftLabel, pct: timePct, done: testConcluded && past3Days, active: visitorPct >= 100 && !past3Days },
+                            { label: 'Impact', detail: liftHasData && observedLiftPct > 0 ? ('+' + observedLiftPct.toFixed(0) + '% (' + runnerRate + '\u2192' + topRate + '%)') : impactActive ? 'Analyzing...' : 'Waiting', pct: impactPct, done: testConcluded && impactDone, active: impactActive },
+                            { label: 'Conclusion', detail: conclusionDone ? (winner ? 'Winner!' : noDiff ? 'No diff' : 'Done') : conclusionActive ? (confidence + '% conf') : 'Waiting', pct: conclusionPct, done: testConcluded, active: conclusionActive },
                           ];
 
                           // SVG progress ring constants
