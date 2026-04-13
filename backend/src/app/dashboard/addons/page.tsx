@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AddonPreview from './addon-preview';
-import RewardsTierEditor, { RewardsTierEditorWithSave } from './rewards-tier-editor';
+import { RewardsTierEditorWithSave } from './rewards-tier-editor';
 import { useStore } from '@/lib/hooks/use-store';
 import RichTextEditor from './rich-text-editor';
 
@@ -1528,7 +1528,8 @@ function AddonsPage() {
                             });
                           }}
                           storeId={STORE_ID}
-                          themeColor={themeSettings?.ccd_color_primary}
+                          successColor={themeSettings?.ccd_color_success || '#1a7a1a'}
+                          messageColor={'#333333'}
                           themeFont={themeSettings?.ccd_font_family}
                         />
                       )}

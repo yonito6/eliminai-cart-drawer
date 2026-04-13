@@ -9,11 +9,14 @@ interface RewardsTierEditorProps {
   config: Record<string, any>;
   onConfigChange: (patch: Record<string, any>) => void;
   storeId: string;
-  themeColor?: string;
+  /** Color for "all rewards unlocked" text (--ccd-success in live cart, default #1a7a1a) */
+  successColor?: string;
+  /** Color for before/after tier text (.ccd-progress__message, default #333) */
+  messageColor?: string;
   themeFont?: string;
 }
 
-export default function RewardsTierEditor({ config, onConfigChange, storeId, themeColor, themeFont }: RewardsTierEditorProps) {
+export default function RewardsTierEditor({ config, onConfigChange, storeId, successColor, messageColor, themeFont }: RewardsTierEditorProps) {
   const tiers: RewardTier[] = config.tiers ?? [];
   const thresholdMode: 'items' | 'dollars' = config.thresholdMode ?? 'items';
   const highestTierOnly: boolean = config.highestTierOnly ?? false;
@@ -189,7 +192,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, the
           value={allRewardsUnlockedText}
           onChange={v => onConfigChange({ allRewardsUnlockedText: v })}
           placeholder="e.g. You've unlocked all rewards!"
-          themeColor={themeColor}
+          themeColor={successColor || '#1a7a1a'}
           themeFont={themeFont}
         />
       </div>
@@ -370,7 +373,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, the
                         value={tier.beforeText}
                         onChange={v => updateTier(tier.id, { beforeText: v })}
                         placeholder="Add {remaining} more to unlock"
-                        themeColor={themeColor}
+                        themeColor={messageColor || '#333333'}
                         themeFont={themeFont}
                       />
                     </div>
@@ -382,7 +385,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, the
                         value={tier.afterText}
                         onChange={v => updateTier(tier.id, { afterText: v })}
                         placeholder="Free shipping unlocked!"
-                        themeColor={themeColor}
+                        themeColor={successColor || '#1a7a1a'}
                         themeFont={themeFont}
                       />
                     </div>
@@ -548,11 +551,12 @@ interface WithSaveProps {
   onSave: (fullConfig: Record<string, any>) => void;
   onPreviewChange: (draftConfig: Record<string, any>) => void;
   storeId: string;
-  themeColor?: string;
+  successColor?: string;
+  messageColor?: string;
   themeFont?: string;
 }
 
-export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange, storeId, themeColor, themeFont }: WithSaveProps) {
+export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange, storeId, successColor, messageColor, themeFont }: WithSaveProps) {
   const [draft, setDraft] = useState<Record<string, any>>(() => ({ ...savedConfig }));
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -629,7 +633,7 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
 
   return (
     <div>
-      <RewardsTierEditor config={draft} onConfigChange={handleConfigChange} storeId={storeId} themeColor={themeColor} themeFont={themeFont} />
+      <RewardsTierEditor config={draft} onConfigChange={handleConfigChange} storeId={storeId} successColor={successColor} messageColor={messageColor} themeFont={themeFont} />
       {hasChanges && (
         <div style={{ display: 'flex', gap: 8, marginTop: 16, padding: '12px 14px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 10, alignItems: 'center' }}>
           <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#92400e' }}>Unsaved changes</div>
