@@ -6,11 +6,8 @@ interface RichTextEditorProps {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
-  /** Theme color to apply as default text color in the editor (e.g. from store's live theme) */
   themeColor?: string;
-  /** Theme font to apply in the editor (e.g. from store's live theme) */
   themeFont?: string;
-  /** Theme background to show in the editor content area */
   themeBg?: string;
 }
 
@@ -25,14 +22,12 @@ export function applyDefaultColor(html: string, color: string): string {
   return `<span style="color: ${color}">${html}</span>`;
 }
 
-/** Convert hex string to {r,g,b} */
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const h = hex.replace('#', '');
   if (!/^[0-9a-fA-F]{6}$/.test(h)) return { r: 0, g: 0, b: 0 };
   return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
 }
 
-/** Convert {r,g,b} to hex string */
 function rgbToHex(r: number, g: number, b: number): string {
   const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
   return '#' + [clamp(r), clamp(g), clamp(b)].map(v => v.toString(16).padStart(2, '0')).join('');
@@ -79,20 +74,34 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
 
   const saveSelection = useCallback(() => {
     const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
+    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
       savedSelectionRef.current = sel.getRangeAt(0).cloneRange();
     }
   }, []);
 
-  const restoreSelection = useCallback(() => {
-    // Must focus editor first — execCommand only works on the focused element
-    editorRef.current?.focus();
+  // Focus editor, restore selection, run execCommand, sync
+  const focusRestoreExec = useCallback((cmd: string, val?: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
     const sel = window.getSelection();
     if (sel && savedSelectionRef.current) {
       sel.removeAllRanges();
       sel.addRange(savedSelectionRef.current);
     }
-  }, []);
+    document.execCommand(cmd, false, val);
+    // Re-save selection after command (so subsequent commands work)
+    const sel2 = window.getSelection();
+    if (sel2 && sel2.rangeCount > 0) {
+      savedSelectionRef.current = sel2.getRangeAt(0).cloneRange();
+    }
+    const html = editor.innerHTML;
+    if (html !== lastValueRef.current) {
+      lastValueRef.current = html;
+      setHtmlSource(html);
+      onChange(html);
+    }
+  }, [onChange]);
 
   const syncFromEditor = useCallback(() => {
     if (editorRef.current) {
@@ -105,10 +114,8 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
   }, [onChange]);
 
   const exec = useCallback((cmd: string, val?: string) => {
-    restoreSelection();
-    document.execCommand(cmd, false, val);
-    syncFromEditor();
-  }, [restoreSelection, syncFromEditor]);
+    focusRestoreExec(cmd, val);
+  }, [focusRestoreExec]);
 
   const switchToHtml = useCallback(() => {
     if (editorRef.current) setHtmlSource(editorRef.current.innerHTML);
@@ -142,7 +149,6 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
   const [rgbG, setRgbG] = useState(0);
   const [rgbB, setRgbB] = useState(0);
   const [alphaInput, setAlphaInput] = useState(100);
-  const [colorMode, setColorMode] = useState<'hex' | 'rgb'>('hex');
   const colorPickerRef = useRef<HTMLDivElement>(null);
 
   const setFromHex = useCallback((hex: string) => {
@@ -156,7 +162,6 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
     setHexInput(rgbToHex(r, g, b));
   }, []);
 
-  // Close dropdowns on outside click
   useEffect(() => {
     if (!showSizePicker && !colorPickerMode) return;
     const handler = (e: MouseEvent) => {
@@ -172,41 +177,53 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
   }, [showSizePicker, colorPickerMode]);
 
   const applyFontSize = useCallback((px: number) => {
-    restoreSelection();
-    document.execCommand('fontSize', false, '7');
-    if (editorRef.current) {
-      const fontEls = editorRef.current.querySelectorAll('font[size="7"]');
-      fontEls.forEach(el => {
-        const span = document.createElement('span');
-        span.style.fontSize = px + 'px';
-        span.innerHTML = el.innerHTML;
-        el.parentNode?.replaceChild(span, el);
-      });
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const sel = window.getSelection();
+    if (sel && savedSelectionRef.current) {
+      sel.removeAllRanges();
+      sel.addRange(savedSelectionRef.current);
     }
+    document.execCommand('fontSize', false, '7');
+    const fontEls = editor.querySelectorAll('font[size="7"]');
+    fontEls.forEach(el => {
+      const span = document.createElement('span');
+      span.style.fontSize = px + 'px';
+      span.innerHTML = el.innerHTML;
+      el.parentNode?.replaceChild(span, el);
+    });
     syncFromEditor();
     setShowSizePicker(false);
-  }, [restoreSelection, syncFromEditor]);
+  }, [syncFromEditor]);
 
-  const buildColorValue = useCallback(() => {
-    const r = colorMode === 'rgb' ? rgbR : hexToRgb(hexInput).r;
-    const g = colorMode === 'rgb' ? rgbG : hexToRgb(hexInput).g;
-    const b = colorMode === 'rgb' ? rgbB : hexToRgb(hexInput).b;
+  const buildColorFromState = useCallback(() => {
+    const { r, g, b } = hexToRgb(hexInput);
     const a = Math.max(1, Math.min(100, alphaInput)) / 100;
-    if (a >= 1) return rgbToHex(r, g, b);
+    if (a >= 1) return hexInput;
     return `rgba(${r},${g},${b},${a})`;
-  }, [hexInput, rgbR, rgbG, rgbB, alphaInput, colorMode]);
+  }, [hexInput, alphaInput]);
+
+  // Apply color to selection
+  const applyColor = useCallback((color: string) => {
+    const m = colorPickerMode;
+    if (!m) return;
+    focusRestoreExec(m === 'text' ? 'foreColor' : 'hiliteColor', color);
+  }, [colorPickerMode, focusRestoreExec]);
 
   const applyPickerColor = useCallback(() => {
-    const color = buildColorValue();
-    restoreSelection();
-    if (colorPickerMode === 'text') {
-      document.execCommand('foreColor', false, color);
-    } else if (colorPickerMode === 'bg') {
-      document.execCommand('hiliteColor', false, color);
-    }
-    syncFromEditor();
+    applyColor(buildColorFromState());
     setColorPickerMode(null);
-  }, [buildColorValue, restoreSelection, syncFromEditor, colorPickerMode]);
+  }, [applyColor, buildColorFromState]);
+
+  // Swatch click — apply immediately
+  const handleSwatchClick = useCallback((hex: string) => {
+    setFromHex(hex);
+    // Apply immediately via focusRestoreExec (don't rely on applyColor which uses stale colorPickerMode)
+    const m = colorPickerMode;
+    if (!m) return;
+    focusRestoreExec(m === 'text' ? 'foreColor' : 'hiliteColor', hex);
+  }, [setFromHex, colorPickerMode, focusRestoreExec]);
 
   const openColorPicker = useCallback((mode: 'text' | 'bg') => {
     saveSelection();
@@ -232,79 +249,89 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
     background: themeBg || 'transparent',
   };
 
-  // Shared color swatches
-  const colorSwatches = ['#000000','#ffffff','#ef4444','#f97316','#eab308','#22c55e','#1a7a1a','#3b82f6','#8b5cf6','#ec4899','#6b7280','#d1d5db'];
+  // Basic hard color presets — bright, obvious colors
+  const basicColors = [
+    '#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00',
+    '#ff00ff', '#00ffff', '#ff6600', '#9900ff', '#006600', '#990000',
+  ];
+
+  // Extended swatches
+  const extendedColors = [
+    '#ef4444','#f97316','#eab308','#22c55e','#1a7a1a','#3b82f6',
+    '#8b5cf6','#ec4899','#6b7280','#d1d5db','#fef08a','#bbf7d0',
+  ];
 
   const renderColorPicker = () => (
     <div ref={colorPickerRef} style={{
-      position: 'absolute', top: '100%', left: 0, zIndex: 50, marginTop: 4,
+      position: 'absolute', top: '100%', left: 0, zIndex: 9999, marginTop: 4,
       background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
-      boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 10, width: 220,
+      boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: 10, width: 252,
     }}>
-      {/* Mode tabs: HEX / RGB */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 8, borderRadius: 6, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-        {(['hex', 'rgb'] as const).map(m => (
-          <button key={m} type="button" onMouseDown={preventFocusLoss}
-            onClick={() => setColorMode(m)}
-            style={{
-              flex: 1, padding: '4px 0', border: 'none', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-              background: colorMode === m ? '#7c3aed' : '#f9fafb',
-              color: colorMode === m ? '#fff' : '#6b7280',
-            }}>
-            {m.toUpperCase()}
-          </button>
-        ))}
+      {/* Basic color grid — click applies immediately */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, fontWeight: 500 }}>Basic colors</div>
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+          {basicColors.map(c => (
+            <button key={c} type="button" onMouseDown={preventFocusLoss} onClick={() => handleSwatchClick(c)}
+              style={{ width: 20, height: 20, borderRadius: 3, border: hexInput === c ? '2px solid #7c3aed' : '1px solid #ccc', background: c, cursor: 'pointer', padding: 0 }} />
+          ))}
+        </div>
+      </div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, fontWeight: 500 }}>Extended</div>
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+          {extendedColors.map(c => (
+            <button key={c} type="button" onMouseDown={preventFocusLoss} onClick={() => handleSwatchClick(c)}
+              style={{ width: 20, height: 20, borderRadius: 3, border: hexInput === c ? '2px solid #7c3aed' : '1px solid #ccc', background: c, cursor: 'pointer', padding: 0 }} />
+          ))}
+        </div>
       </div>
 
+      {/* Divider */}
+      <div style={{ height: 1, background: '#e5e7eb', margin: '6px 0 8px' }} />
+
+      {/* Color wheel + HEX + RGB all visible at once */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
         <input type="color" value={hexInput.length === 7 ? hexInput : '#000000'}
           onChange={e => setFromHex(e.target.value)}
           onMouseDown={preventFocusLoss}
-          style={{ width: 36, height: 36, border: '1px solid #d1d5db', borderRadius: 6, padding: 2, cursor: 'pointer', flexShrink: 0 }} />
-        {colorMode === 'hex' ? (
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 10, color: '#6b7280', display: 'block', marginBottom: 2 }}>HEX</label>
+          style={{ width: 40, height: 56, border: '1px solid #d1d5db', borderRadius: 6, padding: 2, cursor: 'pointer', flexShrink: 0 }} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* HEX row */}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <label style={{ fontSize: 10, color: '#6b7280', width: 26, flexShrink: 0 }}>HEX</label>
             <input value={hexInput} onChange={e => setFromHex(e.target.value)}
               onMouseDown={e => e.stopPropagation()}
-              style={{ width: '100%', fontSize: 12, padding: '3px 6px', border: '1px solid #d1d5db', borderRadius: 4, fontFamily: 'monospace', boxSizing: 'border-box' }} />
+              style={{ flex: 1, fontSize: 11, padding: '2px 4px', border: '1px solid #d1d5db', borderRadius: 4, fontFamily: 'monospace', boxSizing: 'border-box' }} />
           </div>
-        ) : (
-          <div style={{ flex: 1, display: 'flex', gap: 4 }}>
+          {/* RGB row */}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <label style={{ fontSize: 10, color: '#6b7280', width: 26, flexShrink: 0 }}>RGB</label>
             {[
               { label: 'R', val: rgbR, set: (v: number) => setFromRgb(v, rgbG, rgbB) },
               { label: 'G', val: rgbG, set: (v: number) => setFromRgb(rgbR, v, rgbB) },
               { label: 'B', val: rgbB, set: (v: number) => setFromRgb(rgbR, rgbG, v) },
             ].map(ch => (
-              <div key={ch.label} style={{ flex: 1 }}>
-                <label style={{ fontSize: 10, color: '#6b7280', display: 'block', marginBottom: 2 }}>{ch.label}</label>
-                <input type="number" min={0} max={255} value={ch.val}
-                  onChange={e => ch.set(Math.max(0, Math.min(255, Number(e.target.value) || 0)))}
-                  onMouseDown={e => e.stopPropagation()}
-                  style={{ width: '100%', fontSize: 11, padding: '3px 3px', border: '1px solid #d1d5db', borderRadius: 4, boxSizing: 'border-box', textAlign: 'center' }} />
-              </div>
+              <input key={ch.label} type="number" min={0} max={255} value={ch.val}
+                onChange={e => ch.set(Math.max(0, Math.min(255, Number(e.target.value) || 0)))}
+                onMouseDown={e => e.stopPropagation()}
+                placeholder={ch.label}
+                style={{ flex: 1, fontSize: 11, padding: '2px 2px', border: '1px solid #d1d5db', borderRadius: 4, boxSizing: 'border-box', textAlign: 'center', width: 0 }} />
             ))}
           </div>
-        )}
-        <div style={{ width: 46 }}>
-          <label style={{ fontSize: 10, color: '#6b7280', display: 'block', marginBottom: 2 }}>Alpha%</label>
+        </div>
+        <div style={{ width: 40, flexShrink: 0 }}>
+          <label style={{ fontSize: 9, color: '#6b7280', display: 'block', marginBottom: 2, textAlign: 'center' }}>Alpha%</label>
           <input type="number" min={1} max={100} value={alphaInput}
             onChange={e => setAlphaInput(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
             onMouseDown={e => e.stopPropagation()}
-            style={{ width: '100%', fontSize: 11, padding: '3px 3px', border: '1px solid #d1d5db', borderRadius: 4, boxSizing: 'border-box', textAlign: 'center' }} />
+            style={{ width: '100%', fontSize: 11, padding: '2px 2px', border: '1px solid #d1d5db', borderRadius: 4, boxSizing: 'border-box', textAlign: 'center' }} />
         </div>
       </div>
 
-      {/* Quick swatches */}
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
-        {colorSwatches.map(c => (
-          <button key={c} type="button" onMouseDown={preventFocusLoss} onClick={() => setFromHex(c)}
-            style={{ width: 18, height: 18, borderRadius: 3, border: hexInput === c ? '2px solid #7c3aed' : '1px solid #d1d5db', background: c, cursor: 'pointer', padding: 0 }} />
-        ))}
-      </div>
-
-      {/* Preview + Apply */}
+      {/* Preview + Apply (for custom HEX/RGB/alpha) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <div style={{ width: 24, height: 24, borderRadius: 4, border: '1px solid #d1d5db', background: buildColorValue() }} />
+        <div style={{ width: 24, height: 24, borderRadius: 4, border: '1px solid #d1d5db', background: buildColorFromState() }} />
         <button type="button" onMouseDown={preventFocusLoss} onClick={applyPickerColor}
           style={{ flex: 1, padding: '5px 0', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
           Apply
@@ -314,8 +341,9 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
   );
 
   return (
-    <div style={{ border: '1px solid #d1d5db', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '4px 6px', borderBottom: '1px solid #e5e7eb', background: '#f9fafb', flexWrap: 'wrap' }}>
+    <div style={{ border: '1px solid #d1d5db', borderRadius: 8, background: '#fff', position: 'relative' }}>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '4px 6px', borderBottom: '1px solid #e5e7eb', background: '#f9fafb', flexWrap: 'wrap', borderRadius: '8px 8px 0 0', position: 'relative', zIndex: 10 }}>
         <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('bold')} title="Bold"><strong>B</strong></button>
         <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('italic')} title="Italic"><em>I</em></button>
         <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('underline')} title="Underline"><u>U</u></button>
@@ -332,10 +360,10 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
           </button>
           {showSizePicker && (
             <div style={{
-              position: 'absolute', top: '100%', left: 0, zIndex: 50,
+              position: 'absolute', top: '100%', left: 0, zIndex: 9999,
               background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 4, minWidth: 120,
-              marginTop: 4, maxHeight: 260, overflowY: 'auto',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: 4, minWidth: 120,
+              marginTop: 4, maxHeight: 280, overflowY: 'auto',
             }}>
               {[10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64].map(px => (
                 <button
@@ -359,7 +387,7 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
           )}
         </div>
         <div style={{ width: 1, height: 16, background: '#d1d5db', margin: '0 4px' }} />
-        {/* Text color picker */}
+        {/* Text color */}
         <div style={{ position: 'relative' }}>
           <button type="button" style={btnS(colorPickerMode === 'text')} onMouseDown={preventFocusLoss}
             onClick={() => { if (colorPickerMode === 'text') { setColorPickerMode(null); } else { openColorPicker('text'); } }} title="Text Color">
@@ -367,7 +395,7 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
           </button>
           {colorPickerMode === 'text' && renderColorPicker()}
         </div>
-        {/* Background color picker */}
+        {/* Background color */}
         <div style={{ position: 'relative' }}>
           <button type="button" style={btnS(colorPickerMode === 'bg')} onMouseDown={preventFocusLoss}
             onClick={() => { if (colorPickerMode === 'bg') { setColorPickerMode(null); } else { openColorPicker('bg'); } }} title="Text Background">
@@ -389,30 +417,32 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
         </button>
       </div>
 
-      {showHtml ? (
-        <textarea
-          value={htmlSource}
-          onChange={(e) => { setHtmlSource(e.target.value); lastValueRef.current = e.target.value; onChange(e.target.value); }}
-          style={{
-            width: '100%', minHeight: 80, padding: '8px 10px', border: 'none', outline: 'none',
-            fontFamily: 'monospace', fontSize: 12, color: '#1f2937', resize: 'vertical',
-            background: '#f8fafc', boxSizing: 'border-box',
-          }}
-          spellCheck={false}
-        />
-      ) : (
-        <div
-          ref={editorRef}
-          contentEditable
-          suppressContentEditableWarning
-          onInput={syncFromEditor}
-          onBlur={() => { saveSelection(); syncFromEditor(); }}
-          onMouseUp={saveSelection}
-          onKeyUp={saveSelection}
-          data-placeholder={placeholder || 'Type your text here...'}
-          style={contentStyle}
-        />
-      )}
+      <div style={{ position: 'relative' }}>
+        {showHtml ? (
+          <textarea
+            value={htmlSource}
+            onChange={(e) => { setHtmlSource(e.target.value); lastValueRef.current = e.target.value; onChange(e.target.value); }}
+            style={{
+              width: '100%', minHeight: 80, padding: '8px 10px', border: 'none', outline: 'none',
+              fontFamily: 'monospace', fontSize: 12, color: '#1f2937', resize: 'vertical',
+              background: '#f8fafc', boxSizing: 'border-box',
+            }}
+            spellCheck={false}
+          />
+        ) : (
+          <div
+            ref={editorRef}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={syncFromEditor}
+            onBlur={() => { saveSelection(); syncFromEditor(); }}
+            onMouseUp={saveSelection}
+            onKeyUp={saveSelection}
+            data-placeholder={placeholder || 'Type your text here...'}
+            style={contentStyle}
+          />
+        )}
+      </div>
       <style>{`[contenteditable]:empty:before { content: attr(data-placeholder); color: #9ca3af; pointer-events: none; }`}</style>
     </div>
   );
