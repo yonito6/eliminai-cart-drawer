@@ -229,6 +229,99 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
         />
       </div>
 
+      {/* Gift Badge Settings — global look for "Bonus gift" badge on gift items */}
+      <div style={{ padding: '12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: (config.giftBadgeEnabled !== false) ? 10 : 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>Gift Badge</span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: '#6b7280' }}>
+            <span>{config.giftBadgeEnabled !== false ? 'Visible' : 'Hidden'}</span>
+            <input
+              type="checkbox"
+              checked={config.giftBadgeEnabled !== false}
+              onChange={e => onConfigChange({ giftBadgeEnabled: e.target.checked })}
+              style={{ width: 14, height: 14 }}
+            />
+          </label>
+        </div>
+        {config.giftBadgeEnabled !== false && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Badge Text */}
+            <div>
+              <span style={labelStyle}>Badge Text</span>
+              <input
+                type="text"
+                value={config.giftBadgeText ?? 'Bonus gift'}
+                onChange={e => onConfigChange({ giftBadgeText: e.target.value })}
+                placeholder="Bonus gift"
+                style={{ ...inputStyle }}
+              />
+            </div>
+            {/* Badge Icon */}
+            <div>
+              <span style={labelStyle}>Badge Icon</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {Object.entries(REWARD_ICONS).map(([key, icon]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => onConfigChange({ giftBadgeIcon: key })}
+                    title={icon.label}
+                    style={{
+                      width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      borderRadius: 6, cursor: 'pointer', border: '1px solid',
+                      background: (config.giftBadgeIcon ?? 'gift') === key ? '#7c3aed' : '#fff',
+                      borderColor: (config.giftBadgeIcon ?? 'gift') === key ? '#7c3aed' : '#d1d5db',
+                    }}
+                  >
+                    <span
+                      dangerouslySetInnerHTML={{ __html: icon.svg.replace('currentColor', (config.giftBadgeIcon ?? 'gift') === key ? '#fff' : '#6b7280') }}
+                      style={{ width: 18, height: 18, display: 'flex' }}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Badge Colors */}
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <span style={labelStyle}>Text Color</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="color"
+                    value={config.giftBadgeTextColor ?? '#1a7a1a'}
+                    onChange={e => onConfigChange({ giftBadgeTextColor: e.target.value })}
+                    style={{ width: 32, height: 28, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer' }}
+                  />
+                  <input
+                    type="text"
+                    value={config.giftBadgeTextColor ?? '#1a7a1a'}
+                    onChange={e => onConfigChange({ giftBadgeTextColor: e.target.value })}
+                    style={{ ...inputStyle, flex: 1, fontSize: 12 }}
+                  />
+                </div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <span style={labelStyle}>Background Color</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="color"
+                    value={config.giftBadgeBgColor ?? '#edf7ed'}
+                    onChange={e => onConfigChange({ giftBadgeBgColor: e.target.value })}
+                    style={{ width: 32, height: 28, border: '1px solid #d1d5db', borderRadius: 4, padding: 0, cursor: 'pointer' }}
+                  />
+                  <input
+                    type="text"
+                    value={config.giftBadgeBgColor ?? '#edf7ed'}
+                    onChange={e => onConfigChange({ giftBadgeBgColor: e.target.value })}
+                    style={{ ...inputStyle, flex: 1, fontSize: 12 }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Tiers List */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>

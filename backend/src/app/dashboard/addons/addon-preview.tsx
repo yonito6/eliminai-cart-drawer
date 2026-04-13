@@ -375,19 +375,33 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
 
     // ── Gift item preview: inject gift product(s) into cart items when staging ──
     // Renders gifts exactly like the live cart (v14-complete.js enforceGiftItem):
-    // regular ccd-item with qty hidden, "Bonus gift" badge, "Free" price
+    // regular ccd-item with qty hidden, configurable badge, "Free" price
     if (stagingHint?.field === 'gift' && stagedTier) {
       const gifts: Array<{ title?: string; imageUrl?: string; handle?: string }> =
         stagedTier.giftProducts ?? (stagedTier.giftProduct ? [stagedTier.giftProduct] : []);
       if (gifts.length > 0) {
-        const giftBadgeSvg = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm11 15H4v-2h16v2zm0-5H4V8h5.08L7 10.83 8.62 12 12 7.4 15.38 12 17 10.83 14.92 8H20v6z"/></svg>';
+        // Badge config — use addon-level settings with defaults
+        const badgeEnabled = addonConfig.giftBadgeEnabled !== false;
+        const badgeText = addonConfig.giftBadgeText || 'Bonus gift';
+        const badgeIconKey = addonConfig.giftBadgeIcon || 'gift';
+        const badgeTextColor = addonConfig.giftBadgeTextColor || '#1a7a1a';
+        const badgeBgColor = addonConfig.giftBadgeBgColor || '#edf7ed';
+        const badgeIconDef = REWARD_ICONS[badgeIconKey] || REWARD_ICONS['gift'];
+        const badgeIconSvg = badgeIconDef.svg
+          .replace('fill="currentColor"', `fill="${badgeTextColor}"`)
+          .replace(/width="\d+"/, 'width="14"')
+          .replace(/height="\d+"/, 'height="14"');
+        const fallbackSvg = REWARD_ICONS['gift'].svg.replace('fill="currentColor"', 'fill="#6b7280"');
+
         let giftHtml = '';
         for (const gift of gifts) {
           const imgSrc = gift.imageUrl || '';
           const imgBlock = imgSrc
             ? `<div class="ccd-item__image"><a href="#"><img src="${imgSrc}" alt="${gift.title || 'Gift'}"></a></div>`
-            : `<div class="ccd-item__image" style="background:#f8f8f8;width:120px;min-width:120px;height:120px;border-radius:8px;display:flex;align-items:center;justify-content:center">${giftBadgeSvg}</div>`;
-          // Render as regular ccd-item — same structure as live cart items
+            : `<div class="ccd-item__image" style="background:#f8f8f8;width:120px;min-width:120px;height:120px;border-radius:8px;display:flex;align-items:center;justify-content:center">${fallbackSvg}</div>`;
+          const badgeHtml = badgeEnabled
+            ? `<span class="ccd-gift-badge" style="color:${badgeTextColor};background:${badgeBgColor}">${badgeIconSvg} ${badgeText}</span>`
+            : '';
           giftHtml += `<div class="ccd-item">`
             + imgBlock
             + `<div class="ccd-item__details">`
@@ -395,11 +409,10 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
             + `<a href="#" class="ccd-item__name">${gift.title || 'Gift Product'}</a>`
             + `</div>`
             + `<div class="ccd-item__bottom">`
-            // qty hidden — same as enforceGiftItem
             + `<div></div>`
             + `<div class="ccd-item__price-col">`
             + `<div class="ccd-item__price-row"><span class="ccd-item__price ccd-item__price--free">Free</span></div>`
-            + `<span class="ccd-gift-badge">${giftBadgeSvg} Bonus gift</span>`
+            + badgeHtml
             + `</div>`
             + `</div></div></div>`;
         }
@@ -540,9 +553,13 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
   }
 
   const focusArea = FOCUS_AREAS[addonKey];
-  const scrollScript = mode === 'focused' && focusArea
-    ? '<scr' + 'ipt>window.addEventListener("load",function(){setTimeout(function(){var el=document.querySelector(".' + focusArea.scrollTo + '")||document.getElementById("' + focusArea.scrollTo + '");if(el){el.scrollIntoView({block:"center"});el.style.background="rgba(59,130,246,0.05)";el.style.borderRadius="8px";el.style.transition="background 0.5s"}},150)})</scr' + 'ipt>'
+  // When staging gift preview, scroll to the last cart item (the gift) instead of the normal focus area
+  const giftScrollScript = stagingHint?.field === 'gift'
+    ? '<scr' + 'ipt>window.addEventListener("load",function(){setTimeout(function(){var items=document.querySelectorAll(".ccd-item");var last=items[items.length-1];if(last){var sc=document.querySelector(".drawer__scrollable");if(sc)sc.scrollTop=sc.scrollHeight;}},200)})</scr' + 'ipt>'
     : '';
+  const scrollScript = giftScrollScript || (mode === 'focused' && focusArea
+    ? '<scr' + 'ipt>window.addEventListener("load",function(){setTimeout(function(){var el=document.querySelector(".' + focusArea.scrollTo + '")||document.getElementById("' + focusArea.scrollTo + '");if(el){el.scrollIntoView({block:"center"});el.style.background="rgba(59,130,246,0.05)";el.style.borderRadius="8px";el.style.transition="background 0.5s"}},150)})</scr' + 'ipt>'
+    : '');
 
   const heightScript = mode === 'full'
     ? '<scr' + 'ipt>function nh(){var h=document.body.scrollHeight;window.parent.postMessage({type:"aph",h:h},"*")}window.addEventListener("load",function(){setTimeout(nh,100)});new MutationObserver(nh).observe(document.body,{childList:true,subtree:true})</scr' + 'ipt>'
@@ -558,6 +575,11 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     if (themeSettings.ccd_color_success) overrides.push('--ccd-success:' + themeSettings.ccd_color_success);
     if (themeSettings.ccd_scarcity_color) overrides.push('--ccd-scarcity-color:' + themeSettings.ccd_scarcity_color);
     if (overrides.length) themeCssOverride = ':root{' + overrides.join(';') + '}';
+  }
+
+  // Remove bottom fade when staging gift preview so the gift item is fully visible
+  if (stagingHint?.field === 'gift') {
+    themeCssOverride += '#CartDrawer.custom-cart-drawer .drawer__inner::after{display:none !important;}';
   }
 
   const srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'
