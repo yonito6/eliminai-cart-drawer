@@ -606,6 +606,21 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
   // Track whether we are the source of preview updates (to ignore our own prop changes)
   const isPreviewingRef = useRef(false);
 
+  // Push migrated config to the preview on mount so the parent's addon state
+  // has the colorized HTML BEFORE the user types anything. Without this, the
+  // preview shows un-migrated (colorless) text until the first keystroke.
+  const didPushInitialRef = useRef(false);
+  useEffect(() => {
+    if (didPushInitialRef.current) return;
+    const migrated = migrateColors(savedConfig);
+    if (JSON.stringify(migrated) !== JSON.stringify(savedConfig)) {
+      didPushInitialRef.current = true;
+      isPreviewingRef.current = true;
+      onPreviewChange(migrated);
+      setTimeout(() => { isPreviewingRef.current = false; }, 0);
+    }
+  }, [savedConfig, migrateColors, onPreviewChange]);
+
   useEffect(() => {
     // Only update saved snapshot from external saves (not from our own preview updates)
     if (isPreviewingRef.current) return;
