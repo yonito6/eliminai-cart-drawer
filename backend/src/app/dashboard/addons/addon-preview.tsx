@@ -372,6 +372,34 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
         rewardsHtml + '<div class="cart__items">'
       );
     }
+
+    // ── Gift item preview: inject gift product(s) into cart items when staging ──
+    if (stagingHint?.field === 'gift' && stagedTier) {
+      const gifts: Array<{ title?: string; imageUrl?: string; handle?: string }> =
+        stagedTier.giftProducts ?? (stagedTier.giftProduct ? [stagedTier.giftProduct] : []);
+      if (gifts.length > 0) {
+        const giftSvg = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm11 15H4v-2h16v2zm0-5H4V8h5.08L7 10.83 8.62 12 12 7.4 15.38 12 17 10.83 14.92 8H20v6z"/></svg>';
+        let giftHtml = '';
+        for (const gift of gifts) {
+          const imgHtml = gift.imageUrl
+            ? `<div class="ccd-item__image"><img src="${gift.imageUrl}" alt="${gift.title || 'Gift'}" style="width:100%;height:auto;display:block;object-fit:cover;border-radius:8px"></div>`
+            : `<div style="width:80px;min-width:80px;height:80px;border-radius:8px;background:#d1fae5;display:flex;align-items:center;justify-content:center">${giftSvg}</div>`;
+          giftHtml += `<div class="ccd-gift-item">`
+            + `<div class="ccd-gift-label">${giftSvg} FREE GIFT</div>`
+            + `<div class="ccd-gift-item__body">`
+            + imgHtml
+            + `<div class="ccd-gift-item__info">`
+            + `<span class="ccd-item__name" style="font-size:13px">${gift.title || 'Gift Product'}</span>`
+            + `<div class="ccd-gift-item__price-row"><span class="ccd-item__price ccd-item__price--free" style="color:var(--ccd-success,#1a7a1a);font-weight:700">FREE</span></div>`
+            + `</div></div></div>`;
+        }
+        // Inject before the end of cart__items
+        cartHtml = cartHtml.replace(
+          '</div>\n      </div>\n    </div>\n    <div class="ccd-sticky-footer">',
+          giftHtml + '</div>\n      </div>\n    </div>\n    <div class="ccd-sticky-footer">'
+        );
+      }
+    }
   }
 
   // ── Upsell Recommendations: dynamic headline, layout, position ─────
