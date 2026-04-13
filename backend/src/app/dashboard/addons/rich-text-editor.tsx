@@ -136,6 +136,37 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
   });
 
   const colorRef = useRef<HTMLInputElement>(null);
+  const [showSizePicker, setShowSizePicker] = useState(false);
+  const sizePickerRef = useRef<HTMLDivElement>(null);
+
+  // Close size picker on outside click
+  useEffect(() => {
+    if (!showSizePicker) return;
+    const handler = (e: MouseEvent) => {
+      if (sizePickerRef.current && !sizePickerRef.current.contains(e.target as Node)) {
+        setShowSizePicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSizePicker]);
+
+  const applyFontSize = useCallback((px: number) => {
+    restoreSelection();
+    // Use fontSize 7 as a marker, then replace <font size="7"> with <span style="font-size:Xpx">
+    document.execCommand('fontSize', false, '7');
+    if (editorRef.current) {
+      const fontEls = editorRef.current.querySelectorAll('font[size="7"]');
+      fontEls.forEach(el => {
+        const span = document.createElement('span');
+        span.style.fontSize = px + 'px';
+        span.innerHTML = el.innerHTML;
+        el.parentNode?.replaceChild(span, el);
+      });
+    }
+    syncFromEditor();
+    setShowSizePicker(false);
+  }, [restoreSelection, syncFromEditor]);
 
   // Prevent toolbar buttons from stealing focus — this is critical for execCommand
   const preventFocusLoss = useCallback((e: React.MouseEvent) => {
@@ -162,8 +193,43 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
         <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('italic')} title="Italic"><em>I</em></button>
         <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('underline')} title="Underline"><u>U</u></button>
         <div style={{ width: 1, height: 16, background: '#d1d5db', margin: '0 4px' }} />
-        <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('fontSize', '2')} title="Small text">A<span style={{ fontSize: 9 }}>-</span></button>
-        <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('fontSize', '5')} title="Large text">A<span style={{ fontSize: 15 }}>+</span></button>
+        <div ref={sizePickerRef} style={{ position: 'relative' }}>
+          <button type="button" style={{ ...btnS(showSizePicker), display: 'flex', alignItems: 'center', gap: 2 }}
+            onMouseDown={preventFocusLoss}
+            onClick={() => { saveSelection(); setShowSizePicker(v => !v); }}
+            title="Font Size"
+          >
+            <span style={{ fontSize: 13 }}>A</span>
+            <svg width="8" height="5" viewBox="0 0 8 5" style={{ opacity: 0.5 }}><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg>
+          </button>
+          {showSizePicker && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, zIndex: 50,
+              background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 4, minWidth: 120,
+              marginTop: 4,
+            }}>
+              {[10, 12, 14, 16, 18, 20, 24, 28, 32].map(px => (
+                <button
+                  key={px}
+                  type="button"
+                  onMouseDown={preventFocusLoss}
+                  onClick={() => applyFontSize(px)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    width: '100%', padding: '5px 10px', border: 'none', background: 'transparent',
+                    cursor: 'pointer', borderRadius: 4, gap: 12,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ fontSize: Math.min(px, 20), lineHeight: 1.3, color: '#111' }}>Aa</span>
+                  <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>{px}px</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div style={{ width: 1, height: 16, background: '#d1d5db', margin: '0 4px' }} />
         <button type="button" style={btnS()} onMouseDown={(e) => { e.preventDefault(); colorRef.current?.click(); }} title="Text Color">
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>A<span style={{ width: 10, height: 10, borderRadius: 2, border: '1px solid #d1d5db', display: 'inline-block', background: 'linear-gradient(135deg, #ef4444, #3b82f6)' }} /></span>
