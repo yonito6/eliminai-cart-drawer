@@ -5,20 +5,14 @@ import { prisma } from '@/lib/prisma';
  * Manages automatic Shopify discounts for gift products in reward tiers.
  *
  * POST — Sync all gift discounts for this store:
- *   Reads the store's reward tiers config, creates/updates/deletes
- *   automatic discounts so each gift product gets 100% off when its
- *   tier threshold is met.
+ *   Creates per-tier automatic discounts with minimum quantity requirements.
+ *   Each gift product gets 100% off when its tier threshold is met.
  *
  * DELETE — Remove all gift discounts for this store.
  */
 
-async function getShopifyToken(store: { shopDomain: string; accessToken: string }) {
-  // Token is already stored from OAuth install flow
-  return store.accessToken;
-}
-
 async function shopifyGraphQL(shopDomain: string, token: string, query: string, variables?: any) {
-  const res = await fetch(`https://${shopDomain}/admin/api/2025-01/graphql.json`, {
+  const res = await fetch(`https://${shopDomain}/admin/api/2025-10/graphql.json`, {
     method: 'POST',
     headers: {
       'X-Shopify-Access-Token': token,
@@ -33,10 +27,10 @@ async function shopifyGraphQL(shopDomain: string, token: string, query: string, 
   return res.json();
 }
 
-// Find all existing Eliminai gift discounts
+// Find all existing gift discounts created by our app
 async function findExistingGiftDiscounts(shopDomain: string, token: string) {
   const result = await shopifyGraphQL(shopDomain, token, `{
-    discountAutomaticNodes(first: 50, query: "title:Eliminai Gift*") {
+    automaticDiscountNodes(first: 50, query: "title:Gift -* OR title:Free Gift* OR title:Eliminai Gift*") {
       nodes {
         id
         automaticDiscount {
@@ -48,7 +42,51 @@ async function findExistingGiftDiscounts(shopDomain: string, token: string) {
       }
     }
   }`);
-  return result?.data?.discountAutomaticNodes?.nodes ?? [];
+  return result?.data?.automaticDiscountNodes?.nodes ?? [];
+}
+
+// Ensure all existing automatic discounts allow combining with product discounts.
+async function ensureExistingDiscountsCombine(shopDomain: string, token: string) {
+  const result = await shopifyGraphQL(shopDomain, token, `{
+    automaticDiscountNodes(first: 50) {
+      nodes {
+        id
+        automaticDiscount {
+          ... on DiscountAutomaticBasic {
+            title
+            combinesWith { productDiscounts orderDiscounts shippingDiscounts }
+          }
+          ... on DiscountAutomaticBxgy {
+            title
+            combinesWith { productDiscounts orderDiscounts shippingDiscounts }
+          }
+        }
+      }
+    }
+  }`);
+  const nodes = result?.data?.automaticDiscountNodes?.nodes ?? [];
+  for (const node of nodes) {
+    const disc = node.automaticDiscount;
+    if (!disc?.combinesWith || disc.combinesWith.productDiscounts) continue;
+    console.log(`[gift-discounts] Enabling productDiscounts combining on: ${disc.title} (${node.id})`);
+    const basicResult = await shopifyGraphQL(shopDomain, token, `
+      mutation discountAutomaticBasicUpdate($id: ID!, $discount: DiscountAutomaticBasicInput!) {
+        discountAutomaticBasicUpdate(id: $id, automaticBasicDiscount: $discount) {
+          userErrors { field message }
+        }
+      }
+    `, { id: node.id, discount: { combinesWith: { productDiscounts: true, orderDiscounts: true, shippingDiscounts: true } } });
+    const basicErrors = basicResult?.data?.discountAutomaticBasicUpdate?.userErrors;
+    if (basicErrors?.length > 0) {
+      await shopifyGraphQL(shopDomain, token, `
+        mutation discountAutomaticBxgyUpdate($id: ID!, $discount: DiscountAutomaticBxgyInput!) {
+          discountAutomaticBxgyUpdate(id: $id, automaticBxgyDiscount: $discount) {
+            userErrors { field message }
+          }
+        }
+      `, { id: node.id, discount: { combinesWith: { productDiscounts: true, orderDiscounts: true, shippingDiscounts: true } } });
+    }
+  }
 }
 
 // Delete a discount by ID
@@ -62,25 +100,18 @@ async function deleteDiscount(shopDomain: string, token: string, discountId: str
   `, { id: discountId });
 }
 
-// Create an automatic 100% discount for a gift product
-async function createGiftDiscount(
+// Create a per-tier automatic 100% discount for a single gift product
+// with a minimum quantity requirement matching the tier threshold.
+async function createPerTierDiscount(
   shopDomain: string,
   token: string,
-  opts: {
-    title: string;
-    productGid: string;
-    minQuantity: number;
-    thresholdMode: 'items' | 'dollars';
-  }
+  productGid: string,
+  tierGoal: number,
+  tierNumber: number,
 ) {
-  // Build the minimum requirement based on threshold mode
-  const minimumRequirement = opts.thresholdMode === 'dollars'
-    ? `minimumRequirement: { subtotal: { greaterThanOrEqualToSubtotal: "${opts.minQuantity}.00" } }`
-    : `minimumRequirement: { quantity: { greaterThanOrEqualToQuantity: "${opts.minQuantity}" } }`;
-
   const mutation = `
     mutation discountAutomaticBasicCreate($discount: DiscountAutomaticBasicInput!) {
-      discountAutomaticBasicCreate(automaticDiscount: $discount) {
+      discountAutomaticBasicCreate(automaticBasicDiscount: $discount) {
         automaticDiscountNode {
           id
           automaticDiscount {
@@ -100,29 +131,23 @@ async function createGiftDiscount(
 
   const variables = {
     discount: {
-      title: opts.title,
+      title: `Gift #${tierNumber}`,
       startsAt: new Date().toISOString(),
+      minimumRequirement: {
+        quantity: {
+          greaterThanOrEqualToQuantity: String(tierGoal),
+        },
+      },
       customerGets: {
         items: {
           products: {
-            productsToAdd: [opts.productGid],
+            productsToAdd: [productGid],
           },
         },
         value: {
           percentage: 1.0, // 100% off
         },
       },
-      minimumRequirement: opts.thresholdMode === 'dollars'
-        ? {
-            subtotal: {
-              greaterThanOrEqualToSubtotal: `${opts.minQuantity}.00`,
-            },
-          }
-        : {
-            quantity: {
-              greaterThanOrEqualToQuantity: `${opts.minQuantity}`,
-            },
-          },
       combinesWith: {
         productDiscounts: true,
         orderDiscounts: true,
@@ -132,6 +157,10 @@ async function createGiftDiscount(
   };
 
   const result = await shopifyGraphQL(shopDomain, token, mutation, variables);
+  if (result?.errors?.length > 0) {
+    console.error('[gift-discounts] GraphQL errors:', result.errors);
+    return { error: result.errors.map((e: any) => e.message).join('; ') };
+  }
   const errors = result?.data?.discountAutomaticBasicCreate?.userErrors;
   if (errors?.length > 0) {
     console.error('[gift-discounts] Create errors:', errors);
@@ -142,12 +171,14 @@ async function createGiftDiscount(
 
 // Look up product GID from handle
 async function getProductGidByHandle(shopDomain: string, token: string, handle: string): Promise<string | null> {
-  const result = await shopifyGraphQL(shopDomain, token, `{
-    productByHandle(handle: "${handle}") {
-      id
+  const result = await shopifyGraphQL(shopDomain, token, `
+    query productByIdentifier($identifier: ProductIdentifierInput!) {
+      productByIdentifier(identifier: $identifier) {
+        id
+      }
     }
-  }`);
-  return result?.data?.productByHandle?.id ?? null;
+  `, { identifier: { handle } });
+  return result?.data?.productByIdentifier?.id ?? null;
 }
 
 export async function POST(
@@ -158,55 +189,79 @@ export async function POST(
     const { id } = await params;
     const store = await prisma.store.findUnique({
       where: { id },
-      select: { shopDomain: true, accessToken: true, config: true },
+      select: { shopDomain: true, accessToken: true, config: true, demoConfig: true },
     });
 
     if (!store?.accessToken) {
       return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     }
 
-    const config = (store.config as any) ?? {};
-    const addons = config.addons ?? {};
-    const rewardConfig = addons.freeShippingBar?.config ?? {};
-    const tiers = rewardConfig.tiers ?? [];
-    const thresholdMode = rewardConfig.thresholdMode ?? 'items';
+    // Accept tiers from request body or fall back to DB config
+    let body: any = {};
+    try { body = await req.json(); } catch {}
+    let tiers: any[];
+    if (body.tiers && Array.isArray(body.tiers)) {
+      tiers = body.tiers;
+    } else {
+      const url = new URL(req.url);
+      const target = url.searchParams.get('target');
+      const rawConfig = target === 'demo' ? (store.demoConfig as any) : (store.config as any);
+      const config = rawConfig ?? {};
+      const addons = config.addons ?? ((store.config as any)?.addons) ?? {};
+      const rewardConfig = addons.freeShippingBar?.config ?? {};
+      tiers = rewardConfig.tiers ?? [];
+    }
 
     const token = store.accessToken;
 
-    // 1. Find all existing Eliminai gift discounts
+    // 0. Ensure existing store discounts allow combining with our gift discounts
+    await ensureExistingDiscountsCombine(store.shopDomain, token);
+
+    // 1. Find all existing gift discounts
     const existing = await findExistingGiftDiscounts(store.shopDomain, token);
 
-    // 2. Delete all existing ones (we'll recreate from scratch — simpler than diffing)
+    // 2. Delete all existing ones (recreate from scratch)
     for (const node of existing) {
       await deleteDiscount(store.shopDomain, token, node.id);
     }
 
-    // 3. Create discounts for each tier's gift products
-    const created: any[] = [];
-    for (const tier of tiers) {
+    // 3. Create per-tier discounts with minimum quantity requirements
+    const created: { tier: number; handle: string; title: string; gid: string; discountId: string }[] = [];
+    const discountErrors: any[] = [];
+    const notFound: string[] = [];
+
+    for (let i = 0; i < tiers.length; i++) {
+      const tier = tiers[i];
+      const tierNumber = i + 1;
       const giftProducts = tier.giftProducts ?? (tier.giftProduct ? [tier.giftProduct] : []);
       for (const gift of giftProducts) {
         if (!gift.handle) continue;
 
-        // Look up the product GID
         const productGid = await getProductGidByHandle(store.shopDomain, token, gift.handle);
         if (!productGid) {
           console.warn(`[gift-discounts] Product not found: ${gift.handle}`);
+          notFound.push(gift.handle);
           continue;
         }
 
-        const title = `Eliminai Gift: ${gift.title || gift.handle} (Tier ${tier.goal})`;
-        const result = await createGiftDiscount(store.shopDomain, token, {
-          title,
+        const result = await createPerTierDiscount(
+          store.shopDomain,
+          token,
           productGid,
-          minQuantity: tier.goal,
-          thresholdMode,
-        });
+          tier.goal,
+          tierNumber,
+        );
 
-        if (result && !result.error) {
-          created.push({ handle: gift.handle, title, discountId: result.id });
-        } else {
-          created.push({ handle: gift.handle, title, error: result?.error });
+        if (result?.error) {
+          discountErrors.push({ handle: gift.handle, error: result.error });
+        } else if (result?.id) {
+          created.push({
+            tier: tier.goal,
+            handle: gift.handle,
+            title: gift.title || gift.handle,
+            gid: productGid,
+            discountId: result.id,
+          });
         }
       }
     }
@@ -214,6 +269,8 @@ export async function POST(
     return NextResponse.json({
       success: true,
       discounts: created,
+      errors: discountErrors.length > 0 ? discountErrors : null,
+      notFound,
       deleted: existing.length,
     });
   } catch (err: any) {
