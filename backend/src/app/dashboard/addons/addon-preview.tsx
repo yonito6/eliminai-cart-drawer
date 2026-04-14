@@ -90,7 +90,7 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
 
   useEffect(() => {
     if (!storeId) return;
-    fetch(`/api/stores/${storeId}/products/preview`)
+    fetch(`/api/stores/${storeId}/products/preview?_t=${Date.now()}`)
       .then(r => r.json())
       .then(data => { if (data.products?.length) setPreviewProducts(data.products); })
       .catch(() => {});

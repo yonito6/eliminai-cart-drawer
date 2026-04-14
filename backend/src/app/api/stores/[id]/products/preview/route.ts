@@ -71,9 +71,12 @@ export async function GET(
       };
     });
 
+    const cacheHeader = products.length > 0
+      ? 'public, s-maxage=3600, stale-while-revalidate=7200'
+      : 'no-cache, no-store';
     return NextResponse.json(
       { products },
-      { headers: { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=7200' } },
+      { headers: { 'Cache-Control': cacheHeader } },
     );
   } catch {
     return NextResponse.json({ products: [] });
