@@ -98,12 +98,20 @@ export async function POST(req: NextRequest) {
 
     const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
 
+    // Calculate daily orders for dynamic hard floor
+    const recentOrderSessions = await prisma.event.groupBy({
+      by: ['sessionId'],
+      where: { storeId: exp.storeId, eventType: 'ORDER_COMPLETED', createdAt: { gte: sevenDaysAgo } },
+    });
+    const dailyOrders = Math.max(0, Math.round(recentOrderSessions.length / 7));
+
     // Run Thompson Sampling — optimizes for order rate (orders / cart opens)
     const ts = calculateThompsonSampling(variantStats, {
       priors,
       dailyTraffic,
       displayStats,
       minDaysRunning: daysRunning,
+      dailyOrders,
     });
 
     // ── Track daily leader for consistency scoring ──

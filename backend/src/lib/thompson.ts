@@ -28,6 +28,8 @@ interface ThompsonOptions {
   displayStats?: VariantDisplayStats[];
   // Minimum calendar days before declaring winner (day-of-week effects)
   minDaysRunning?: number;
+  // Average daily orders for this store (used for dynamic hard floor)
+  dailyOrders?: number;
 }
 
 interface ThompsonResult {
@@ -40,7 +42,12 @@ interface ThompsonResult {
   orderRates?: Record<string, number>;     // Per-variant order rate (orders/cartOpens) — THE metric
   checkoutRates?: Record<string, number>;  // Per-variant checkout rate — display only
   explorationMinPerVariant?: number;       // Exported for dashboard progress display
-  minOrdersPerVariant: number;             // Minimum orders needed per variant (25)
+  minOrdersPerVariant: number;             // Dynamic minimum orders needed per variant
+  // ── Smooth dampening fields (new) ──
+  dataMaturity: number;                    // 0-1: how much data vs target (drives dampening)
+  targetOrdersPerVariant: number;          // Dynamic order target from power analysis
+  currentDetectableLift: number;           // Smallest relative lift detectable right now (%)
+  hardFloorPerVariant: number;             // Dynamic hard floor — pure 50/50 until this many orders per arm
 }
 
 interface DailyLeader {
@@ -80,7 +87,7 @@ export function calculateThompsonSampling(
   variants: VariantStats[],
   options: ThompsonOptions = {}
 ): ThompsonResult {
-  const { priors = {}, dailyTraffic = 100, displayStats, minDaysRunning = 0 } = options;
+  const { priors = {}, dailyTraffic = 100, displayStats, minDaysRunning = 0, dailyOrders = 0 } = options;
 
   // Draw samples from Beta distribution for each variant
   // Prior: cross-store data if available, otherwise weak uninformative Beta(1, 1)
@@ -134,41 +141,67 @@ export function calculateThompsonSampling(
     trafficSplit[v.id] = wins / NUM_SAMPLES;
   }
 
-  // Compute totals FIRST (used by exploration + winner declaration)
+  // Compute totals FIRST (used by dampening + winner declaration)
   const totalObservations = variants.reduce((s, v) => s + v.successes + v.failures, 0);
   const minObsPerArm = Math.min(...variants.map(v => v.successes + v.failures));
+  const minOrdersPerArm = Math.min(...variants.map(v => v.successes));
 
-  // Smart exploration phase — based on observed ORDER rate + daily traffic
-  // Goal: enough data per variant so Thompson's posterior is stable
-  // Formula: n ≥ p*(1-p) / 0.000417 for ~8pp CI width
+  // ── Observed purchase rate (recalculated as data arrives) ──
   const observedRate = totalObservations > 0
     ? variants.reduce((s, v) => s + v.successes, 0) / totalObservations
     : 0.03; // default assumption: ~3% order rate before any data
-  const rateForCalc = Math.max(0.01, Math.min(observedRate, 0.50));
-  const statisticalMin = Math.ceil(rateForCalc * (1 - rateForCalc) / 0.000417);
-  const clampedMin = Math.max(25, Math.min(statisticalMin, 200));
-  const trafficDiscount = dailyTraffic < 50 ? 0.6 : dailyTraffic < 200 ? 0.8 : 1.0;
-  const explorationMin = Math.max(20, Math.round(clampedMin * trafficDiscount));
 
-  if (minObsPerArm < explorationMin) {
-    // Exploration: force equal split — no Thompson steering until we have enough data
-    const equalShare = 1 / variants.length;
-    for (const id of Object.keys(trafficSplit)) {
-      trafficSplit[id] = equalShare;
-    }
-  } else {
-    // Exploitation: Thompson steers traffic, but with a safety floor
-    // Floor scales inversely with traffic — high-traffic can be more aggressive
-    const safetyFloor = dailyTraffic >= 500 ? 0.05 : dailyTraffic >= 50 ? 0.10 : 0.15;
-    for (const id of Object.keys(trafficSplit)) {
-      if (trafficSplit[id] < safetyFloor) trafficSplit[id] = safetyFloor;
-    }
-    // Normalize
-    const total = Object.values(trafficSplit).reduce((a, b) => a + b, 0);
-    for (const id of Object.keys(trafficSplit)) {
-      trafficSplit[id] = trafficSplit[id] / total;
-    }
+  // ── Dynamic order target from power analysis ──
+  // Uses the SAME formula as calculateSampleTarget: proper power analysis
+  // 50% relative MDE, 80% power, one-sided α=0.05
+  const sampleTarget = calculateSampleTarget(observedRate, variants.length);
+  const targetOrdersPerVariant = Math.max(25, Math.ceil(sampleTarget.nPerVariant * Math.max(0.005, observedRate)));
+
+  // ── Dynamic hard floor — pure 50/50 until enough orders for signal ──
+  // Floor = 3 days of orders, clamped [5, 25]. Scales with store velocity:
+  //   1 order/day → floor 5 (~5 days), 8/day → floor 24 (~3 days), 20+/day → floor 25 (cap)
+  const hardFloorPerVariant = Math.max(5, Math.min(25, Math.round(dailyOrders * 3)));
+
+  // ── Smooth dampening — replaces hard exploration/exploitation switch ──
+  // dataMaturity goes from 0 (no data) to 1 (enough data).
+  // Allocation blends between 50/50 (exploration) and Thompson (exploitation).
+  // HARD FLOOR: dataMaturity stays at 0 (pure 50/50) until every arm has enough orders.
+  // After the floor is crossed, smooth dampening ramps from floor to targetOrdersPerVariant.
+  const dataMaturity = minOrdersPerArm < hardFloorPerVariant
+    ? 0
+    : Math.min(1.0, (minOrdersPerArm - hardFloorPerVariant) / Math.max(1, targetOrdersPerVariant - hardFloorPerVariant));
+
+  // Blend: allocation = dataMaturity × thompsonSplit + (1 - dataMaturity) × 0.5
+  const equalShare = 1 / variants.length;
+  for (const id of Object.keys(trafficSplit)) {
+    trafficSplit[id] = dataMaturity * trafficSplit[id] + (1 - dataMaturity) * equalShare;
   }
+
+  // Safety floor: no variant ever gets less than 10% during dampened phase,
+  // or 5% after full maturity for high-traffic stores
+  const safetyFloor = dataMaturity >= 1.0
+    ? (dailyTraffic >= 500 ? 0.05 : 0.10)
+    : 0.10;
+  for (const id of Object.keys(trafficSplit)) {
+    if (trafficSplit[id] < safetyFloor) trafficSplit[id] = safetyFloor;
+  }
+  // Normalize after floor enforcement
+  const splitTotal = Object.values(trafficSplit).reduce((a, b) => a + b, 0);
+  for (const id of Object.keys(trafficSplit)) {
+    trafficSplit[id] = trafficSplit[id] / splitTotal;
+  }
+
+  // ── Current detectable lift — what's the smallest real difference we can see right now? ──
+  // Inverse of the sample size formula: given current n, what MDE can we detect?
+  // n = zSumSq * [p1(1-p1) + p2(1-p2)] / (delta)^2  →  delta = sqrt(zSumSq * [...] / n)
+  const currentN = minObsPerArm || 1;
+  const p1 = Math.max(0.005, Math.min(observedRate, 0.50));
+  const zSumSq = 6.175; // (1.645 + 0.84)^2
+  const currentDelta = Math.sqrt(zSumSq * 2 * p1 * (1 - p1) / currentN);
+  const currentDetectableLift = p1 > 0 ? (currentDelta / p1) * 100 : 999;
+
+  // Legacy field — keep for backward compat with dashboard
+  const explorationMin = Math.max(20, Math.round(sampleTarget.nPerVariant * 0.15));
 
   // Lift calculation
   const bestMean = means[bestId];
@@ -177,75 +210,62 @@ export function calculateThompsonSampling(
     ? ((bestMean - secondMean) / secondMean) * 100
     : 0;
 
-  // ── Winner declaration: traffic-adaptive thresholds ──
+  // ── Winner declaration: unified adaptive thresholds ──
   let winnerId: string | null = null;
   let reason = '';
 
-  // Minimum orders per variant — non-negotiable statistical floor
-  const MIN_ORDERS = 25;
-  const minOrdersPerArm = Math.min(...variants.map(v => v.successes));
-
-  // Blowout shortcut: if one variant clearly crushes the other, don't wait
-  // for the loser to collect 25 orders — the signal is overwhelming
   const totalOrdersAll = variants.reduce((s, v) => s + v.successes, 0);
   const maxOrdersPerArm = Math.max(...variants.map(v => v.successes));
-  const isBlowout = confidence >= 0.99
-    && expectedLoss <= 0.001
+
+  // Dynamic expected loss threshold — scaled by conversion rate (VWO approach)
+  // Higher conversion stores can tolerate larger absolute loss
+  const baselineLossScale = Math.max(0.5, Math.min(observedRate / 0.05, 2.0));
+  const baseLossThreshold = dailyTraffic >= 500 ? 0.05 : dailyTraffic >= 50 ? 0.10 : 0.15;
+  const dynamicLossThreshold = baseLossThreshold * baselineLossScale;
+
+  // Blowout shortcut: overwhelming signal transcends day-of-week noise
+  // Can declare at 3 days if the data is irrefutable
+  const isBlowout = confidence >= 0.995
+    && expectedLoss <= 0.005
     && minDaysRunning >= 3
-    && maxOrdersPerArm >= MIN_ORDERS
+    && maxOrdersPerArm >= targetOrdersPerVariant
     && totalOrdersAll >= 40
     && Math.abs(liftPercent) > 5;
 
-  // Minimum calendar days check (day-of-week effects)
+  // Gate 1: Minimum calendar days — 7 standard, 3 for blowout only
   if (minDaysRunning < 3) {
     reason = 'Need at least 3 days to capture traffic patterns';
   }
-  // Blowout: clear winner even if loser has few orders
+  // Gate 2: Blowout — clear winner even if loser has fewer orders
   else if (isBlowout) {
     winnerId = bestId;
     reason = `Clear winner: ${(confidence * 100).toFixed(1)}% confidence, +${Math.abs(liftPercent).toFixed(0)}% lift, ${maxOrdersPerArm} orders on leading variant`;
   }
-  // Minimum ORDERS check — the real statistical gate (skipped if blowout)
-  else if (minOrdersPerArm < MIN_ORDERS) {
-    reason = `Need at least ${MIN_ORDERS} orders per variant (currently ${minOrdersPerArm})`;
+  // Gate 3: Standard path requires 7 days (day-of-week effects)
+  else if (minDaysRunning < 7) {
+    reason = `Need 7 days for day-of-week coverage (day ${minDaysRunning}/7)`;
   }
-  // Minimum observations check (traffic-adaptive)
-  else if (minObsPerArm < explorationMin) {
-    reason = `Need at least ${explorationMin} unique visitors per variant (${dailyTraffic}/day traffic)`;
+  // Gate 4: Dynamic minimum orders — derived from store's conversion rate
+  else if (minOrdersPerArm < targetOrdersPerVariant) {
+    reason = `Need ${targetOrdersPerVariant} orders per variant (currently ${minOrdersPerArm}, based on ${(observedRate * 100).toFixed(1)}% purchase rate)`;
   }
-  // Traffic-adaptive winner declaration
+  // Gate 5: Confidence + expected loss check
   else {
-    // Thresholds by traffic tier
-    let confThreshold: number;
-    let lossThreshold: number; // max expected loss in percentage points
+    const confThreshold = 0.95;
 
-    if (dailyTraffic >= 500) {
-      // High traffic: can be aggressive
-      confThreshold = 0.90;
-      lossThreshold = 0.05;
-    } else if (dailyTraffic >= 50) {
-      // Medium traffic: balanced
-      confThreshold = 0.90;
-      lossThreshold = 0.10;
-    } else {
-      // Low traffic: more conservative
-      confThreshold = 0.85;
-      lossThreshold = 0.15;
-    }
-
-    if (confidence >= confThreshold && expectedLoss <= lossThreshold && Math.abs(liftPercent) > 1) {
+    if (confidence >= confThreshold && expectedLoss <= dynamicLossThreshold && Math.abs(liftPercent) > 1) {
       winnerId = bestId;
-      reason = `Winner: confidence ${(confidence * 100).toFixed(1)}% >= ${confThreshold * 100}%, expected loss ${expectedLoss.toFixed(3)}pp <= ${lossThreshold}pp`;
+      reason = `Winner: ${(confidence * 100).toFixed(1)}% confidence, ${expectedLoss.toFixed(3)}pp expected loss, +${Math.abs(liftPercent).toFixed(1)}% lift`;
     } else if (confidence >= 0.95 && Math.abs(liftPercent) <= 1) {
       // High confidence but no meaningful difference
       winnerId = null; // will be marked NO_DIFFERENCE by cron
       reason = `No meaningful difference (lift ${liftPercent.toFixed(1)}% with ${(confidence * 100).toFixed(1)}% confidence)`;
-    } else if (minObsPerArm >= 50 && Math.abs(liftPercent) < 3 && confidence >= 0.60) {
-      // Early stop: enough data to see there's no meaningful impact — move on to next test
+    } else if (dataMaturity >= 1.0 && Math.abs(liftPercent) < 3 && confidence >= 0.60) {
+      // Enough data collected, no meaningful impact — move on
       winnerId = null; // will be marked NO_DIFFERENCE by cron
-      reason = `Low impact detected early (lift ${liftPercent.toFixed(1)}%, ${minObsPerArm} visitors/variant) — move on to next test`;
+      reason = `Low impact after full data collection (lift ${liftPercent.toFixed(1)}%, ${minOrdersPerArm} orders/variant) — move on`;
     } else {
-      reason = `Collecting data: confidence ${(confidence * 100).toFixed(1)}%, expected loss ${expectedLoss.toFixed(3)}pp, lift ${liftPercent.toFixed(1)}%`;
+      reason = `Collecting data: ${(confidence * 100).toFixed(1)}% confidence, ${expectedLoss.toFixed(3)}pp loss, ${liftPercent.toFixed(1)}% lift, maturity ${(dataMaturity * 100).toFixed(0)}%`;
     }
   }
 
@@ -266,9 +286,6 @@ export function calculateThompsonSampling(
     }
   }
 
-  // Minimum orders per variant — the REAL gate for winner declaration
-  const MIN_ORDERS_PER_VARIANT = 25;
-
   return {
     trafficSplit,
     confidence,
@@ -279,7 +296,12 @@ export function calculateThompsonSampling(
     orderRates,
     checkoutRates: Object.keys(checkoutRates).length > 0 ? checkoutRates : undefined,
     explorationMinPerVariant: explorationMin,
-    minOrdersPerVariant: MIN_ORDERS_PER_VARIANT,
+    minOrdersPerVariant: targetOrdersPerVariant,
+    // ── Smooth dampening fields ──
+    dataMaturity,
+    targetOrdersPerVariant,
+    currentDetectableLift: Math.min(currentDetectableLift, 999),
+    hardFloorPerVariant,
   };
 }
 

@@ -13,37 +13,38 @@ describe('Thompson Sampling — order-based optimization', () => {
     expect(result.confidence).toBeLessThan(0.7);
   });
 
-  it('shifts traffic toward variant with more orders', () => {
-    // control: 25 orders out of 500 cart opens (5% order rate)
-    // treatment: 60 orders out of 500 cart opens (12% order rate)
-    // Both have 25+ orders (minimum gate) and 500 visitors per variant
+  it('shifts traffic toward variant with more orders (past hard floor)', () => {
+    // control: 50 orders out of 500 cart opens (10% order rate)
+    // treatment: 90 orders out of 500 cart opens (18% order rate)
+    // dailyOrders: 1 → floor = 5, both arms well past floor AND past target
     const result = calculateThompsonSampling([
-      { id: 'control', successes: 25, failures: 475 },
-      { id: 'treatment', successes: 60, failures: 440 },
-    ], { dailyTraffic: 500, minDaysRunning: 5 });
+      { id: 'control', successes: 50, failures: 450 },
+      { id: 'treatment', successes: 90, failures: 410 },
+    ], { dailyTraffic: 500, minDaysRunning: 5, dailyOrders: 1 });
     expect(result.trafficSplit.treatment).toBeGreaterThan(0.7);
     expect(result.confidence).toBeGreaterThan(0.9);
     expect(result.winnerId).toBe('treatment');
   });
 
-  it('does NOT declare winner with fewer than 25 orders per variant', () => {
-    // Even with high confidence, below 25-order minimum
+  it('does NOT declare winner with fewer than target orders per variant', () => {
+    // Even with high confidence, below dynamic order target + need 7 days
     const result = calculateThompsonSampling([
       { id: 'control', successes: 3, failures: 197 },
       { id: 'treatment', successes: 15, failures: 185 },
-    ], { dailyTraffic: 500, minDaysRunning: 5 });
+    ], { dailyTraffic: 500, minDaysRunning: 10 });
     expect(result.winnerId).toBeNull();
     expect(result.reason).toContain('orders per variant');
   });
 
-  it('declares blowout winner when leading variant has 25+ orders even if loser has few', () => {
-    // Blowout: 8% vs 0.5% — winner has 40 orders, loser has 3
-    // Total = 43 orders (>= 40), winner has 40 (>= 25), 5+ days
+  it('declares blowout winner when leading variant meets order target even if loser has few', () => {
+    // Blowout: 10% vs 0.5% — winner has 80 orders, loser has 5
+    // At ~5.5% observed rate, target orders ~48, winner exceeds it
+    // Total = 85 orders (>= 40), massive lift, 5+ days, confidence ~99.9%
     const result = calculateThompsonSampling([
-      { id: 'control', successes: 3, failures: 597 },
-      { id: 'treatment', successes: 40, failures: 460 },
-    ], { dailyTraffic: 200, minDaysRunning: 5 });
-    // Should declare winner via blowout (control has only 3 orders < 25)
+      { id: 'control', successes: 5, failures: 995 },
+      { id: 'treatment', successes: 80, failures: 720 },
+    ], { dailyTraffic: 500, minDaysRunning: 5 });
+    // Should declare winner via blowout even though control has only 5 orders
     expect(result.winnerId).toBe('treatment');
     expect(result.reason).toContain('Clear winner');
   });
@@ -88,18 +89,95 @@ describe('Thompson Sampling — order-based optimization', () => {
     expect(result.winnerId).toBeNull();
   });
 
+  // ── Hard floor tests ──
+
+  it('HARD FLOOR: forces exact 50/50 when below dynamic floor (low-traffic store)', () => {
+    // Store gets 2 orders/day → floor = max(5, min(25, 2*3)) = 6
+    // Both arms have 3 orders each → below floor → pure 50/50
+    const result = calculateThompsonSampling([
+      { id: 'control', successes: 3, failures: 97 },
+      { id: 'treatment', successes: 3, failures: 97 },
+    ], { dailyOrders: 2 });
+    expect(result.trafficSplit.control).toBe(0.5);
+    expect(result.trafficSplit.treatment).toBe(0.5);
+    expect(result.dataMaturity).toBe(0);
+    expect(result.hardFloorPerVariant).toBe(6);
+  });
+
+  it('HARD FLOOR: forces exact 50/50 when below dynamic floor (high-traffic store)', () => {
+    // Store gets 10 orders/day → floor = max(5, min(25, 10*3)) = 25
+    // Arms have 19 and 6 orders → min=6, below floor=25 → pure 50/50
+    const result = calculateThompsonSampling([
+      { id: 'control', successes: 19, failures: 250 },
+      { id: 'treatment', successes: 6, failures: 173 },
+    ], { dailyOrders: 10 });
+    expect(result.trafficSplit.control).toBe(0.5);
+    expect(result.trafficSplit.treatment).toBe(0.5);
+    expect(result.dataMaturity).toBe(0);
+    expect(result.hardFloorPerVariant).toBe(25);
+  });
+
+  it('HARD FLOOR: starts smooth dampening AFTER floor is crossed', () => {
+    // Store gets 3 orders/day → floor = max(5, min(25, 3*3)) = 9
+    // Both arms have 15 orders → above floor → Thompson starts influencing
+    // With 30 vs 15 orders, Thompson should shift toward the winner
+    const result = calculateThompsonSampling([
+      { id: 'control', successes: 30, failures: 470 },
+      { id: 'treatment', successes: 15, failures: 485 },
+    ], { dailyOrders: 3 });
+    expect(result.dataMaturity).toBeGreaterThan(0);
+    // Should no longer be exactly 50/50
+    expect(result.trafficSplit.control).toBeGreaterThan(0.5);
+  });
+
+  it('HARD FLOOR: caps at 25 even for very high-traffic stores', () => {
+    // Store gets 100 orders/day → floor = max(5, min(25, 100*3)) = 25
+    const result = calculateThompsonSampling([
+      { id: 'control', successes: 20, failures: 980 },
+      { id: 'treatment', successes: 20, failures: 980 },
+    ], { dailyOrders: 100 });
+    expect(result.hardFloorPerVariant).toBe(25);
+    // 20 < 25 → still below floor → pure 50/50
+    expect(result.dataMaturity).toBe(0);
+    expect(result.trafficSplit.control).toBe(0.5);
+  });
+
+  it('HARD FLOOR: minimum floor is 5 even for very low-traffic stores', () => {
+    // Store gets 0.5 orders/day → floor = max(5, min(25, round(0.5*3))) = max(5, 2) = 5
+    const result = calculateThompsonSampling([
+      { id: 'control', successes: 4, failures: 46 },
+      { id: 'treatment', successes: 4, failures: 46 },
+    ], { dailyOrders: 0.5 });
+    expect(result.hardFloorPerVariant).toBe(5);
+    // 4 < 5 → below floor → pure 50/50
+    expect(result.dataMaturity).toBe(0);
+  });
+
+  it('HARD FLOOR: defaults to floor=5 when dailyOrders not provided', () => {
+    // No dailyOrders → defaults to 0 → floor = max(5, min(25, 0)) = 5
+    const result = calculateThompsonSampling([
+      { id: 'control', successes: 3, failures: 97 },
+      { id: 'treatment', successes: 3, failures: 97 },
+    ]);
+    expect(result.hardFloorPerVariant).toBe(5);
+    // 3 < 5 → below floor → pure 50/50
+    expect(result.dataMaturity).toBe(0);
+    expect(result.trafficSplit.control).toBe(0.5);
+  });
+
   it('does NOT let checkout clicks influence traffic allocation', () => {
-    // Scenario from Yoni: A=50 checkouts/1 order, B=6 checkouts/5 orders
-    // Thompson only sees orders — B should be favored
+    // Scenario: A=10 orders, B=30 orders — Thompson should favor B
+    // dailyOrders: 1 → floor = 5, both arms exceed floor so Thompson has influence
     const result = calculateThompsonSampling(
       [
-        { id: 'A', successes: 1, failures: 99 },   // 1 order / 100 opens
-        { id: 'B', successes: 5, failures: 95 },    // 5 orders / 100 opens
+        { id: 'A', successes: 10, failures: 90 },   // 10 orders / 100 opens
+        { id: 'B', successes: 30, failures: 70 },    // 30 orders / 100 opens
       ],
       {
+        dailyOrders: 1, // floor = 5, both arms above floor
         displayStats: [
-          { id: 'A', cartOpens: 100, checkouts: 50, orders: 1 },
-          { id: 'B', cartOpens: 100, checkouts: 6, orders: 5 },
+          { id: 'A', cartOpens: 100, checkouts: 50, orders: 10 },
+          { id: 'B', cartOpens: 100, checkouts: 6, orders: 30 },
         ],
       }
     );
@@ -109,8 +187,8 @@ describe('Thompson Sampling — order-based optimization', () => {
     expect(result.checkoutRates?.A).toBeCloseTo(0.50, 1);
     expect(result.checkoutRates?.B).toBeCloseTo(0.06, 1);
     // Order rates reflect what Thompson sees
-    expect(result.orderRates?.A).toBeCloseTo(0.01, 2);
-    expect(result.orderRates?.B).toBeCloseTo(0.05, 2);
+    expect(result.orderRates?.A).toBeCloseTo(0.10, 2);
+    expect(result.orderRates?.B).toBeCloseTo(0.30, 2);
   });
 
   it('returns explorationMinPerVariant for dashboard', () => {

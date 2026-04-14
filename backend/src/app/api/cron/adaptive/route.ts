@@ -115,10 +115,18 @@ export async function POST(req: NextRequest) {
       const priors = buildCrossStorePriors(crossStoreData, exp.slot, trafficTier);
       const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
 
+      // Calculate daily orders for dynamic hard floor
+      const orderEvents7d = await prisma.event.groupBy({
+        by: ['sessionId'],
+        where: { storeId, eventType: 'ORDER_COMPLETED', createdAt: { gte: sevenDaysAgo } },
+      });
+      const dailyOrders = Math.max(0, Math.round(orderEvents7d.length / 7));
+
       const ts = calculateThompsonSampling(variantStats, {
         priors,
         dailyTraffic,
         minDaysRunning: daysRunning,
+        dailyOrders,
       });
 
       let newStatus = exp.status;
