@@ -331,26 +331,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       milestoneAnimationType: 'pulse',      // 'pulse' | 'bounce' | 'heartbeat' | 'shake' | 'none'
       giftShowComparePrice: true,           // show crossed-out original price next to "Free"
       giftHideDiscountLabel: true,           // hide gift discount label from discount row and gift line item
-      tiers: [
-        {
-          id: 'tier-1',
-          label: 'Free Shipping',
-          goal: 1,
-          icon: 'shipping',
-          beforeText: 'Add <strong>{remaining}</strong> more to unlock',
-          afterText: 'Free shipping unlocked!',
-          giftProduct: null,         // { handle, variantId, title, imageUrl } or null
-        },
-        {
-          id: 'tier-2',
-          label: '2+1 FREE',
-          goal: 3,
-          icon: 'tag',
-          beforeText: 'Add <strong>{remaining}</strong> more for FREE',
-          afterText: 'Bonus item unlocked!',
-          giftProduct: null,
-        },
-      ],
+      tiers: [],
     },
   },
 
