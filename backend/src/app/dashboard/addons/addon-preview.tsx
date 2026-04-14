@@ -445,13 +445,17 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     };
     const headlineText = headlineMap[headline] || 'You may also like';
 
-    const productCard = (name: string, price: string, img: string) =>
-      '<div style="min-width:120px;flex-shrink:0;text-align:center"><div style="width:80px;height:80px;background:#f5f5f5;border-radius:8px;margin:0 auto 6px;overflow:hidden"><img src="' + img + '" style="width:100%;height:100%;object-fit:cover" alt="' + name + '"></div><div style="font-size:11px;font-weight:600;margin-bottom:2px">' + name + '</div><div style="font-size:12px;color:#666">' + price + '</div><button style="margin-top:4px;padding:4px 12px;font-size:11px;background:var(--ccd-primary);color:#fff;border:none;border-radius:4px;cursor:pointer">Add</button></div>';
+    const productCard = (name: string, price: string, img: string) => {
+      const imgHtml = img
+        ? '<img src="' + img + '" style="width:100%;height:100%;object-fit:cover" alt="' + name + '">'
+        : '<svg width="30" height="30" viewBox="0 0 24 24" fill="#ccc"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>';
+      return '<div style="min-width:120px;flex-shrink:0;text-align:center"><div style="width:80px;height:80px;background:#f5f5f5;border-radius:8px;margin:0 auto 6px;overflow:hidden;display:flex;align-items:center;justify-content:center">' + imgHtml + '</div><div style="font-size:11px;font-weight:600;margin-bottom:2px">' + name + '</div><div style="font-size:12px;color:#666">' + price + '</div><button style="margin-top:4px;padding:4px 12px;font-size:11px;background:var(--ccd-primary);color:#fff;border:none;border-radius:4px;cursor:pointer">Add</button></div>';
+    };
 
     const products = [
-      productCard('Classic Strap', '$29.99', 'https://elegantoshop.com/cdn/shop/files/3ec4811704d2ee192dbd4dd0f39763be_180x.jpg?v=1765715005'),
-      productCard('Watch Case', '$49.99', 'https://elegantoshop.com/cdn/shop/files/0d93cbc2-23e3-4a66-857c-a5e2c7d0e19e_180x.jpg?v=1765714599'),
-      productCard('Gift Box', '$19.99', 'https://elegantoshop.com/cdn/shop/files/3ec4811704d2ee192dbd4dd0f39763be_180x.jpg?v=1765715005'),
+      productCard('Product A', '$29.99', ''),
+      productCard('Product B', '$49.99', ''),
+      productCard('Product C', '$19.99', ''),
     ];
 
     let layoutStyle = 'display:flex;gap:12px;overflow-x:auto;padding:8px 0';
