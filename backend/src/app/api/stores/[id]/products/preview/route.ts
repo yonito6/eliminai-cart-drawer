@@ -24,7 +24,7 @@ export async function GET(
   try {
     const graphqlUrl = `https://${store.shopDomain}/admin/api/2025-10/graphql.json`;
     const query = `{
-      products(first: 3, query: "status:active", sortKey: BEST_SELLING) {
+      products(first: 3, query: "status:active") {
         edges {
           node {
             title
