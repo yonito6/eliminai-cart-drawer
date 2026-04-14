@@ -48,6 +48,14 @@ export interface StagingHint {
   field?: 'before' | 'after' | 'gift' | 'label' | 'goal';
 }
 
+interface PreviewProduct {
+  title: string;
+  image: string;
+  variant: string;
+  price: string;
+  compareAtPrice: string | null;
+}
+
 interface AddonPreviewProps {
   addonKey: string;
   addonConfig: Record<string, any>;
@@ -55,6 +63,8 @@ interface AddonPreviewProps {
   themeSettings?: Record<string, any>;
   /** Controls what the preview "stages" to show based on what the user is currently editing */
   stagingHint?: StagingHint | null;
+  /** Store ID to fetch real products for preview */
+  storeId?: string | null;
 }
 
 function buildTrustBadgesHtml(config: Record<string, any> | undefined): string {
@@ -74,8 +84,17 @@ function buildTrustBadgesHtml(config: Record<string, any> | undefined): string {
     text + '</div></div>';
 }
 
-export default function AddonPreview({ addonKey, addonConfig, mode, themeSettings, stagingHint }: AddonPreviewProps) {
+export default function AddonPreview({ addonKey, addonConfig, mode, themeSettings, stagingHint, storeId }: AddonPreviewProps) {
   const [iframeHeight, setIframeHeight] = useState(mode === 'full' ? 680 : (FOCUS_AREAS[addonKey]?.height || 200));
+  const [previewProducts, setPreviewProducts] = useState<PreviewProduct[]>([]);
+
+  useEffect(() => {
+    if (!storeId) return;
+    fetch(`/api/stores/${storeId}/products/preview`)
+      .then(r => r.json())
+      .then(data => { if (data.products?.length) setPreviewProducts(data.products); })
+      .catch(() => {});
+  }, [storeId]);
 
   let cartHtml = CONTROL_HTML.replace(/\r\n/g, '\n');
   cartHtml = cartHtml.replace('class="custom-cart-drawer"', 'class="custom-cart-drawer drawer--right drawer--is-open"');
@@ -88,6 +107,50 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     cartHtml = cartHtml.replace('>Free shipping</span>', '>' + m1 + '</span>');
     cartHtml = cartHtml.replace('>2+1 FREE</span>', '>' + m2 + '</span>');
     cartHtml = cartHtml.replace('SECURE CHECKOUT', checkoutText);
+  }
+
+  // ── Replace placeholder products with real store products ──────────
+  if (previewProducts.length >= 2) {
+    const imgPlaceholder = '<svg width="40" height="40" viewBox="0 0 24 24" fill="#ccc"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>';
+    const buildItemHtml = (p: PreviewProduct) => {
+      const imgHtml = p.image
+        ? `<a href="#"><img src="${p.image}" alt="${p.title}" style="width:100%;height:auto;display:block;object-fit:cover"></a>`
+        : `<a href="#"><div style="width:120px;height:120px;background:#f0f0f0;display:flex;align-items:center;justify-content:center">${imgPlaceholder}</div></a>`;
+      const variantHtml = p.variant ? `<div class="ccd-item__variant">${p.variant}</div>` : '';
+      const priceHtml = p.compareAtPrice
+        ? `<span class="ccd-item__compare-price">$${p.compareAtPrice}</span><span class="ccd-item__price">$${p.price}</span>`
+        : `<span class="ccd-item__price">$${p.price}</span>`;
+      return `<div class="ccd-item">
+            <div class="ccd-item__image">${imgHtml}</div>
+            <div class="ccd-item__details">
+              <div class="ccd-item__title-row">
+                <a href="#" class="ccd-item__name">${p.title}</a>
+                <button type="button" class="ccd-item__remove" aria-label="Remove">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path></svg>
+                </button>
+              </div>
+              ${variantHtml}
+              <div class="ccd-item__bottom">
+                <div class="ccd-qty">
+                  <button type="button" class="ccd-qty__btn ccd-qty__btn--minus"><svg viewBox="0 0 20 20"><path d="M17.543 11.029H2.1A1.032 1.032 0 0 1 1.071 10c0-.566.463-1.029 1.029-1.029h15.443c.566 0 1.029.463 1.029 1.029 0 .566-.463 1.029-1.029 1.029z"></path></svg></button>
+                  <input type="text" class="ccd-qty__input" value="1" aria-label="Quantity">
+                  <button type="button" class="ccd-qty__btn ccd-qty__btn--plus"><svg viewBox="0 0 20 20"><path d="M17.409 8.929h-6.695V2.258c0-.566-.506-1.029-1.071-1.029s-1.071.463-1.071 1.029v6.671H1.967C1.401 8.929.938 9.435.938 10s.463 1.071 1.029 1.071h6.605V17.7c0 .566.506 1.029 1.071 1.029s1.071-.463 1.071-1.029v-6.629h6.695c.566 0 1.029-.506 1.029-1.071s-.463-1.071-1.029-1.071z"></path></svg></button>
+                </div>
+                <div class="ccd-item__price-col">
+                  <div class="ccd-item__price-row">${priceHtml}</div>
+                </div>
+              </div>
+            </div>
+          </div>`;
+    };
+    const itemsHtml = previewProducts.slice(0, 2).map(p => buildItemHtml(p)).join('\n');
+    const startMarker = '<!-- CART_ITEMS_START -->';
+    const endMarker = '<!-- CART_ITEMS_END -->';
+    const startIdx = cartHtml.indexOf(startMarker);
+    const endIdx = cartHtml.indexOf(endMarker);
+    if (startIdx !== -1 && endIdx !== -1) {
+      cartHtml = cartHtml.substring(0, startIdx + startMarker.length) + itemsHtml + cartHtml.substring(endIdx);
+    }
   }
 
   // ── Trust Badges: dynamic icons + text + position ──────────────────
@@ -452,11 +515,13 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
       return '<div style="min-width:120px;flex-shrink:0;text-align:center"><div style="width:80px;height:80px;background:#f5f5f5;border-radius:8px;margin:0 auto 6px;overflow:hidden;display:flex;align-items:center;justify-content:center">' + imgHtml + '</div><div style="font-size:11px;font-weight:600;margin-bottom:2px">' + name + '</div><div style="font-size:12px;color:#666">' + price + '</div><button style="margin-top:4px;padding:4px 12px;font-size:11px;background:var(--ccd-primary);color:#fff;border:none;border-radius:4px;cursor:pointer">Add</button></div>';
     };
 
-    const products = [
-      productCard('Product A', '$29.99', ''),
-      productCard('Product B', '$49.99', ''),
-      productCard('Product C', '$19.99', ''),
-    ];
+    const products = previewProducts.length >= 3
+      ? previewProducts.slice(0, 3).map(p => productCard(p.title, '$' + p.price, p.image))
+      : [
+          productCard('Product A', '$29.99', ''),
+          productCard('Product B', '$49.99', ''),
+          productCard('Product C', '$19.99', ''),
+        ];
 
     let layoutStyle = 'display:flex;gap:12px;overflow-x:auto;padding:8px 0';
     if (layout === 'single-card') layoutStyle = 'display:flex;justify-content:center;padding:8px 0';

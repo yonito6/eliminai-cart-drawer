@@ -1770,6 +1770,7 @@ function AddonsPage() {
                       addonConfig={addon.config ?? {}}
                       mode="full"
                       stagingHint={def.key === 'freeShippingBar' ? stagingHint : undefined}
+                      storeId={STORE_ID}
                     />
 
                     {/* Right: Edit controls */}
@@ -2365,6 +2366,7 @@ function AddonsPage() {
                                   addonKey={v.features?._enabled === false ? '_none' : def.key}
                                   addonConfig={v.features?._enabled === false ? {} : { ...(addon.config ?? {}), ...(v.features || {}) }}
                                   mode="full"
+                                  storeId={STORE_ID}
                                 />
                               </div>
                             </div>
