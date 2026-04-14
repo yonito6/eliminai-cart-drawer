@@ -355,7 +355,7 @@ export default function AddonsPageWrapper() {
 }
 
 function AddonsPage() {
-  const { storeId: STORE_ID, loading: storeLoading, error: storeError } = useStore();
+  const { storeId: STORE_ID, store: storeInfo, loading: storeLoading, error: storeError, allStores, switchStore } = useStore();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -1298,6 +1298,34 @@ function AddonsPage() {
             </span>
           </div>
         </div>
+
+        {/* ── Store selector (localhost only) ────────── */}
+        {isLocalDev && allStores.length > 1 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12,
+            padding: '8px 16px',
+            background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 10,
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Store:</span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {allStores.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => switchStore(s.shopDomain)}
+                  style={{
+                    padding: '5px 14px', fontSize: 13, fontWeight: 600, borderRadius: 6,
+                    border: 'none', cursor: 'pointer',
+                    background: storeInfo?.id === s.id ? '#7c3aed' : '#e5e7eb',
+                    color: storeInfo?.id === s.id ? '#fff' : '#374151',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {s.shopName || s.shopDomain.replace('.myshopify.com', '')}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── SAFE / DEMO / LIVE config toggle (localhost only) ────────── */}
         {isLocalDev && (<div style={{
