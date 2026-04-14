@@ -57,9 +57,10 @@ interface AddonPreviewProps {
   stagingHint?: StagingHint | null;
 }
 
-function buildTrustBadgesHtml(config: Record<string, any>): string {
-  const text = config.text ?? '';
-  const icons: string[] = config.icons || ['visa', 'mastercard', 'amex', 'paypal'];
+function buildTrustBadgesHtml(config: Record<string, any> | undefined): string {
+  const c = config ?? {};
+  const text = c.text ?? '';
+  const icons: string[] = c.icons || ['visa', 'mastercard', 'amex', 'paypal'];
 
   const iconEntries = icons.map((id: string) => {
     const svg = PAYMENT_SVGS[id] || '';

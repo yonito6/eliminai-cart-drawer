@@ -8,6 +8,189 @@ import { RewardsTierEditorWithSave } from './rewards-tier-editor';
 import { useStore } from '@/lib/hooks/use-store';
 import RichTextEditor from './rich-text-editor';
 
+// ─── Daily Performance Chart (inline View Results) ──────────────────────────
+const VC = ['#7c3aed', '#f59e0b', '#10b981', '#ef4444', '#3b82f6', '#ec4899'];
+type DailyMetric = 'orders' | 'cartOpens' | 'rate';
+type DPView = 'chart' | 'data';
+
+function DailyPerformance({ daily, variants, winnerVariantId }: {
+  daily: { date: string; variants: Record<string, { cartOpens: number; checkouts: number; orders: number; revenue: number; visitors: number }> }[];
+  variants: any[];
+  winnerVariantId?: string | null;
+}) {
+  const [metric, setMetric] = useState<DailyMetric>('orders');
+  const [view, setView] = useState<DPView>('chart');
+  if (!daily || daily.length === 0) return null;
+
+  const vids = variants.map((v: any) => v.id);
+  const gV = (s: any, m: DailyMetric) =>
+    m === 'rate' ? (s.cartOpens > 0 ? (s.orders / s.cartOpens) * 100 : 0)
+    : m === 'cartOpens' ? s.cartOpens : s.orders;
+  const series = vids.map((vid: string, idx: number) => ({
+    id: vid, label: variants[idx]?.label || `V${idx + 1}`, color: VC[idx % VC.length],
+    points: daily.map(d => gV(d.variants[vid] || { cartOpens: 0, orders: 0 }, metric)),
+    raw: daily.map(d => d.variants[vid] || { cartOpens: 0, orders: 0, checkouts: 0, revenue: 0, visitors: 0 }),
+  }));
+  const fmt = (v: number) => metric === 'rate' ? v.toFixed(1) + '%' : String(Math.round(v));
+  const pill = (active: boolean, accent: string): React.CSSProperties => ({
+    fontSize: 9, padding: '2px 7px', borderRadius: 4, border: 'none', cursor: 'pointer',
+    background: active ? accent : 'transparent', color: active ? '#fff' : '#9ca3af', fontWeight: 600,
+  });
+
+  const mx = Math.max(...series.flatMap(s => s.points), 1);
+  const n = daily.length;
+
+  // SVG chart dimensions — wider for rate (percentage text needs room)
+  const W = metric === 'rate' ? 540 : 460, H = 100, L = 26, T = 14, B = 16, cH = H - T - B;
+  const nv = series.length;
+  const gw = (W - L) / n;
+  const maxBw = metric === 'rate' ? 18 : 12;
+  const bw = Math.min(maxBw, (gw * 0.65) / nv);
+  const bg = nv > 1 ? Math.max(1, Math.min(2, (gw * 0.65 - bw * nv) / (nv - 1))) : 0;
+  const showDate = (i: number) => n <= 8 || i % Math.ceil(n / 7) === 0 || i === n - 1;
+
+  // Days won per variant
+  const winsPerVariant = series.map(s => {
+    let w = 0;
+    daily.forEach((_, di) => {
+      const vals = series.map(ss => ss.points[di]);
+      const mx2 = Math.max(...vals);
+      if (mx2 > 0 && s.points[di] === mx2 && vals.filter(v => v === mx2).length === 1) w++;
+    });
+    return w;
+  });
+
+  return (
+    <div style={{ marginTop: 12, padding: '8px 10px', background: '#fafafa', borderRadius: 8, border: '1px solid #f3f4f6' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 'auto' }}>Daily</span>
+        <div style={{ display: 'inline-flex', background: '#e5e7eb', borderRadius: 5, padding: 1 }}>
+          {(['chart', 'data'] as const).map(v => (
+            <button key={v} onClick={() => setView(v)} style={pill(view === v, '#7c3aed')}>
+              {v === 'chart' ? 'Chart' : 'Data'}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'inline-flex', background: '#e5e7eb', borderRadius: 5, padding: 1 }}>
+          {(['orders', 'cartOpens', 'rate'] as const).map(m => (
+            <button key={m} onClick={() => setMetric(m)} style={pill(metric === m, '#374151')}>
+              {m === 'orders' ? 'Orders' : m === 'cartOpens' ? 'Cart Opens' : 'Purchase Rate'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── CHART VIEW: SVG bars with values inside ── */}
+      {view === 'chart' && (
+        <>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
+            <line x1={L} y1={T + cH} x2={W} y2={T + cH} stroke="#e5e7eb" strokeWidth={0.4} />
+            {[0.25, 0.5, 0.75].map(p => (
+              <line key={p} x1={L} y1={T + cH * (1 - p)} x2={W} y2={T + cH * (1 - p)} stroke="#f3f4f6" strokeWidth={0.3} />
+            ))}
+            {daily.map((d, di) => {
+              const gcx = L + di * gw + gw / 2;
+              const gx = gcx - (bw * nv + bg * (nv - 1)) / 2;
+              const vals = series.map(s => s.points[di]);
+              const dayMax = Math.max(...vals);
+              const dayWinIdx = dayMax > 0 ? vals.indexOf(dayMax) : -1;
+              const isTied = dayMax > 0 && vals.filter(v => v === dayMax).length > 1;
+              return (
+                <g key={d.date}>
+                  {series.map((s, si) => {
+                    const val = s.points[di];
+                    const h = mx > 0 ? (val / mx) * cH : 0;
+                    const x = gx + si * (bw + bg);
+                    const y = T + cH - h;
+                    const raw = d.variants[s.id] || { cartOpens: 0, orders: 0 };
+                    const isWinner = si === dayWinIdx && !isTied;
+                    const valStr = metric === 'orders' ? `${raw.orders}/${raw.cartOpens}` : metric === 'cartOpens' ? `${raw.cartOpens}` : fmt(val);
+                    const labelInside = h > 12;
+                    return (
+                      <g key={s.id}>
+                        <rect x={x} y={y} width={bw} height={Math.max(h, 1)} rx={1.5}
+                          fill={s.color} opacity={isWinner ? 0.95 : 0.55} />
+                        <text x={x + bw / 2} y={labelInside ? y + h / 2 + 2 : y - 2}
+                          textAnchor="middle" fontSize={metric === 'rate' ? 5.5 : (bw > 8 ? 5 : 4.5)}
+                          fill={labelInside ? '#fff' : s.color} fontWeight={isWinner ? 800 : 600}
+                        >{valStr}</text>
+                        {isWinner && <circle cx={x + bw / 2} cy={T + cH + 4} r={1.5} fill={s.color} />}
+                      </g>
+                    );
+                  })}
+                  {showDate(di) && <text x={gcx} y={H - 1} textAnchor="middle" fontSize={6} fill="#b0b5bd">{d.date.slice(5)}</text>}
+                </g>
+              );
+            })}
+          </svg>
+          {/* Legend + wins */}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 3 }}>
+            {series.map((s, si) => (
+              <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, color: '#6b7280' }}>
+                <span style={{ width: 7, height: 7, borderRadius: 1.5, background: s.color, display: 'inline-block' }} />
+                <span style={{ fontWeight: 600, color: s.color }}>{s.label}</span>
+                {winnerVariantId === s.id ? ' \u2605' : ''}
+                {series.length >= 2 && <span style={{ color: '#9ca3af' }}>({winsPerVariant[si]}/{n}d)</span>}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── DATA VIEW: Table rows with inline bars ── */}
+      {view === 'data' && (
+        <>
+          <div style={{ display: 'flex', gap: 2, marginBottom: 3, paddingLeft: 44 }}>
+            {series.map(s => (
+              <div key={s.id} style={{ flex: 1, textAlign: 'center', fontSize: 8, fontWeight: 700, color: s.color }}>
+                {s.label}{winnerVariantId === s.id ? ' \u2605' : ''}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {daily.map((d, di) => {
+              const vals = series.map(s => s.points[di]);
+              const dayMax = Math.max(...vals);
+              const dayWinIdx = dayMax > 0 ? vals.indexOf(dayMax) : -1;
+              return (
+                <div key={d.date} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <span style={{ width: 40, fontSize: 8, color: '#9ca3af', textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{d.date.slice(5)}</span>
+                  {series.map((s, si) => {
+                    const val = s.points[di];
+                    const pct = mx > 0 ? (val / mx) * 100 : 0;
+                    const raw = s.raw[di];
+                    const isW = si === dayWinIdx && dayMax > 0 && vals.filter(v => v === dayMax).length === 1;
+                    return (
+                      <div key={s.id} style={{ flex: 1, position: 'relative', height: 16, background: '#f3f4f6', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.max(pct, 2)}%`, background: s.color, opacity: isW ? 0.25 : 0.12, borderRadius: 3, transition: 'width 0.3s ease' }} />
+                        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 9, fontWeight: isW ? 700 : 500, color: isW ? s.color : '#6b7280', fontVariantNumeric: 'tabular-nums' }}>
+                          {metric === 'rate' ? fmt(val) : metric === 'orders' ? `${raw.orders}/${raw.cartOpens}` : raw.cartOpens}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginTop: 4, paddingTop: 4, borderTop: '1px solid #e5e7eb' }}>
+            <span style={{ width: 40, fontSize: 8, fontWeight: 700, color: '#6b7280', textAlign: 'right', flexShrink: 0 }}>Total</span>
+            {series.map(s => {
+              const tr = s.raw.reduce((a, r) => ({ orders: a.orders + r.orders, cartOpens: a.cartOpens + r.cartOpens }), { orders: 0, cartOpens: 0 });
+              return (
+                <div key={s.id} style={{ flex: 1, textAlign: 'center', fontSize: 10, fontWeight: 700, color: s.color }}>
+                  {metric === 'rate' ? (tr.cartOpens > 0 ? ((tr.orders / tr.cartOpens) * 100).toFixed(1) + '%' : '0%') : metric === 'orders' ? `${tr.orders}/${tr.cartOpens}` : tr.cartOpens}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Animated Number Component ──────────────────────────────────────────────
 function AnimatedNum({ value, suffix = '', prefix = '', decimals = 0, color, size = 20 }: {
   value: number; suffix?: string; prefix?: string; decimals?: number; color?: string; size?: number;
@@ -176,10 +359,14 @@ function AddonsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // ── DEMO / LIVE config target ───────────────────────────────────────────
-  // Demo mode only available on localhost — production always uses live
+  // ── DEMO / LIVE / SAFE config target ────────────────────────────────────
+  // Demo + Safe mode only available on localhost — production always uses live
   const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-  const [configTarget, setConfigTarget] = useState<'demo' | 'live'>(isLocalDev ? 'demo' : 'live');
+  const SAFE_SHOP = 'eliminai-test.myshopify.com';
+  const isSafeMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('shop') === SAFE_SHOP;
+  const [configTarget, setConfigTarget] = useState<'demo' | 'live' | 'safe'>(isSafeMode ? 'safe' : isLocalDev ? 'demo' : 'live');
+  // In safe mode, STORE_ID already points to the test store — API uses 'live' target
+  const apiTarget = configTarget === 'safe' ? 'live' : configTarget;
   const [promoting, setPromoting] = useState(false);
 
   const [addons, setAddons] = useState<Record<string, AddonState>>({});
@@ -267,7 +454,7 @@ function AddonsPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch(
-        API + '/api/stores/' + STORE_ID + '/addons?target=' + configTarget,
+        API + '/api/stores/' + STORE_ID + '/addons?target=' + apiTarget,
       );
       if (res.ok) {
         const json = await res.json();
@@ -293,7 +480,7 @@ function AddonsPage() {
     } finally {
       setLoading(false);
     }
-  }, [STORE_ID, configTarget]);
+  }, [STORE_ID, apiTarget]);
 
   const fetchExperiments = useCallback(async () => {
     if (!STORE_ID) return;
@@ -643,7 +830,7 @@ function AddonsPage() {
 
   async function patchAddonWithSafety(key: string, data: any) {
     if (!STORE_ID) return;
-    const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons?target=' + configTarget, {
+    const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons?target=' + apiTarget, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ addonKey: key, ...data }),
@@ -675,7 +862,7 @@ function AddonsPage() {
     if (!STORE_ID) return;
     setSaving(s => ({ ...s, [key]: true }));
     try {
-      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons?target=' + configTarget, {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons?target=' + apiTarget, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -704,11 +891,17 @@ function AddonsPage() {
   async function patchAddon(key: string, data: any) {
     setSaving((s) => ({ ...s, [key]: true }));
     try {
-      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons?target=' + configTarget, {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons?target=' + apiTarget, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ addonKey: key, ...data }),
       });
+      if (!res.ok) {
+        const text = await res.text();
+        console.error('Addon PATCH failed:', res.status, text);
+        showSaveToast('Save failed!');
+        return;
+      }
       const json = await res.json();
       setAddons(json.addons ?? {});
       setOptimizeQueue(json.optimizeQueue ?? []);
@@ -782,9 +975,10 @@ function AddonsPage() {
   function renderDimensionControl(
     addonKey: string,
     dim: AddonDimension,
-    config: Record<string, any>,
+    config: Record<string, any> | undefined,
   ) {
-    const val = config[dim.key] ?? dim.default;
+    const safeConfig = config ?? {};
+    const val = safeConfig[dim.key] ?? dim.default;
     const inputStyle: React.CSSProperties = {
       width: '100%',
       padding: '8px 12px',
@@ -1105,32 +1299,52 @@ function AddonsPage() {
           </div>
         </div>
 
-        {/* ── DEMO / LIVE config toggle (localhost only) ──────────────── */}
+        {/* ── SAFE / DEMO / LIVE config toggle (localhost only) ────────── */}
         {isLocalDev && (<div style={{
           display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20,
-          padding: '10px 16px', background: configTarget === 'demo' ? '#fefce8' : '#f0fdf4',
-          border: '1px solid ' + (configTarget === 'demo' ? '#fde68a' : '#86efac'),
+          padding: '10px 16px',
+          background: configTarget === 'safe' ? '#eff6ff' : configTarget === 'demo' ? '#fefce8' : '#f0fdf4',
+          border: '1px solid ' + (configTarget === 'safe' ? '#93c5fd' : configTarget === 'demo' ? '#fde68a' : '#86efac'),
           borderRadius: 10,
         }}>
           <div style={{ display: 'flex', background: '#e5e7eb', borderRadius: 8, padding: 2 }}>
-            {(['demo', 'live'] as const).map(t => (
+            {([
+              { key: 'safe' as const, label: 'SAFE', color: '#3b82f6' },
+              { key: 'demo' as const, label: 'DEMO', color: '#f59e0b' },
+              { key: 'live' as const, label: 'LIVE', color: '#22c55e' },
+            ]).map(t => (
               <button
-                key={t}
-                onClick={() => { setConfigTarget(t); setLoading(true); }}
+                key={t.key}
+                onClick={() => {
+                  if (t.key === 'safe' && configTarget !== 'safe') {
+                    // Switch to test store — full page reload with ?shop= param
+                    window.location.href = '/dashboard/addons?shop=' + SAFE_SHOP;
+                    return;
+                  }
+                  if (t.key !== 'safe' && configTarget === 'safe') {
+                    // Switch back from test store to production store
+                    window.location.href = '/dashboard/addons';
+                    return;
+                  }
+                  setConfigTarget(t.key);
+                  setLoading(true);
+                }}
                 style={{
                   padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6,
                   border: 'none', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em',
-                  background: configTarget === t ? (t === 'demo' ? '#f59e0b' : '#22c55e') : 'transparent',
-                  color: configTarget === t ? '#fff' : '#6b7280',
+                  background: configTarget === t.key ? t.color : 'transparent',
+                  color: configTarget === t.key ? '#fff' : '#6b7280',
                   transition: 'all 0.15s',
                 }}
               >
-                {t}
+                {t.label}
               </button>
             ))}
           </div>
           <span style={{ fontSize: 13, color: '#6b7280' }}>
-            {configTarget === 'demo'
+            {configTarget === 'safe'
+              ? 'SAFE TEST \u2014 isolated test store (eliminai-test), zero risk to production'
+              : configTarget === 'demo'
               ? 'Editing DEMO config \u2014 changes only affect the demo theme'
               : 'Editing LIVE config \u2014 changes affect your live store'}
           </span>
@@ -1552,6 +1766,7 @@ function AddonsPage() {
                           }}
                           onStagingChange={setStagingHint}
                           storeId={STORE_ID}
+                          configTarget={apiTarget}
                           successColor={themeSettings?.ccd_color_success || '#1a7a1a'}
                           messageColor={'#333333'}
                           themeFont={themeSettings?.ccd_font_family}
@@ -1604,7 +1819,7 @@ function AddonsPage() {
                             {renderDimensionControl(
                               def.key,
                               dim,
-                              addon.config,
+                              addon.config ?? {},
                             )}
                           </div>
                         ))}
@@ -2131,6 +2346,11 @@ function AddonsPage() {
 
 
 
+
+                      {/* Daily Performance Chart + Table */}
+                      {exp.dailyBreakdown && exp.dailyBreakdown.length > 0 && (
+                        <DailyPerformance daily={exp.dailyBreakdown} variants={exp.variantStats || []} winnerVariantId={exp.winnerVariantId} />
+                      )}
 
                       {/* Lift summary — only show when confidence is meaningful (traffic-independent) */}
                       {(winner || (observedLiftPct > 0 && confidence >= 60)) && (() => {
