@@ -182,10 +182,10 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
           { value: 'afterpay', label: 'Afterpay' },
           { value: 'stripe', label: 'Stripe' },
         ],
-        default: ['visa', 'mastercard', 'amex', 'paypal'],
+        default: ['visa', 'mastercard', 'amex', 'discover', 'paypal', 'apple-pay', 'google-pay'],
       },
     ],
-    defaultConfig: { text: '', position: 'below-checkout', icons: ['visa', 'mastercard', 'amex', 'paypal'] },
+    defaultConfig: { text: '', position: 'below-checkout', icons: ['visa', 'mastercard', 'amex', 'discover', 'paypal', 'apple-pay', 'google-pay'] },
   },
 
   {
@@ -330,6 +330,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       milestoneAnimation: true,             // enable/disable milestone animation
       milestoneAnimationType: 'pulse',      // 'pulse' | 'bounce' | 'heartbeat' | 'shake' | 'none'
       giftShowComparePrice: true,           // show crossed-out original price next to "Free"
+      giftHideDiscountLabel: true,           // hide gift discount label from discount row and gift line item
       tiers: [
         {
           id: 'tier-1',
