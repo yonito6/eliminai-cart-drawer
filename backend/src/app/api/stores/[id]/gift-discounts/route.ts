@@ -100,22 +100,43 @@ async function deleteDiscount(shopDomain: string, token: string, discountId: str
   `, { id: discountId });
 }
 
-// Create a per-tier automatic 100% discount for a single gift product
-// with a minimum quantity requirement matching the tier threshold.
+// Fetch all active product GIDs for the "customerBuys" section of BXGY discounts
+async function getAllActiveProductGids(shopDomain: string, token: string): Promise<string[]> {
+  const gids: string[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 10; page++) {
+    const afterClause = cursor ? `, after: "${cursor}"` : '';
+    const result = await shopifyGraphQL(shopDomain, token, `{
+      products(first: 50, query: "status:active"${afterClause}) {
+        pageInfo { hasNextPage endCursor }
+        nodes { id }
+      }
+    }`);
+    const nodes = result?.data?.products?.nodes ?? [];
+    gids.push(...nodes.map((n: any) => n.id));
+    if (!result?.data?.products?.pageInfo?.hasNextPage) break;
+    cursor = result.data.products.pageInfo.endCursor;
+  }
+  return gids;
+}
+
+// Create a per-tier automatic BXGY (Buy X Get Y) discount for a single gift product.
+// Uses DiscountAutomaticBxgy — the correct type for "buy N items, get product free".
 async function createPerTierDiscount(
   shopDomain: string,
   token: string,
   productGid: string,
   tierGoal: number,
   tierNumber: number,
+  allProductGids: string[],
 ) {
   const mutation = `
-    mutation discountAutomaticBasicCreate($discount: DiscountAutomaticBasicInput!) {
-      discountAutomaticBasicCreate(automaticBasicDiscount: $discount) {
+    mutation discountAutomaticBxgyCreate($automaticBxgyDiscount: DiscountAutomaticBxgyInput!) {
+      discountAutomaticBxgyCreate(automaticBxgyDiscount: $automaticBxgyDiscount) {
         automaticDiscountNode {
           id
           automaticDiscount {
-            ... on DiscountAutomaticBasic {
+            ... on DiscountAutomaticBxgy {
               title
               status
             }
@@ -130,12 +151,18 @@ async function createPerTierDiscount(
   `;
 
   const variables = {
-    discount: {
+    automaticBxgyDiscount: {
       title: `Gift #${tierNumber}`,
       startsAt: new Date().toISOString(),
-      minimumRequirement: {
-        quantity: {
-          greaterThanOrEqualToQuantity: String(tierGoal),
+      usesPerOrderLimit: "1",
+      customerBuys: {
+        items: {
+          products: {
+            productsToAdd: allProductGids,
+          },
+        },
+        value: {
+          quantity: String(tierGoal),
         },
       },
       customerGets: {
@@ -145,7 +172,12 @@ async function createPerTierDiscount(
           },
         },
         value: {
-          percentage: 1.0, // 100% off
+          discountOnQuantity: {
+            quantity: "1",
+            effect: {
+              percentage: 1.0,
+            },
+          },
         },
       },
       combinesWith: {
@@ -161,12 +193,12 @@ async function createPerTierDiscount(
     console.error('[gift-discounts] GraphQL errors:', result.errors);
     return { error: result.errors.map((e: any) => e.message).join('; ') };
   }
-  const errors = result?.data?.discountAutomaticBasicCreate?.userErrors;
+  const errors = result?.data?.discountAutomaticBxgyCreate?.userErrors;
   if (errors?.length > 0) {
     console.error('[gift-discounts] Create errors:', errors);
     return { error: errors };
   }
-  return result?.data?.discountAutomaticBasicCreate?.automaticDiscountNode;
+  return result?.data?.discountAutomaticBxgyCreate?.automaticDiscountNode;
 }
 
 // Look up product GID from handle
@@ -225,7 +257,10 @@ export async function POST(
       await deleteDiscount(store.shopDomain, token, node.id);
     }
 
-    // 3. Create per-tier discounts with minimum quantity requirements
+    // 3. Fetch all active products for BXGY "customerBuys" section
+    const allProductGids = await getAllActiveProductGids(store.shopDomain, token);
+
+    // 4. Create per-tier BXGY discounts
     const created: { tier: number; handle: string; title: string; gid: string; discountId: string }[] = [];
     const discountErrors: any[] = [];
     const notFound: string[] = [];
@@ -250,6 +285,7 @@ export async function POST(
           productGid,
           tier.goal,
           tierNumber,
+          allProductGids,
         );
 
         if (result?.error) {
