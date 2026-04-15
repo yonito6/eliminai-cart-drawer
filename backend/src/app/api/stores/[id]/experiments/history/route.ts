@@ -15,23 +15,44 @@ export async function GET(
     },
   });
 
-  const enriched = experiments.map(exp => {
+  const enriched = await Promise.all(experiments.map(async (exp) => {
     const variants = exp.variants as any[];
     const durationDays = exp.endedAt
       ? Math.ceil((new Date(exp.endedAt).getTime() - new Date(exp.startedAt).getTime()) / 86400000)
       : Math.ceil((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
 
-    // Build per-variant stats from daily summaries
-    const variantStats = variants.map((v: any) => {
+    // Build per-variant stats from daily summaries + fallback to raw events
+    const variantStats = await Promise.all(variants.map(async (v: any) => {
       const summaries = exp.dailySummaries.filter(s => s.variantId === v.id);
-      const totalCartOpens = summaries.reduce((s, d) => s + d.cartOpens, 0);
-      const totalCheckouts = summaries.reduce((s, d) => s + d.checkoutClicks, 0);
-      const totalOrders = summaries.reduce((s, d) => s + d.ordersCompleted, 0);
+      let totalCartOpens = summaries.reduce((s, d) => s + d.cartOpens, 0);
+      let totalCheckouts = summaries.reduce((s, d) => s + d.checkoutClicks, 0);
+      let totalOrders = summaries.reduce((s, d) => s + d.ordersCompleted, 0);
       const totalRevenue = summaries.reduce((s, d) => s + d.totalRevenue, 0);
+      let totalVisitors = summaries.reduce((s, d) => s + d.uniqueVisitors, 0);
+
+      // If daily summaries are empty/incomplete, compute from raw events
+      if (totalCartOpens === 0 && totalOrders === 0) {
+        const [cartSessions, checkoutSessions, orderSessions] = await Promise.all([
+          prisma.event.groupBy({ by: ['sessionId'], where: { assignment: { experimentId: exp.id, variantId: v.id }, eventType: 'CART_OPENED' } }),
+          prisma.event.groupBy({ by: ['sessionId'], where: { assignment: { experimentId: exp.id, variantId: v.id }, eventType: 'CHECKOUT_CLICKED' } }),
+          prisma.event.groupBy({ by: ['sessionId'], where: { assignment: { experimentId: exp.id, variantId: v.id }, eventType: 'ORDER_COMPLETED' } }),
+        ]);
+        totalCartOpens = cartSessions.length;
+        totalCheckouts = checkoutSessions.length;
+        totalOrders = orderSessions.length;
+      }
+
+      // Visitors: use daily summaries if available, else count assignments
+      if (totalVisitors === 0) {
+        totalVisitors = await prisma.variantAssignment.count({
+          where: { experimentId: exp.id, variantId: v.id },
+        });
+      }
+
       return {
         ...v,
         stats: {
-          visitors: summaries.reduce((s, d) => s + d.uniqueVisitors, 0),
+          visitors: totalVisitors,
           cartOpens: totalCartOpens,
           checkouts: totalCheckouts,
           orders: totalOrders,
@@ -39,7 +60,24 @@ export async function GET(
           checkoutRate: totalCartOpens > 0 ? (totalCheckouts / totalCartOpens * 100).toFixed(1) : '0.0',
         },
       };
-    });
+    }));
+
+    // Build per-day breakdown grouped by date
+    const dailyByDate: Record<string, Record<string, any>> = {};
+    for (const s of exp.dailySummaries) {
+      const dateStr = new Date(s.date).toISOString().split('T')[0];
+      if (!dailyByDate[dateStr]) dailyByDate[dateStr] = {};
+      dailyByDate[dateStr][s.variantId] = {
+        cartOpens: s.cartOpens,
+        checkouts: s.checkoutClicks,
+        orders: s.ordersCompleted,
+        revenue: s.totalRevenue,
+        visitors: s.uniqueVisitors,
+      };
+    }
+    const dailyBreakdown = Object.entries(dailyByDate)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, byVariant]) => ({ date, variants: byVariant }));
 
     return {
       id: exp.id,
@@ -48,16 +86,17 @@ export async function GET(
       status: exp.status,
       variants: variantStats,
       winnerVariantId: exp.winnerVariantId,
-      confidence: exp.confidence,
+      confidence: Math.round((exp.confidence || 0) * 100) / 100,
       liftPercent: exp.liftPercent,
       startedAt: exp.startedAt,
       endedAt: exp.endedAt,
       durationDays,
-      notes: exp.notes || [],
+      notes: Array.isArray(exp.notes) ? exp.notes : buildNotesFromObject(exp.notes, exp.startedAt, exp.endedAt),
       tournament: exp.tournament || null,
-      totalVisitors: exp._count.assignments,
+      totalVisitors: variantStats.reduce((s, v) => s + v.stats.visitors, 0),
+      dailyBreakdown,
     };
-  });
+  }));
 
   // Summary stats
   const completed = enriched.filter(e => ['WINNER_FOUND', 'NO_DIFFERENCE', 'REVERTED'].includes(e.status));
@@ -77,4 +116,19 @@ export async function GET(
       bestChange: bestChange ? { name: bestChange.name, lift: bestChange.liftPercent } : null,
     },
   });
+}
+
+function buildNotesFromObject(notes: any, startedAt: Date, endedAt: Date | null) {
+  if (!notes || typeof notes !== 'object') return [];
+  const timeline: Array<{ timestamp: string; type: string; detail: string }> = [];
+  timeline.push({ timestamp: new Date(startedAt).toISOString(), type: 'start', detail: 'Experiment started' });
+  if (notes.endReason) {
+    timeline.push({ timestamp: endedAt ? new Date(endedAt).toISOString() : new Date().toISOString(), type: 'end', detail: notes.endReason });
+  } else if (endedAt) {
+    timeline.push({ timestamp: new Date(endedAt).toISOString(), type: 'end', detail: 'Experiment ended' });
+  }
+  if (notes.consistency !== undefined) {
+    timeline.push({ timestamp: endedAt ? new Date(endedAt).toISOString() : new Date().toISOString(), type: 'info', detail: 'Consistency score: ' + (notes.consistency * 100).toFixed(0) + '%' });
+  }
+  return timeline;
 }

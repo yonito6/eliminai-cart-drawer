@@ -265,6 +265,15 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      // Count unique visitors (assignments created yesterday for this variant)
+      const dailyVisitors = await prisma.variantAssignment.count({
+        where: {
+          experimentId: exp.id,
+          variantId: v.id,
+          assignedAt: { gte: yesterday, lt: today },
+        },
+      });
+
       await prisma.dailySummary.upsert({
         where: {
           experimentId_variantId_date: {
@@ -282,11 +291,13 @@ export async function POST(req: NextRequest) {
           cartOpens: dailyOpenSessions.length,
           checkoutClicks: dailyCheckoutSessions.length,
           ordersCompleted: dailyOrderSessions.length,
+          uniqueVisitors: dailyVisitors,
         },
         update: {
           cartOpens: dailyOpenSessions.length,
           checkoutClicks: dailyCheckoutSessions.length,
           ordersCompleted: dailyOrderSessions.length,
+          uniqueVisitors: dailyVisitors,
         },
       });
     }
