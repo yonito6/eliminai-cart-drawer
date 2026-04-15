@@ -140,8 +140,11 @@ export async function POST(req: NextRequest) {
 
     // Calculate smart sample target based on observed purchase rate
     const totalObs = variantStats.reduce((s, v) => s + v.successes + v.failures, 0);
-    const observedPurchaseRate = totalObs > 0
-      ? variantStats.reduce((s, v) => s + v.successes, 0) / totalObs
+    const totalSuccesses = variantStats.reduce((s, v) => s + v.successes, 0);
+    // Use observed rate when we have orders, otherwise assume 3% (typical Shopify store)
+    // Without this, 0 orders → 0% rate → sample target explodes to 6000+
+    const observedPurchaseRate = totalSuccesses > 0
+      ? totalSuccesses / totalObs
       : 0.03;
     const sampleTarget = calculateSampleTarget(observedPurchaseRate, variants.length);
     const adjustedTarget = Math.ceil(sampleTarget.nPerVariant * consistency.multiplier);

@@ -12,6 +12,7 @@ export async function GET(
     orderBy: { startedAt: 'desc' },
     include: {
       _count: { select: { assignments: true } },
+      dailySummaries: true,
     },
   });
 
@@ -60,7 +61,9 @@ export async function GET(
       // Smart sample target based on observed purchase rate (orders/cart-opens)
       const totalCartOpens = variantStats.reduce((s: number, v: any) => s + v.cartOpens, 0);
       const totalOrders = variantStats.reduce((s: number, v: any) => s + v.orders, 0);
-      const observedPurchaseRate = totalCartOpens > 0 ? totalOrders / totalCartOpens : 0.03;
+      // Use observed rate when we have orders, otherwise assume 3% (typical Shopify store)
+      // Without this, 0 orders → 0% rate → sample target explodes to 6000+
+      const observedPurchaseRate = totalOrders > 0 ? totalOrders / totalCartOpens : 0.03;
 
       // Get stored notes for daily leaders + consistency
       const expNotes = (exp as any).notes || {};
@@ -70,6 +73,18 @@ export async function GET(
       // Smart sample target with consistency multiplier
       const sampleTarget = calculateSampleTarget(observedPurchaseRate, variants.length);
       const adjustedTargetPerVariant = Math.ceil(sampleTarget.nPerVariant * consistency.multiplier);
+
+      // Dynamic order target — derived from store's conversion rate
+      const targetOrdersPerVariant = Math.max(25, Math.ceil(sampleTarget.nPerVariant * Math.max(0.005, observedPurchaseRate)));
+      const adjustedOrderTarget = Math.ceil(targetOrdersPerVariant * consistency.multiplier);
+      const minOrdersAcrossVariants = Math.min(...variantStats.map((v: any) => v.orders));
+      const dataMaturity = Math.min(1.0, minOrdersAcrossVariants / adjustedOrderTarget);
+
+      // Current detectable lift — what can we see right now?
+      const currentN = Math.min(...variantStats.map((v: any) => v.cartOpens)) || 1;
+      const p1 = Math.max(0.005, Math.min(observedPurchaseRate, 0.50));
+      const currentDelta = Math.sqrt(6.175 * 2 * p1 * (1 - p1) / currentN);
+      const currentDetectableLift = p1 > 0 ? Math.min((currentDelta / p1) * 100, 999) : 999;
 
       // Legacy field for backward compat
       const clampedMin = adjustedTargetPerVariant;
@@ -93,6 +108,38 @@ export async function GET(
         segmentStats[sb.segment] = sb._count;
       }
 
+      // Build per-day breakdown from LIVE events (not dailySummaries — cron can miss days)
+      const dailyByDate: Record<string, Record<string, any>> = {};
+      for (const v of variants) {
+        // Get all events for this variant, grouped by date
+        const events = await prisma.event.findMany({
+          where: { assignment: { experimentId: exp.id, variantId: (v as any).id } },
+          select: { eventType: true, sessionId: true, createdAt: true },
+        });
+        // Group by date, then deduplicate by sessionId per eventType
+        const byDate: Record<string, { opens: Set<string>; checkouts: Set<string>; orders: Set<string> }> = {};
+        for (const e of events) {
+          const dateStr = e.createdAt.toISOString().split('T')[0];
+          if (!byDate[dateStr]) byDate[dateStr] = { opens: new Set(), checkouts: new Set(), orders: new Set() };
+          if (e.eventType === 'CART_OPENED') byDate[dateStr].opens.add(e.sessionId);
+          else if (e.eventType === 'CHECKOUT_CLICKED') byDate[dateStr].checkouts.add(e.sessionId);
+          else if (e.eventType === 'ORDER_COMPLETED') byDate[dateStr].orders.add(e.sessionId);
+        }
+        for (const [dateStr, sets] of Object.entries(byDate)) {
+          if (!dailyByDate[dateStr]) dailyByDate[dateStr] = {};
+          dailyByDate[dateStr][(v as any).id] = {
+            cartOpens: sets.opens.size,
+            checkouts: sets.checkouts.size,
+            orders: sets.orders.size,
+            revenue: 0,
+            visitors: sets.opens.size,
+          };
+        }
+      }
+      const dailyBreakdown = Object.entries(dailyByDate)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, byVariant]) => ({ date, variants: byVariant }));
+
       return {
         id: exp.id,
         name: exp.name,
@@ -108,17 +155,22 @@ export async function GET(
         endedAt: exp.endedAt,
         variantStats,
         segmentStats,
+        dailyBreakdown,
         explorationMinPerVariant: clampedMin,
         // Smart sample size fields
         sampleTargetPerVariant: adjustedTargetPerVariant,
         sampleTargetTotal: adjustedTargetPerVariant * variants.length,
-        minOrdersPerVariant: 25,
+        minOrdersPerVariant: adjustedOrderTarget,
         baselinePurchaseRate: observedPurchaseRate,
         // Consistency fields
         dailyLeaders,
         consistency: consistency.score,
         consistencyMultiplier: consistency.multiplier,
         consistencyMessage: consistency.message,
+        // ── Smooth dampening fields (new) ──
+        dataMaturity,
+        targetOrdersPerVariant: adjustedOrderTarget,
+        currentDetectableLift,
       };
     })
   );
