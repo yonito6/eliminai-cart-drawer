@@ -403,7 +403,7 @@ export async function POST(
 
     if (desired.length > 0) {
       // Create ONE single BXGY discount for ALL gift products.
-      // Shopify BXGY discounts consume items — separate discounts per gift
+      // Shopify BXGY discounts consume items â€” separate discounts per gift
       // block each other at checkout. This is the only working pattern.
       const gids = await ensureAllProductGids();
       const giftProductGids = desired.map(w => w.productGid);
