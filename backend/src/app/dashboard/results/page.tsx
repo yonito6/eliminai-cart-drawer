@@ -49,13 +49,13 @@ interface Summary {
   bestChange: { name: string; lift: number } | null;
 }
 
-const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }> = {
-  RUNNING: { bg: '#ede9fe', color: '#7c3aed', label: 'Running' },
-  WINNER_FOUND: { bg: '#dcfce7', color: '#16a34a', label: 'Winner' },
-  NO_DIFFERENCE: { bg: '#f3f4f6', color: '#6b7280', label: 'No Diff' },
-  REVERTED: { bg: '#fef2f2', color: '#dc2626', label: 'Reverted' },
-  PAUSED: { bg: '#fef3c7', color: '#d97706', label: 'Paused' },
-  INVALIDATED: { bg: '#fef2f2', color: '#dc2626', label: 'Invalid' },
+const STATUS_BADGE: Record<string, { bg: string; color: string; label: string; glow?: string }> = {
+  RUNNING: { bg: 'rgba(124,58,237,0.12)', color: '#7c3aed', label: 'Running', glow: '0 0 12px rgba(124,58,237,0.25)' },
+  WINNER_FOUND: { bg: 'rgba(22,163,106,0.12)', color: '#16a34a', label: 'Winner Found', glow: '0 0 12px rgba(22,163,106,0.2)' },
+  NO_DIFFERENCE: { bg: 'rgba(107,114,128,0.1)', color: '#6b7280', label: 'No Difference' },
+  REVERTED: { bg: 'rgba(220,38,38,0.1)', color: '#dc2626', label: 'Reverted' },
+  PAUSED: { bg: 'rgba(217,119,6,0.1)', color: '#d97706', label: 'Paused' },
+  INVALIDATED: { bg: 'rgba(220,38,38,0.1)', color: '#dc2626', label: 'Invalid' },
 };
 
 const SLOT_LABELS: Record<string, { label: string; icon: string }> = {
@@ -69,15 +69,53 @@ const SLOT_LABELS: Record<string, { label: string; icon: string }> = {
   recentlyViewed: { label: 'Recently Viewed', icon: '\uD83D\uDC41\uFE0F' },
 };
 
+/* ── Google Font injection ────────────────────────────────────────── */
+function useFontLink() {
+  useEffect(() => {
+    if (document.getElementById('results-fonts')) return;
+    const link = document.createElement('link');
+    link.id = 'results-fonts';
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap';
+    document.head.appendChild(link);
+  }, []);
+}
+
+/* ── Shared style tokens ──────────────────────────────────────────── */
+const T = {
+  font: "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  mono: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
+  // colors
+  bg: '#f8f9fb',
+  surface: '#ffffff',
+  surfaceHover: '#fafbfc',
+  border: '#e8eaed',
+  borderLight: '#f0f1f3',
+  text: '#1a1d23',
+  textSecondary: '#5f6672',
+  textMuted: '#8b919d',
+  purple: '#7c3aed',
+  purpleBg: 'rgba(124,58,237,0.08)',
+  green: '#16a34a',
+  greenBg: 'rgba(22,163,106,0.08)',
+  radius: 14,
+  radiusSm: 10,
+};
+
 export default function ResultsPageWrapper() {
   return (
-    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 15 }}>Loading history...</div>}>
+    <Suspense fallback={
+      <div style={{ padding: 60, textAlign: 'center', color: T.textMuted, fontSize: 16, fontFamily: T.font }}>
+        Loading history...
+      </div>
+    }>
       <ResultsPage />
     </Suspense>
   );
 }
 
 function ResultsPage() {
+  useFontLink();
   const { storeId, loading: storeLoading, error: storeError } = useStore();
   const [experiments, setExperiments] = useState<ExperimentRecord[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -97,11 +135,17 @@ function ResultsPage() {
       .finally(() => setLoading(false));
   }, [storeId]);
 
-  if (storeLoading) return <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 15 }}>Loading store...</div>;
-  if (storeError || !storeId) return <div style={{ padding: 40, textAlign: 'center', color: '#dc2626', fontSize: 15 }}>Store not found.</div>;
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 15 }}>Loading history...</div>;
+  if (storeLoading || loading) return (
+    <div style={{ padding: 80, textAlign: 'center', fontFamily: T.font }}>
+      <div style={{ fontSize: 18, color: T.textMuted, fontWeight: 400 }}>Loading results...</div>
+    </div>
+  );
+  if (storeError || !storeId) return (
+    <div style={{ padding: 80, textAlign: 'center', fontFamily: T.font }}>
+      <div style={{ fontSize: 18, color: '#dc2626', fontWeight: 500 }}>Store not found.</div>
+    </div>
+  );
 
-  // Group experiments by slot (addon category)
   const slotGroups: Record<string, ExperimentRecord[]> = {};
   for (const exp of experiments) {
     const slot = exp.slot || 'other';
@@ -109,7 +153,6 @@ function ResultsPage() {
     slotGroups[slot].push(exp);
   }
 
-  // Sort slots: ones with running tests first, then by most recent test
   const sortedSlots = Object.entries(slotGroups).sort(([, a], [, b]) => {
     const aRunning = a.some(e => e.status === 'RUNNING') ? 1 : 0;
     const bRunning = b.some(e => e.status === 'RUNNING') ? 1 : 0;
@@ -127,320 +170,440 @@ function ResultsPage() {
   };
 
   return (
-    <div style={{ padding: 28, maxWidth: 1100, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: '#111827', marginBottom: 6 }}>Test History</h1>
-        <p style={{ fontSize: 15, color: '#6b7280', margin: 0 }}>
-          All A/B tests organized by feature. Click any test to see full details.
+    <div style={{ padding: '36px 32px 60px', maxWidth: 1160, margin: '0 auto', fontFamily: T.font, background: T.bg, minHeight: '100vh' }}>
+
+      {/* ── Page Header ──────────────────────────────────────── */}
+      <div style={{ marginBottom: 32 }}>
+        <h1 style={{
+          fontSize: 32, fontWeight: 700, color: T.text, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2,
+        }}>
+          Test Results
+        </h1>
+        <p style={{ fontSize: 16, color: T.textSecondary, margin: '8px 0 0', lineHeight: 1.5, fontWeight: 400 }}>
+          A/B test performance organized by feature. Click any test for detailed breakdown.
         </p>
       </div>
 
-      {/* Summary Cards */}
+      {/* ── Summary Cards ────────────────────────────────────── */}
       {summary && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
           {[
-            { label: 'Total Tests', value: String(summary.totalTests), color: '#111827' },
-            { label: 'Active Now', value: String(summary.activeTests), color: '#7c3aed' },
-            { label: 'Win Rate', value: summary.winRate + '%', color: '#111827' },
-            { label: 'Cumulative Lift', value: '+' + summary.cumulativeLift + '%', color: '#16a34a' },
+            { label: 'Total Tests', value: String(summary.totalTests), sub: 'completed', color: T.text },
+            { label: 'Active Now', value: String(summary.activeTests), sub: 'running', color: T.purple },
+            { label: 'Win Rate', value: summary.winRate + '%', sub: 'of tests', color: T.text },
+            { label: 'Total Lift', value: '+' + summary.cumulativeLift + '%', sub: 'cumulative', color: T.green },
           ].map((card, i) => (
             <div key={i} style={{
-              background: '#fff', borderRadius: 12, padding: '18px 22px',
-              border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+              background: T.surface,
+              borderRadius: T.radius,
+              padding: '24px 26px',
+              border: `1px solid ${T.border}`,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
             }}>
-              <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</div>
-              <div style={{ fontSize: 30, fontWeight: 700, color: card.color, marginTop: 6 }}>{card.value}</div>
+              <div style={{
+                fontSize: 13, color: T.textMuted, fontWeight: 500,
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
+              }}>
+                {card.label}
+              </div>
+              <div style={{
+                fontSize: 36, fontWeight: 700, color: card.color,
+                lineHeight: 1.1, letterSpacing: '-0.02em', fontFamily: T.mono,
+              }}>
+                {card.value}
+              </div>
+              <div style={{ fontSize: 14, color: T.textMuted, marginTop: 4 }}>
+                {card.sub}
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Best Change callout */}
+      {/* ── Best Change Banner ───────────────────────────────── */}
       {summary?.bestChange && (
         <div style={{
-          marginBottom: 24, padding: '14px 18px', background: '#f0fdf4', border: '1px solid #bbf7d0',
-          borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12,
+          marginBottom: 28, padding: '18px 24px',
+          background: 'linear-gradient(135deg, rgba(22,163,106,0.06) 0%, rgba(22,163,106,0.02) 100%)',
+          border: `1px solid rgba(22,163,106,0.15)`,
+          borderRadius: T.radius, display: 'flex', alignItems: 'center', gap: 16,
         }}>
-          <span style={{ fontSize: 20 }}>{'\uD83C\uDFC6'}</span>
-          <div>
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>Best performing change: </span>
-            <span style={{ fontSize: 14, color: '#374151' }}>{summary.bestChange.name}</span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#16a34a', marginLeft: 8 }}>+{summary.bestChange.lift?.toFixed(1)}% lift</span>
+          <span style={{ fontSize: 28, lineHeight: 1 }}>{'\uD83C\uDFC6'}</span>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 16, fontWeight: 600, color: T.text }}>Best performing: </span>
+            <span style={{ fontSize: 16, color: T.textSecondary, fontWeight: 400 }}>{summary.bestChange.name}</span>
           </div>
+          <span style={{
+            fontSize: 20, fontWeight: 700, color: T.green, fontFamily: T.mono,
+          }}>
+            +{summary.bestChange.lift?.toFixed(1)}%
+          </span>
         </div>
       )}
 
-      {/* Empty state */}
+      {/* ── Empty State ──────────────────────────────────────── */}
       {sortedSlots.length === 0 && (
         <div style={{
-          padding: 60, textAlign: 'center', color: '#9ca3af', background: '#fff',
-          borderRadius: 12, border: '1px solid #e5e7eb',
+          padding: '80px 40px', textAlign: 'center', background: T.surface,
+          borderRadius: T.radius, border: `1px solid ${T.border}`,
         }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>{'\uD83E\uDDEA'}</div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#374151', marginBottom: 6 }}>No tests yet</div>
-          <div style={{ fontSize: 14 }}>Start an A/B test on any addon to see results here.</div>
+          <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.6 }}>{'\uD83E\uDDEA'}</div>
+          <div style={{ fontSize: 20, fontWeight: 600, color: T.text, marginBottom: 8 }}>No tests yet</div>
+          <div style={{ fontSize: 16, color: T.textMuted, maxWidth: 360, margin: '0 auto' }}>
+            Start an A/B test on any addon to see results here.
+          </div>
         </div>
       )}
 
-      {/* Tree: Grouped by Addon Slot */}
-      {sortedSlots.map(([slot, slotExps]) => {
-        const slotInfo = SLOT_LABELS[slot] || { label: slot, icon: '\uD83E\uDDEA' };
-        const isCollapsed = collapsedSlots.has(slot);
-        const hasRunning = slotExps.some(e => e.status === 'RUNNING');
-        const hasWinner = slotExps.some(e => e.status === 'WINNER_FOUND');
-        const totalTests = slotExps.length;
+      {/* ── Addon Groups (Tree) ──────────────────────────────── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {sortedSlots.map(([slot, slotExps]) => {
+          const slotInfo = SLOT_LABELS[slot] || { label: slot, icon: '\uD83E\uDDEA' };
+          const isCollapsed = collapsedSlots.has(slot);
+          const hasRunning = slotExps.some(e => e.status === 'RUNNING');
+          const totalTests = slotExps.length;
 
-        // Slot-level summary: best lift from winner tests
-        const winnerExps = slotExps.filter(e => e.status === 'WINNER_FOUND' && e.liftPercent && e.liftPercent > 0);
-        const bestLift = winnerExps.length > 0 ? Math.max(...winnerExps.map(e => e.liftPercent || 0)) : null;
+          const winnerExps = slotExps.filter(e => e.status === 'WINNER_FOUND' && e.liftPercent && e.liftPercent > 0);
+          const bestLift = winnerExps.length > 0 ? Math.max(...winnerExps.map(e => e.liftPercent || 0)) : null;
 
-        return (
-          <div key={slot} style={{ marginBottom: 16 }}>
-            {/* Slot Header (tree branch) */}
-            <div
-              onClick={() => toggleSlot(slot)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px',
-                background: hasRunning ? '#faf5ff' : '#fff',
-                border: hasRunning ? '1px solid #ddd6fe' : '1px solid #e5e7eb',
-                borderRadius: isCollapsed ? 12 : '12px 12px 0 0',
-                cursor: 'pointer', userSelect: 'none',
-                transition: 'all 0.15s',
-              }}
-            >
-              {/* Expand/collapse arrow */}
-              <span style={{
-                fontSize: 14, color: '#9ca3af', transition: 'transform 0.2s',
-                transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
-                fontFamily: 'monospace',
-              }}>{'\u25B6'}</span>
-
-              {/* Icon */}
-              <span style={{ fontSize: 20 }}>{slotInfo.icon}</span>
-
-              {/* Slot name + test count */}
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: '#111827' }}>{slotInfo.label}</div>
-                <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 1 }}>
-                  {totalTests} test{totalTests !== 1 ? 's' : ''}
-                  {hasRunning && <span style={{ color: '#7c3aed', fontWeight: 600, marginLeft: 8 }}>1 running</span>}
-                </div>
-              </div>
-
-              {/* Best lift badge */}
-              {bestLift !== null && (
-                <div style={{
-                  padding: '4px 12px', borderRadius: 8, fontSize: 13, fontWeight: 700,
-                  background: '#dcfce7', color: '#16a34a',
+          return (
+            <div key={slot} style={{
+              borderRadius: T.radius,
+              border: `1px solid ${hasRunning ? 'rgba(124,58,237,0.2)' : T.border}`,
+              background: T.surface,
+              boxShadow: hasRunning ? '0 0 0 1px rgba(124,58,237,0.05), 0 2px 8px rgba(124,58,237,0.06)' : '0 1px 3px rgba(0,0,0,0.04)',
+              overflow: 'hidden',
+            }}>
+              {/* ── Slot Header ────────────────────────────────── */}
+              <div
+                onClick={() => toggleSlot(slot)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 16, padding: '20px 24px',
+                  cursor: 'pointer', userSelect: 'none',
+                  borderBottom: isCollapsed ? 'none' : `1px solid ${T.borderLight}`,
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = T.surfaceHover)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                {/* Arrow */}
+                <svg width="12" height="12" viewBox="0 0 12 12" style={{
+                  transition: 'transform 0.2s ease',
+                  transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+                  flexShrink: 0,
                 }}>
-                  Best: +{bestLift.toFixed(0)}%
-                </div>
-              )}
+                  <path d="M4 2l4 4-4 4" fill="none" stroke={T.textMuted} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
 
-              {/* Status indicators */}
-              <div style={{ display: 'flex', gap: 4 }}>
-                {hasRunning && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#7c3aed', boxShadow: '0 0 0 3px #ede9fe' }} />}
-                {hasWinner && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a' }} />}
-              </div>
-            </div>
+                {/* Icon */}
+                <span style={{ fontSize: 26, lineHeight: 1 }}>{slotInfo.icon}</span>
 
-            {/* Tests under this slot */}
-            {!isCollapsed && (
-              <div style={{
-                border: hasRunning ? '1px solid #ddd6fe' : '1px solid #e5e7eb',
-                borderTop: 'none',
-                borderRadius: '0 0 12px 12px',
-                overflow: 'hidden',
-              }}>
-                {slotExps.map((exp, expIdx) => {
-                  const badge = STATUS_BADGE[exp.status] || { bg: '#f3f4f6', color: '#6b7280', label: exp.status };
-                  const isExpanded = expandedId === exp.id;
-
-                  const sortedByRate = [...exp.variants].sort((a, b) => {
-                    const rateA = a.stats.cartOpens > 0 ? a.stats.orders / a.stats.cartOpens * 100 : 0;
-                    const rateB = b.stats.cartOpens > 0 ? b.stats.orders / b.stats.cartOpens * 100 : 0;
-                    return rateB - rateA;
-                  });
-                  const topRate = sortedByRate[0]?.stats.cartOpens > 0 ? (sortedByRate[0].stats.orders / sortedByRate[0].stats.cartOpens * 100) : 0;
-                  const runnerRate = sortedByRate[1]?.stats.cartOpens > 0 ? (sortedByRate[1].stats.orders / sortedByRate[1].stats.cartOpens * 100) : 0;
-                  const observedLift = runnerRate > 0 ? ((topRate - runnerRate) / runnerRate * 100) : 0;
-
-                  // Extract dimension name from experiment name (after the dash)
-                  const dimensionName = exp.name.includes('\u2014') ? exp.name.split('\u2014')[1]?.trim() : exp.name;
-
-                  return (
-                    <div key={exp.id}>
-                      {/* Test row */}
-                      <div
-                        onClick={() => setExpandedId(isExpanded ? null : exp.id)}
-                        style={{
-                          padding: '14px 20px 14px 52px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 14,
-                          borderTop: expIdx > 0 ? '1px solid #f3f4f6' : 'none',
-                          background: isExpanded ? '#fafafa' : '#fff',
-                          transition: 'background 0.1s',
-                        }}
-                      >
-                        {/* Tree branch connector line */}
-                        <div style={{
-                          position: 'relative',
-                          width: 0, height: 0,
-                        }}>
-                          <div style={{
-                            position: 'absolute', left: -32, top: -7,
-                            width: 20, height: 1, background: '#d1d5db',
-                          }} />
-                        </div>
-
-                        {/* Status dot */}
-                        <div style={{
-                          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                          background: badge.color,
-                          boxShadow: exp.status === 'RUNNING' ? '0 0 0 3px ' + badge.bg : 'none',
+                {/* Slot info */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 19, fontWeight: 600, color: T.text, lineHeight: 1.3 }}>
+                    {slotInfo.label}
+                  </div>
+                  <div style={{ fontSize: 14, color: T.textMuted, marginTop: 3 }}>
+                    {totalTests} test{totalTests !== 1 ? 's' : ''}
+                    {hasRunning && (
+                      <span style={{
+                        color: T.purple, fontWeight: 600, marginLeft: 10,
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                      }}>
+                        <span style={{
+                          width: 7, height: 7, borderRadius: '50%', background: T.purple,
+                          display: 'inline-block', boxShadow: '0 0 6px rgba(124,58,237,0.4)',
                         }} />
+                        1 active
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-                        {/* Name + metadata */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 500, color: '#111827' }}>{dimensionName}</div>
-                          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                            {new Date(exp.startedAt).toLocaleDateString()}
-                            {exp.endedAt ? ' \u2192 ' + new Date(exp.endedAt).toLocaleDateString() : ' \u2192 ongoing'}
-                            {' \u00B7 '}{exp.durationDays}d
-                            {' \u00B7 '}{exp.totalVisitors.toLocaleString()} visitors
-                          </div>
-                        </div>
+                {/* Best lift pill */}
+                {bestLift !== null && (
+                  <div style={{
+                    padding: '6px 16px', borderRadius: 20, fontSize: 14, fontWeight: 700,
+                    background: T.greenBg, color: T.green, fontFamily: T.mono,
+                  }}>
+                    +{bestLift.toFixed(0)}%
+                  </div>
+                )}
+              </div>
 
-                        {/* Lift */}
-                        {observedLift > 0 && exp.variants.length >= 2 && (
+              {/* ── Tests under slot ───────────────────────────── */}
+              {!isCollapsed && (
+                <div>
+                  {slotExps.map((exp, expIdx) => {
+                    const badge = STATUS_BADGE[exp.status] || { bg: 'rgba(107,114,128,0.1)', color: '#6b7280', label: exp.status };
+                    const isExpanded = expandedId === exp.id;
+
+                    const sortedByRate = [...exp.variants].sort((a, b) => {
+                      const rateA = a.stats.cartOpens > 0 ? a.stats.orders / a.stats.cartOpens * 100 : 0;
+                      const rateB = b.stats.cartOpens > 0 ? b.stats.orders / b.stats.cartOpens * 100 : 0;
+                      return rateB - rateA;
+                    });
+                    const topRate = sortedByRate[0]?.stats.cartOpens > 0 ? (sortedByRate[0].stats.orders / sortedByRate[0].stats.cartOpens * 100) : 0;
+                    const runnerRate = sortedByRate[1]?.stats.cartOpens > 0 ? (sortedByRate[1].stats.orders / sortedByRate[1].stats.cartOpens * 100) : 0;
+                    const observedLift = runnerRate > 0 ? ((topRate - runnerRate) / runnerRate * 100) : 0;
+
+                    const dimensionName = exp.name.includes('\u2014') ? exp.name.split('\u2014')[1]?.trim() : exp.name;
+
+                    return (
+                      <div key={exp.id}>
+                        {/* ── Test Row ─────────────────────────── */}
+                        <div
+                          onClick={() => setExpandedId(isExpanded ? null : exp.id)}
+                          style={{
+                            padding: '18px 24px 18px 64px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 16,
+                            borderTop: expIdx > 0 ? `1px solid ${T.borderLight}` : 'none',
+                            background: isExpanded ? '#fafbfd' : T.surface,
+                            transition: 'background 0.12s',
+                            position: 'relative',
+                          }}
+                          onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.background = T.surfaceHover; }}
+                          onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = T.surface; }}
+                        >
+                          {/* Tree connector */}
                           <div style={{
-                            fontSize: 14, fontWeight: 700,
-                            color: exp.status === 'WINNER_FOUND' ? '#16a34a' : '#7c3aed',
-                          }}>
-                            +{observedLift.toFixed(0)}%
-                          </div>
-                        )}
+                            position: 'absolute', left: 40, top: '50%',
+                            width: 14, height: 1, background: T.borderLight,
+                          }} />
+                          <div style={{
+                            position: 'absolute', left: 40, top: 0,
+                            width: 1, height: expIdx === slotExps.length - 1 ? '50%' : '100%',
+                            background: T.borderLight,
+                          }} />
 
-                        {/* Badge */}
-                        <span style={{
-                          padding: '3px 10px', borderRadius: 8, fontSize: 11, fontWeight: 600,
-                          background: badge.bg, color: badge.color,
-                          textTransform: 'uppercase', letterSpacing: '0.03em',
-                        }}>
-                          {badge.label}
-                        </span>
+                          {/* Status dot */}
+                          <div style={{
+                            width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+                            background: badge.color,
+                            boxShadow: badge.glow || 'none',
+                          }} />
 
-                        {/* Chevron */}
-                        <span style={{
-                          fontSize: 14, color: '#9ca3af', transition: 'transform 0.2s',
-                          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                        }}>{'\u203A'}</span>
-                      </div>
-
-                      {/* Expanded test details */}
-                      {isExpanded && (
-                        <div style={{ padding: '0 20px 20px 52px', background: '#fafafa', borderTop: '1px solid #f0f0f0' }}>
-                          {/* Variant comparison cards */}
-                          <div style={{ display: 'flex', gap: 12, marginTop: 16, marginBottom: 16 }}>
-                            {exp.variants.map(v => {
-                              const isWinner = v.id === exp.winnerVariantId;
-                              const purchaseRate = v.stats.cartOpens > 0 ? (v.stats.orders / v.stats.cartOpens * 100).toFixed(1) : '0.0';
-                              return (
-                                <div key={v.id} style={{
-                                  flex: 1, padding: 16, borderRadius: 12,
-                                  background: isWinner ? '#f0fdf4' : '#fff',
-                                  border: isWinner ? '2px solid #86efac' : '1px solid #e5e7eb',
-                                }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                    <span style={{ fontWeight: 600, fontSize: 14, color: '#111827' }}>{v.label || v.name}</span>
-                                    {isWinner && (
-                                      <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '3px 10px', borderRadius: 8 }}>
-                                        WINNER
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px 12px' }}>
-                                    <StatCell label="Visitors" value={v.stats.visitors.toLocaleString()} />
-                                    <StatCell label="Cart Opens" value={v.stats.cartOpens.toLocaleString()} />
-                                    <StatCell label="Checkouts" value={v.stats.checkouts.toLocaleString()} />
-                                    <StatCell label="Orders" value={v.stats.orders.toLocaleString()} />
-                                    <StatCell label="Purchase Rate" value={purchaseRate + '%'} bold color={isWinner ? '#16a34a' : '#374151'} />
-                                    <StatCell label="Checkout Rate" value={v.stats.checkoutRate + '%'} />
-                                  </div>
-                                </div>
-                              );
-                            })}
+                          {/* Name + metadata */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 16, fontWeight: 600, color: T.text, lineHeight: 1.3 }}>
+                              {dimensionName}
+                            </div>
+                            <div style={{ fontSize: 14, color: T.textMuted, marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <span>{new Date(exp.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                              <span style={{ color: T.borderLight }}>|</span>
+                              <span>{exp.durationDays} day{exp.durationDays !== 1 ? 's' : ''}</span>
+                              <span style={{ color: T.borderLight }}>|</span>
+                              <span style={{ fontFamily: T.mono, fontSize: 13 }}>{exp.totalVisitors.toLocaleString()} visitors</span>
+                            </div>
                           </div>
 
-                          {/* Lift banner */}
+                          {/* Lift indicator */}
                           {observedLift > 0 && exp.variants.length >= 2 && (
                             <div style={{
-                              padding: '14px 18px', borderRadius: 12, textAlign: 'center', marginBottom: 16,
-                              background: exp.status === 'WINNER_FOUND' ? '#f0fdf4' : '#f5f3ff',
-                              border: '1px solid ' + (exp.status === 'WINNER_FOUND' ? '#bbf7d0' : '#ddd6fe'),
+                              fontSize: 18, fontWeight: 700, fontFamily: T.mono,
+                              color: exp.status === 'WINNER_FOUND' ? T.green : T.purple,
                             }}>
-                              <div style={{ fontSize: 22, fontWeight: 700, color: exp.status === 'WINNER_FOUND' ? '#16a34a' : '#7c3aed' }}>
-                                +{observedLift.toFixed(1)}% purchase rate lift
-                              </div>
-                              <div style={{ fontSize: 14, color: '#6b7280', marginTop: 4 }}>
-                                {(sortedByRate[0]?.label || sortedByRate[0]?.name || 'A')} at {topRate.toFixed(1)}% vs {runnerRate.toFixed(1)}%
-                              </div>
+                              +{observedLift.toFixed(1)}%
                             </div>
                           )}
 
-                          {/* Confidence */}
-                          <div style={{ display: 'flex', gap: 20, fontSize: 14, color: '#6b7280', marginBottom: 14 }}>
-                            <span>Confidence: <strong style={{ color: '#374151' }}>{typeof exp.confidence === 'number' && exp.confidence < 1 ? (exp.confidence * 100).toFixed(1) : exp.confidence}%</strong></span>
-                            {exp.endedAt && <span>Ended: <strong style={{ color: '#374151' }}>{new Date(exp.endedAt).toLocaleDateString()}</strong></span>}
-                          </div>
+                          {/* Status badge */}
+                          <span style={{
+                            padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                            background: badge.bg, color: badge.color,
+                            letterSpacing: '0.03em', whiteSpace: 'nowrap',
+                          }}>
+                            {badge.label}
+                          </span>
 
-                          {/* Daily chart */}
-                          {exp.dailyBreakdown && exp.dailyBreakdown.length > 0 && (
-                            <DailyBreakdown daily={exp.dailyBreakdown} variants={exp.variants} winnerVariantId={exp.winnerVariantId} />
-                          )}
-
-                          {/* Timeline */}
-                          {exp.notes.length > 0 && (
-                            <div style={{ marginTop: 14 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Timeline</div>
-                              {exp.notes.map((note, i) => (
-                                <div key={i} style={{
-                                  display: 'flex', gap: 10, fontSize: 13, padding: '6px 0',
-                                  borderBottom: i < exp.notes.length - 1 ? '1px solid #f3f4f6' : 'none',
-                                }}>
-                                  <span style={{ color: '#9ca3af', minWidth: 80, flexShrink: 0 }}>{new Date(note.timestamp).toLocaleDateString()}</span>
-                                  <span style={{ color: '#374151' }}>{note.detail}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          {/* Chevron */}
+                          <svg width="10" height="10" viewBox="0 0 10 10" style={{
+                            transition: 'transform 0.2s ease',
+                            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                            flexShrink: 0,
+                          }}>
+                            <path d="M3 1.5l3.5 3.5L3 8.5" fill="none" stroke={T.textMuted} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
+
+                        {/* ── Expanded Details ─────────────────── */}
+                        {isExpanded && (
+                          <div style={{
+                            padding: '0 24px 28px 64px',
+                            background: '#fafbfd',
+                            borderTop: `1px solid ${T.borderLight}`,
+                          }}>
+                            {/* Variant comparison cards */}
+                            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${exp.variants.length}, 1fr)`, gap: 16, marginTop: 24, marginBottom: 20 }}>
+                              {exp.variants.map(v => {
+                                const isWinner = v.id === exp.winnerVariantId;
+                                const purchaseRate = v.stats.cartOpens > 0 ? (v.stats.orders / v.stats.cartOpens * 100).toFixed(2) : '0.00';
+                                return (
+                                  <div key={v.id} style={{
+                                    padding: '22px 24px', borderRadius: T.radiusSm,
+                                    background: isWinner ? 'linear-gradient(135deg, rgba(22,163,106,0.04) 0%, rgba(22,163,106,0.01) 100%)' : T.surface,
+                                    border: isWinner ? '2px solid rgba(22,163,106,0.25)' : `1px solid ${T.border}`,
+                                    boxShadow: isWinner ? '0 2px 8px rgba(22,163,106,0.06)' : '0 1px 2px rgba(0,0,0,0.03)',
+                                  }}>
+                                    {/* Variant header */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                                      <span style={{ fontWeight: 600, fontSize: 17, color: T.text }}>
+                                        {v.label || v.name}
+                                      </span>
+                                      {isWinner && (
+                                        <span style={{
+                                          fontSize: 11, fontWeight: 700, color: T.green,
+                                          background: T.greenBg, padding: '4px 12px', borderRadius: 16,
+                                          letterSpacing: '0.05em', textTransform: 'uppercase',
+                                        }}>
+                                          Winner
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Stats grid */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '18px 16px' }}>
+                                      <StatCell label="Visitors" value={v.stats.visitors.toLocaleString()} />
+                                      <StatCell label="Cart Opens" value={v.stats.cartOpens.toLocaleString()} />
+                                      <StatCell label="Checkouts" value={v.stats.checkouts.toLocaleString()} />
+                                      <StatCell label="Orders" value={v.stats.orders.toLocaleString()} />
+                                      <StatCell
+                                        label="Purchase Rate"
+                                        value={purchaseRate + '%'}
+                                        highlight
+                                        color={isWinner ? T.green : T.purple}
+                                      />
+                                      <StatCell label="Checkout Rate" value={v.stats.checkoutRate + '%'} />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Lift banner */}
+                            {observedLift > 0 && exp.variants.length >= 2 && (
+                              <div style={{
+                                padding: '20px 24px', borderRadius: T.radiusSm, textAlign: 'center', marginBottom: 20,
+                                background: exp.status === 'WINNER_FOUND'
+                                  ? 'linear-gradient(135deg, rgba(22,163,106,0.06) 0%, rgba(22,163,106,0.02) 100%)'
+                                  : 'linear-gradient(135deg, rgba(124,58,237,0.06) 0%, rgba(124,58,237,0.02) 100%)',
+                                border: '1px solid ' + (exp.status === 'WINNER_FOUND' ? 'rgba(22,163,106,0.15)' : 'rgba(124,58,237,0.15)'),
+                              }}>
+                                <div style={{
+                                  fontSize: 28, fontWeight: 700, fontFamily: T.mono, letterSpacing: '-0.02em',
+                                  color: exp.status === 'WINNER_FOUND' ? T.green : T.purple,
+                                }}>
+                                  +{observedLift.toFixed(1)}%
+                                </div>
+                                <div style={{ fontSize: 15, color: T.textSecondary, marginTop: 6 }}>
+                                  purchase rate lift &mdash; {sortedByRate[0]?.label || sortedByRate[0]?.name || 'A'} at {topRate.toFixed(2)}% vs {runnerRate.toFixed(2)}%
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Confidence + metadata */}
+                            <div style={{
+                              display: 'flex', gap: 28, fontSize: 15, color: T.textSecondary, marginBottom: 20,
+                              padding: '14px 0', borderTop: `1px solid ${T.borderLight}`, borderBottom: `1px solid ${T.borderLight}`,
+                            }}>
+                              <span>
+                                Confidence:{' '}
+                                <strong style={{ color: T.text, fontFamily: T.mono }}>
+                                  {typeof exp.confidence === 'number' && exp.confidence < 1
+                                    ? (exp.confidence * 100).toFixed(1) : exp.confidence}%
+                                </strong>
+                              </span>
+                              {exp.endedAt && (
+                                <span>
+                                  Ended:{' '}
+                                  <strong style={{ color: T.text }}>
+                                    {new Date(exp.endedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </strong>
+                                </span>
+                              )}
+                              <span>
+                                Duration:{' '}
+                                <strong style={{ color: T.text }}>{exp.durationDays} days</strong>
+                              </span>
+                            </div>
+
+                            {/* Daily chart */}
+                            {exp.dailyBreakdown && exp.dailyBreakdown.length > 0 && (
+                              <DailyBreakdown daily={exp.dailyBreakdown} variants={exp.variants} winnerVariantId={exp.winnerVariantId} />
+                            )}
+
+                            {/* Timeline */}
+                            {exp.notes.length > 0 && (
+                              <div style={{ marginTop: 20 }}>
+                                <div style={{
+                                  fontSize: 13, fontWeight: 600, color: T.textMuted,
+                                  textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12,
+                                }}>
+                                  Timeline
+                                </div>
+                                {exp.notes.map((note, i) => (
+                                  <div key={i} style={{
+                                    display: 'flex', gap: 14, fontSize: 14, padding: '10px 0',
+                                    borderBottom: i < exp.notes.length - 1 ? `1px solid ${T.borderLight}` : 'none',
+                                    alignItems: 'baseline',
+                                  }}>
+                                    <span style={{
+                                      color: T.textMuted, minWidth: 100, flexShrink: 0,
+                                      fontFamily: T.mono, fontSize: 13,
+                                    }}>
+                                      {new Date(note.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                    </span>
+                                    <span style={{ color: T.textSecondary }}>{note.detail}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function StatCell({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) {
+/* ── Stat Cell ────────────────────────────────────────────────────── */
+
+function StatCell({ label, value, highlight, color }: {
+  label: string; value: string; highlight?: boolean; color?: string;
+}) {
   return (
     <div>
-      <div style={{ color: '#9ca3af', fontSize: 12, marginBottom: 2 }}>{label}</div>
-      <div style={{ fontWeight: bold ? 700 : 600, fontSize: 14, color: color || '#374151' }}>{value}</div>
+      <div style={{
+        color: T.textMuted, fontSize: 12, marginBottom: 4, fontWeight: 500,
+        textTransform: 'uppercase', letterSpacing: '0.04em',
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontWeight: highlight ? 700 : 600,
+        fontSize: highlight ? 22 : 18,
+        color: color || T.text,
+        fontFamily: T.mono,
+        letterSpacing: '-0.01em',
+        lineHeight: 1.2,
+      }}>
+        {value}
+      </div>
     </div>
   );
 }
 
-/* ── Daily Breakdown Chart ─────────────────────────────────────────── */
+/* ── Daily Breakdown Chart ────────────────────────────────────────── */
 
 const VARIANT_COLORS = ['#7c3aed', '#f59e0b', '#06b6d4', '#ec4899', '#10b981', '#f97316'];
 
@@ -467,24 +630,31 @@ function DailyBreakdown({ daily, variants, winnerVariantId }: {
   const allValues = series.flatMap(s => s.points);
   const maxVal = Math.max(...allValues, 1);
   const dayCount = daily.length;
-  const W = 600, H = 220, padL = 44, padR = 16, padT = 16, padB = 32;
+  const W = 640, H = 240, padL = 52, padR = 20, padT = 20, padB = 36;
   const chartW = W - padL - padR;
   const chartH = H - padT - padB;
-  function x(i: number) { return padL + (dayCount > 1 ? (i / (dayCount - 1)) * chartW : chartW / 2); }
-  function y(val: number) { return padT + chartH - (val / maxVal) * chartH; }
+  function xPos(i: number) { return padL + (dayCount > 1 ? (i / (dayCount - 1)) * chartW : chartW / 2); }
+  function yPos(val: number) { return padT + chartH - (val / maxVal) * chartH; }
   const yTicks = Array.from({ length: 5 }, (_, i) => (maxVal / 4) * i);
 
   return (
-    <div style={{ marginTop: 16, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Daily Performance</div>
-        <div style={{ display: 'flex', gap: 6 }}>
+    <div>
+      {/* Header + metric toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{
+          fontSize: 13, fontWeight: 600, color: T.textMuted,
+          textTransform: 'uppercase', letterSpacing: '0.06em',
+        }}>
+          Daily Performance
+        </div>
+        <div style={{ display: 'flex', gap: 4, background: '#f3f4f6', borderRadius: 8, padding: 3 }}>
           {(['purchaseRate', 'cartOpens', 'orders'] as const).map(m => (
             <button key={m} onClick={() => setMetric(m)} style={{
-              padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-              border: metric === m ? '1px solid #7c3aed' : '1px solid #e5e7eb',
-              background: metric === m ? '#ede9fe' : '#fff',
-              color: metric === m ? '#7c3aed' : '#6b7280',
+              padding: '6px 14px', borderRadius: 6, fontSize: 13, fontWeight: 500,
+              cursor: 'pointer', border: 'none', transition: 'all 0.15s',
+              background: metric === m ? T.surface : 'transparent',
+              color: metric === m ? T.purple : T.textMuted,
+              boxShadow: metric === m ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
             }}>
               {m === 'purchaseRate' ? 'Rate' : m === 'orders' ? 'Orders' : 'Cart Opens'}
             </button>
@@ -492,70 +662,123 @@ function DailyBreakdown({ daily, variants, winnerVariantId }: {
         </div>
       </div>
 
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: '10px 0', overflow: 'hidden' }}>
+      {/* Chart */}
+      <div style={{
+        background: T.surface, borderRadius: T.radiusSm,
+        border: `1px solid ${T.border}`, padding: '14px 8px 8px', overflow: 'hidden',
+      }}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+          {/* Grid lines */}
           {yTicks.map((tick, i) => (
             <g key={i}>
-              <line x1={padL} y1={y(tick)} x2={W - padR} y2={y(tick)} stroke="#e5e7eb" strokeWidth={0.5} />
-              <text x={padL - 8} y={y(tick) + 4} textAnchor="end" fontSize={10} fill="#9ca3af">
+              <line x1={padL} y1={yPos(tick)} x2={W - padR} y2={yPos(tick)} stroke={T.borderLight} strokeWidth={0.8} />
+              <text x={padL - 10} y={yPos(tick) + 4} textAnchor="end" fontSize={11} fill={T.textMuted} fontFamily="'JetBrains Mono', monospace">
                 {metric === 'purchaseRate' ? tick.toFixed(1) + '%' : Math.round(tick)}
               </text>
             </g>
           ))}
+          {/* Data lines */}
           {series.map(s => (
             <g key={s.id}>
-              <polyline fill="none" stroke={s.color} strokeWidth={s.isWinner ? 2.5 : 1.5} strokeLinejoin="round" strokeLinecap="round"
-                points={s.points.map((val, i) => `${x(i)},${y(val)}`).join(' ')} />
+              {/* Area fill */}
+              <path
+                fill={s.color}
+                fillOpacity={0.04}
+                d={`M ${s.points.map((val, i) => `${xPos(i)},${yPos(val)}`).join(' L ')} L ${xPos(dayCount - 1)},${padT + chartH} L ${xPos(0)},${padT + chartH} Z`}
+              />
+              <polyline fill="none" stroke={s.color} strokeWidth={s.isWinner ? 2.5 : 2} strokeLinejoin="round" strokeLinecap="round"
+                points={s.points.map((val, i) => `${xPos(i)},${yPos(val)}`).join(' ')} />
               {s.points.map((val, i) => (
-                <circle key={i} cx={x(i)} cy={y(val)} r={s.isWinner ? 4 : 3} fill={s.color} />
+                <circle key={i} cx={xPos(i)} cy={yPos(val)} r={s.isWinner ? 4.5 : 3.5} fill={s.color} stroke={T.surface} strokeWidth={2} />
               ))}
             </g>
           ))}
+          {/* X axis labels */}
           {daily.map((d, i) => {
             const step = Math.max(1, Math.ceil(dayCount / 10));
             if (i % step !== 0 && i !== dayCount - 1) return null;
             const label = new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            return <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize={10} fill="#9ca3af">{label}</text>;
+            return (
+              <text key={i} x={xPos(i)} y={H - 8} textAnchor="middle" fontSize={11} fill={T.textMuted}
+                fontFamily="'DM Sans', sans-serif">
+                {label}
+              </text>
+            );
           })}
         </svg>
-        <div style={{ display: 'flex', gap: 16, justifyContent: 'center', padding: '8px 12px 4px', flexWrap: 'wrap' }}>
+
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 20, justifyContent: 'center', padding: '12px 12px 6px', flexWrap: 'wrap' }}>
           {series.map(s => (
-            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#374151' }}>
-              <div style={{ width: 12, height: 3, borderRadius: 2, background: s.color, flexShrink: 0 }} />
-              <span style={{ fontWeight: s.isWinner ? 700 : 400 }}>{s.name}</span>
-              {s.isWinner && <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 700 }}>W</span>}
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: T.textSecondary }}>
+              <div style={{
+                width: 14, height: 4, borderRadius: 2, background: s.color, flexShrink: 0,
+              }} />
+              <span style={{ fontWeight: s.isWinner ? 600 : 400 }}>{s.name}</span>
+              {s.isWinner && <span style={{ fontSize: 11, color: T.green, fontWeight: 700 }}>W</span>}
             </div>
           ))}
         </div>
       </div>
 
       {/* Daily Table */}
-      <div style={{ marginTop: 12, overflowX: 'auto' }}>
-        <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+      <div style={{ marginTop: 16, overflowX: 'auto' }}>
+        <table style={{
+          width: '100%', fontSize: 14, borderCollapse: 'separate', borderSpacing: 0,
+          background: T.surface, borderRadius: T.radiusSm,
+          border: `1px solid ${T.border}`, overflow: 'hidden',
+        }}>
           <thead>
-            <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
-              <th style={{ textAlign: 'left', padding: '8px 10px', color: '#6b7280', fontWeight: 600 }}>Date</th>
+            <tr style={{ background: '#f8f9fb' }}>
+              <th style={{
+                textAlign: 'left', padding: '12px 16px', color: T.textMuted,
+                fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em',
+                borderBottom: `2px solid ${T.border}`,
+              }}>
+                Date
+              </th>
               {variants.map((v, vi) => (
-                <th key={v.id} colSpan={3} style={{ textAlign: 'center', padding: '8px 6px', fontWeight: 600, color: VARIANT_COLORS[vi % VARIANT_COLORS.length] }}>
+                <th key={v.id} colSpan={3} style={{
+                  textAlign: 'center', padding: '12px 8px', fontWeight: 600, fontSize: 13,
+                  color: VARIANT_COLORS[vi % VARIANT_COLORS.length],
+                  borderBottom: `2px solid ${T.border}`,
+                  borderLeft: `1px solid ${T.borderLight}`,
+                }}>
                   {v.label || v.name}
                 </th>
               ))}
             </tr>
-            <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-              <th style={{ padding: '4px 10px' }} />
+            <tr style={{ background: '#fcfcfd' }}>
+              <th style={{ padding: '8px 16px', borderBottom: `1px solid ${T.borderLight}` }} />
               {variants.map(v => (
                 <React.Fragment key={v.id}>
-                  <th style={{ textAlign: 'center', padding: '4px 6px', color: '#9ca3af', fontWeight: 500, fontSize: 11 }}>Opens</th>
-                  <th style={{ textAlign: 'center', padding: '4px 6px', color: '#9ca3af', fontWeight: 500, fontSize: 11 }}>Orders</th>
-                  <th style={{ textAlign: 'center', padding: '4px 6px', color: '#9ca3af', fontWeight: 500, fontSize: 11 }}>Rate</th>
+                  <th style={{
+                    textAlign: 'center', padding: '8px 8px', color: T.textMuted,
+                    fontWeight: 500, fontSize: 12, borderBottom: `1px solid ${T.borderLight}`,
+                    borderLeft: `1px solid ${T.borderLight}`,
+                  }}>Opens</th>
+                  <th style={{
+                    textAlign: 'center', padding: '8px 8px', color: T.textMuted,
+                    fontWeight: 500, fontSize: 12, borderBottom: `1px solid ${T.borderLight}`,
+                  }}>Orders</th>
+                  <th style={{
+                    textAlign: 'center', padding: '8px 8px', color: T.textMuted,
+                    fontWeight: 500, fontSize: 12, borderBottom: `1px solid ${T.borderLight}`,
+                  }}>Rate</th>
                 </React.Fragment>
               ))}
             </tr>
           </thead>
           <tbody>
             {daily.map((d, di) => (
-              <tr key={d.date} style={{ borderBottom: di < daily.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
-                <td style={{ padding: '7px 10px', color: '#374151', fontWeight: 500, whiteSpace: 'nowrap' }}>
+              <tr key={d.date} style={{
+                borderBottom: di < daily.length - 1 ? `1px solid ${T.borderLight}` : 'none',
+              }}>
+                <td style={{
+                  padding: '10px 16px', color: T.text, fontWeight: 500, whiteSpace: 'nowrap',
+                  fontSize: 14, fontFamily: T.font,
+                  borderBottom: di < daily.length - 1 ? `1px solid ${T.borderLight}` : 'none',
+                }}>
                   {new Date(d.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                 </td>
                 {variants.map((v, vi) => {
@@ -563,9 +786,23 @@ function DailyBreakdown({ daily, variants, winnerVariantId }: {
                   const rate = s.cartOpens > 0 ? (s.orders / s.cartOpens * 100).toFixed(1) : '0.0';
                   return (
                     <React.Fragment key={v.id}>
-                      <td style={{ textAlign: 'center', padding: '7px 6px', color: '#6b7280' }}>{s.cartOpens}</td>
-                      <td style={{ textAlign: 'center', padding: '7px 6px', color: '#6b7280' }}>{s.orders}</td>
-                      <td style={{ textAlign: 'center', padding: '7px 6px', fontWeight: 600, color: VARIANT_COLORS[vi % VARIANT_COLORS.length] }}>{rate}%</td>
+                      <td style={{
+                        textAlign: 'center', padding: '10px 8px', color: T.textSecondary,
+                        fontFamily: T.mono, fontSize: 13,
+                        borderBottom: di < daily.length - 1 ? `1px solid ${T.borderLight}` : 'none',
+                        borderLeft: `1px solid ${T.borderLight}`,
+                      }}>{s.cartOpens}</td>
+                      <td style={{
+                        textAlign: 'center', padding: '10px 8px', color: T.textSecondary,
+                        fontFamily: T.mono, fontSize: 13,
+                        borderBottom: di < daily.length - 1 ? `1px solid ${T.borderLight}` : 'none',
+                      }}>{s.orders}</td>
+                      <td style={{
+                        textAlign: 'center', padding: '10px 8px',
+                        fontWeight: 600, fontFamily: T.mono, fontSize: 13,
+                        color: VARIANT_COLORS[vi % VARIANT_COLORS.length],
+                        borderBottom: di < daily.length - 1 ? `1px solid ${T.borderLight}` : 'none',
+                      }}>{rate}%</td>
                     </React.Fragment>
                   );
                 })}
