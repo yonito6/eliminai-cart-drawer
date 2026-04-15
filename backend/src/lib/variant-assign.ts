@@ -90,9 +90,49 @@ export async function assignVariant(
     };
   }
 
-  // 5. New assignment via Thompson Sampling weights
+  // 5. New assignment via Thompson Sampling weights + adaptive balancing
   const trafficSplit = experiment.trafficSplit as Record<string, number>;
-  const variantId = pickVariant(trafficSplit);
+
+  // Adaptive balancing: count current assignments per variant and bias toward the underdog
+  // This ensures near-perfect 50/50 (or whatever the target split is) at all times
+  const assignmentCounts = await prisma.variantAssignment.groupBy({
+    by: ['variantId'],
+    where: { experimentId: experiment.id },
+    _count: true,
+  });
+  const countMap: Record<string, number> = {};
+  for (const a of assignmentCounts) countMap[a.variantId] = a._count;
+
+  const balancedSplit = { ...trafficSplit };
+  const variantIds = Object.keys(trafficSplit);
+  if (variantIds.length === 2) {
+    const [idA, idB] = variantIds;
+    const countA = countMap[idA] || 0;
+    const countB = countMap[idB] || 0;
+    const total = countA + countB;
+
+    if (total >= 10) { // Only balance after enough data
+      const targetA = trafficSplit[idA]; // e.g. 0.5
+      const actualA = countA / total;
+      const gap = actualA - targetA; // positive = A has too many
+
+      // Bias strength: stronger correction for bigger gaps, capped at 80/20
+      // gap of 0.05 (5% off) → nudge by ~0.10, gap of 0.10 → nudge by ~0.20
+      const nudge = Math.min(0.30, Math.abs(gap) * 2);
+
+      if (gap > 0.02) {
+        // A has too many → give B more probability
+        balancedSplit[idA] = Math.max(0.20, targetA - nudge);
+        balancedSplit[idB] = 1 - balancedSplit[idA];
+      } else if (gap < -0.02) {
+        // B has too many → give A more probability
+        balancedSplit[idB] = Math.max(0.20, trafficSplit[idB] - nudge);
+        balancedSplit[idA] = 1 - balancedSplit[idB];
+      }
+    }
+  }
+
+  const variantId = pickVariant(balancedSplit);
 
   try {
     await prisma.variantAssignment.create({
