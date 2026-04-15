@@ -218,9 +218,9 @@ describe('pickVariant', () => {
 describe('calculateSampleTarget', () => {
   it('calculates correct sample size for 3% baseline', () => {
     const result = calculateSampleTarget(0.03, 2);
-    // At 3% baseline with 50% MDE → ~1,980 per variant
-    expect(result.nPerVariant).toBeGreaterThan(1500);
-    expect(result.nPerVariant).toBeLessThan(2500);
+    // At 3% baseline with 75% adaptive MDE → ~962 per variant
+    expect(result.nPerVariant).toBeGreaterThan(700);
+    expect(result.nPerVariant).toBeLessThan(1200);
     expect(result.totalNeeded).toBe(result.nPerVariant * 2);
     expect(result.baselineRate).toBe(0.03);
   });
@@ -231,14 +231,14 @@ describe('calculateSampleTarget', () => {
     expect(high.nPerVariant).toBeLessThan(low.nPerVariant);
   });
 
-  it('clamps to minimum 500 per variant', () => {
+  it('clamps to minimum 200 per variant', () => {
     const result = calculateSampleTarget(0.50, 2);
-    expect(result.nPerVariant).toBeGreaterThanOrEqual(500);
+    expect(result.nPerVariant).toBeGreaterThanOrEqual(200);
   });
 
-  it('clamps to maximum 20000 per variant', () => {
+  it('clamps to maximum 8000 per variant', () => {
     const result = calculateSampleTarget(0.005, 2);
-    expect(result.nPerVariant).toBeLessThanOrEqual(20000);
+    expect(result.nPerVariant).toBeLessThanOrEqual(8000);
   });
 });
 

@@ -152,10 +152,9 @@ export function calculateThompsonSampling(
     : 0.03; // default assumption: ~3% order rate before any data
 
   // ── Dynamic order target from power analysis ──
-  // Uses the SAME formula as calculateSampleTarget: proper power analysis
-  // 50% relative MDE, 80% power, one-sided α=0.05
+  // Uses adaptive MDE: 75% for low-rate stores, 50% for high-rate
   const sampleTarget = calculateSampleTarget(observedRate, variants.length);
-  const targetOrdersPerVariant = Math.max(25, Math.ceil(sampleTarget.nPerVariant * Math.max(0.005, observedRate)));
+  const targetOrdersPerVariant = Math.max(15, Math.ceil(sampleTarget.nPerVariant * Math.max(0.005, observedRate)));
 
   // ── Dynamic hard floor — pure 50/50 until enough orders for signal ──
   // Floor = 3 days of orders, clamped [5, 25]. Scales with store velocity:
@@ -382,7 +381,13 @@ export function calculateSampleTarget(
   numVariants: number = 2,
 ): SampleTargetResult {
   const p1 = Math.max(0.005, Math.min(baselineRate, 0.50));
-  const p2 = p1 * 1.5; // 50% relative MDE
+
+  // Adaptive MDE: low-traffic stores use larger MDE (detect bigger effects faster)
+  // High conversion stores can detect smaller effects.
+  // - 3% base rate → 75% relative MDE (detect 3% → 5.25%) — practical for small stores
+  // - 10% base rate → 50% relative MDE (detect 10% → 15%) — tighter for high-traffic
+  const relativeMDE = p1 < 0.05 ? 0.75 : p1 < 0.10 ? 0.60 : 0.50;
+  const p2 = p1 * (1 + relativeMDE);
 
   // Z-scores: α=0.05 one-sided → 1.645, β=0.20 → 0.84
   const zSum = 1.645 + 0.84; // = 2.485
@@ -393,8 +398,9 @@ export function calculateSampleTarget(
 
   let nPerVariant = Math.ceil(numerator / denominator);
 
-  // Clamp to sensible bounds
-  nPerVariant = Math.max(500, Math.min(nPerVariant, 20000));
+  // Clamp: minimum 200 (not 500 — small stores shouldn't wait forever),
+  // maximum 8000 (even high-traffic stores wrap up in reasonable time)
+  nPerVariant = Math.max(200, Math.min(nPerVariant, 8000));
 
   return {
     nPerVariant,

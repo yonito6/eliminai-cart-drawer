@@ -1764,14 +1764,16 @@ function AddonsPage() {
                       gap: 24,
                     }}
                   >
-                    {/* Left: Cart Preview */}
-                    <AddonPreview
-                      addonKey={def.key}
-                      addonConfig={addon.config ?? {}}
-                      mode="full"
-                      stagingHint={def.key === 'freeShippingBar' ? stagingHint : undefined}
-                      storeId={STORE_ID}
-                    />
+                    {/* Left: Cart Preview — sticky so it follows the user while editing */}
+                    <div style={{ alignSelf: 'start', position: 'sticky', top: 16 }}>
+                      <AddonPreview
+                        addonKey={def.key}
+                        addonConfig={addon.config ?? {}}
+                        mode="full"
+                        stagingHint={def.key === 'freeShippingBar' ? stagingHint : undefined}
+                        storeId={STORE_ID}
+                      />
+                    </div>
 
                     {/* Right: Edit controls */}
                     <div>
@@ -2083,8 +2085,10 @@ function AddonsPage() {
                           const minOrders = Math.min(...ordersPerVariant);
                           const totalOrders = ordersPerVariant.reduce((a: number, b: number) => a + b, 0);
                           // Dynamic order target: derive from visitor sample target × purchase rate
-                          const sampleTargetPerVar = exp.sampleTargetPerVariant || 2000;
+                          const sampleTargetPerVar = exp.sampleTargetPerVariant || 600;
                           const baselinePurchaseRate = exp.baselinePurchaseRate || 0.03;
+                          // Convert cart-opener target to order target using purchase rate
+                          // For 3% rate with 600 target: ~18 orders per variant — very achievable
                           const dynamicOrdersPerVariant = Math.max(minOrdersPerVariant, Math.ceil(sampleTargetPerVar * baselinePurchaseRate));
                           const dynamicOrdersTotal = dynamicOrdersPerVariant * numVariants;
 
