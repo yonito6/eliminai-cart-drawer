@@ -400,33 +400,18 @@ export async function POST(
       giftIndex++;
       const gids = await ensureAllProductGids();
 
-      if (giftIndex === 1) {
-        // First gift → automatic BXGY (auto-applies at checkout)
-        const createResult = await createAutomaticDiscount(
-          store.shopDomain, token, want.productGid, want.tierGoal, want.tierNumber, gids,
-        );
-        if (createResult?.error) {
-          errors.push({ handle: want.handle, error: createResult.error });
-        } else if (createResult?.id) {
-          results.push({
-            tier: want.tierGoal, handle: want.handle, title: want.title,
-            gid: want.productGid, discountId: createResult.id, type: 'automatic',
-          });
-        }
-      } else {
-        // Tier 2+ → code-based BXGY (applied via /discount/CODE redirect)
-        const createResult = await createCodeDiscount(
-          store.shopDomain, token, want.productGid, want.tierGoal, want.tierNumber, gids,
-        );
-        if (createResult?.error) {
-          errors.push({ handle: want.handle, error: createResult.error });
-        } else if (createResult?.id) {
-          giftCodes.push(createResult.code!);
-          results.push({
-            tier: want.tierGoal, handle: want.handle, title: want.title,
-            gid: want.productGid, discountId: createResult.id, type: 'code', code: createResult.code,
-          });
-        }
+      // ALL gifts use automatic BXGY — Shopify supports combining multiple
+      // automatic discounts when combinesWith.productDiscounts = true. No codes needed.
+      const createResult = await createAutomaticDiscount(
+        store.shopDomain, token, want.productGid, want.tierGoal, want.tierNumber, gids,
+      );
+      if (createResult?.error) {
+        errors.push({ handle: want.handle, error: createResult.error });
+      } else if (createResult?.id) {
+        results.push({
+          tier: want.tierGoal, handle: want.handle, title: want.title,
+          gid: want.productGid, discountId: createResult.id, type: 'automatic',
+        });
       }
     }
 
