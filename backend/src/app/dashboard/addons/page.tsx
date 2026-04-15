@@ -1997,10 +1997,13 @@ function AddonsPage() {
 
                   // Observed lift from actual purchase rates (matches variant cards)
                   const allVs = (exp.variantStats || []) as any[];
+                  const totalOrders = allVs.reduce((s: number, v: any) => s + (v.orders ?? 0), 0);
                   const sortedVs = [...allVs].sort((a: any, b: any) => (b.purchaseRate ?? 0) - (a.purchaseRate ?? 0));
                   const topRate = sortedVs[0]?.purchaseRate ?? 0;
                   const runnerRate = sortedVs[1]?.purchaseRate ?? 0;
                   const observedLiftPct = runnerRate > 0 ? ((topRate - runnerRate) / runnerRate) * 100 : 0;
+                  // With 0 orders, confidence from checkout noise is meaningless — show 0%
+                  const displayConfidence = totalOrders === 0 ? 0 : confidence;
 
                   return (
                     <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
@@ -2045,19 +2048,21 @@ function AddonsPage() {
                       <div style={{ marginBottom: 20, padding: 14, background: '#f9fafb', borderRadius: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#374151', marginBottom: 6 }}>
                           <span style={{ fontWeight: 500 }}>Confidence Level</span>
-                          <span style={{ fontWeight: 700 }}>{confidence}%</span>
+                          <span style={{ fontWeight: 700 }}>{totalOrders === 0 ? 'Waiting for orders' : displayConfidence + '%'}</span>
                         </div>
                         <div style={{ height: 8, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: Math.max(confidence, 2) + '%', background: confidence >= 90 ? '#16a34a' : '#7c3aed', borderRadius: 4, transition: 'width 0.5s ease' }} />
+                          <div style={{ height: '100%', width: Math.max(displayConfidence, 2) + '%', background: displayConfidence >= 90 ? '#16a34a' : '#7c3aed', borderRadius: 4, transition: 'width 0.5s ease' }} />
                         </div>
                         <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-                          {confidence >= 90
+                          {totalOrders === 0
+                            ? (testing ? 'Collecting visitor data — confidence starts when orders come in' : paused ? 'Test paused — no orders yet' : 'No orders collected')
+                            : displayConfidence >= 90
                             ? (winner ? 'Winner confirmed with high confidence!'
                               : noDiff ? 'High confidence — no meaningful difference detected'
                               : observedLiftPct > 5 ? 'High confidence — a winner is emerging!'
                               : 'High confidence — variants are performing similarly')
-                            : confidence >= 60 ? 'Almost there — the engine is narrowing it down'
-                            : confidence === 0 ? (testing ? 'Waiting for visitor data...' : paused ? 'Test paused — resume to continue collecting data' : 'No data collected')
+                            : displayConfidence >= 60 ? 'Almost there — the engine is narrowing it down'
+                            : displayConfidence === 0 ? (testing ? 'Waiting for more order data...' : paused ? 'Test paused — resume to continue collecting data' : 'No data collected')
                             : testing ? "Learning from your visitors' behavior..." : paused ? 'Test paused — results preserved' : 'Optimization ended'}
                         </div>
 
