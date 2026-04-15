@@ -443,7 +443,7 @@ export async function POST(
       await prisma.store.update({ where: { id }, data: { [configField]: cfg, [otherField]: otherCfg } });
     }
 
-    console.log(`[gift-discounts] Sync complete: ${results.length} created (${results.filter(r => r.type === 'automatic').length} auto + ${results.filter(r => r.type === 'code').length} code), ${deletedCount} deleted`);
+    console.log(`[gift-discounts] Sync complete: ${results.length} created, ${deletedCount} deleted`);
 
     return NextResponse.json({
       success: true,
