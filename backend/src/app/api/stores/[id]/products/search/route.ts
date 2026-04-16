@@ -23,7 +23,7 @@ export async function GET(
 
   try {
     // Use GraphQL for partial title matching (REST title= does exact match only)
-    const graphqlUrl = `https://${store.shopDomain}/admin/api/2025-01/graphql.json`;
+    const graphqlUrl = `https://${store.shopDomain}/admin/api/2025-10/graphql.json`;
     const query = `{
       products(first: 10, query: "title:*${q.replace(/"/g, '\\"')}* status:active") {
         edges {
@@ -39,6 +39,8 @@ export async function GET(
                   id
                   title
                   price
+                  inventoryQuantity
+                  inventoryPolicy
                 }
               }
             }
@@ -72,6 +74,8 @@ export async function GET(
         id: parseInt(ve.node.id.replace('gid://shopify/ProductVariant/', ''), 10),
         title: ve.node.title,
         price: ve.node.price,
+        inventoryQuantity: ve.node.inventoryQuantity,
+        inventoryPolicy: ve.node.inventoryPolicy,
       }));
       return {
         id: parseInt(node.id.replace('gid://shopify/Product/', ''), 10),

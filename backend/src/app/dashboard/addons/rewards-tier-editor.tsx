@@ -46,6 +46,18 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
   const [giftSearchLoading, setGiftSearchLoading] = useState(false);
   // "replace mode" — when set, the next product picked replaces this gift index instead of appending
   const [replacingGiftIndex, setReplacingGiftIndex] = useState<number | null>(null);
+  // Confirmation dialog for auto-creating Shopify discount
+  const [pendingGift, setPendingGift] = useState<{ product: any; tierGoal: number; tierId: string; isReplace: boolean; replaceIndex: number | null } | null>(null);
+  const [discountSyncing, setDiscountSyncing] = useState(false);
+  // Track whether gift discounts already exist on Shopify — skip confirmation modal if they do
+  const [discountsExist, setDiscountsExist] = useState(false);
+  useEffect(() => {
+    if (!storeId) return;
+    fetch(`/api/stores/${storeId}/gift-discounts`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.exists) setDiscountsExist(true); })
+      .catch(() => {});
+  }, [storeId]);
 
   function updateTiers(newTiers: RewardTier[]) {
     onConfigChange({ tiers: newTiers });
@@ -222,15 +234,27 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
       <div style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: (config.milestoneAnimation !== false) ? 8 : 0 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>Milestone Animation</span>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#6b7280' }}>
-            <span>{config.milestoneAnimation !== false ? 'On' : 'Off'}</span>
-            <input
-              type="checkbox"
-              checked={config.milestoneAnimation !== false}
-              onChange={e => onConfigChange({ milestoneAnimation: e.target.checked, milestoneAnimationType: e.target.checked ? (config.milestoneAnimationType || 'pulse') : 'none' })}
-              style={{ width: 14, height: 14, cursor: 'pointer' }}
-            />
-          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, color: '#6b7280' }}>{config.milestoneAnimation !== false ? 'On' : 'Off'}</span>
+            <button
+              onClick={() => {
+                const next = !(config.milestoneAnimation !== false);
+                onConfigChange({ milestoneAnimation: next, milestoneAnimationType: next ? (config.milestoneAnimationType || 'pulse') : 'none' });
+              }}
+              style={{
+                position: 'relative', width: 36, height: 20, borderRadius: 10,
+                border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
+                background: (config.milestoneAnimation !== false) ? '#22c55e' : '#d1d5db',
+                transition: 'background 0.2s',
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: 2, left: (config.milestoneAnimation !== false) ? 18 : 2,
+                width: 16, height: 16, borderRadius: 8, background: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s',
+              }} />
+            </button>
+          </div>
         </div>
         {config.milestoneAnimation !== false && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -588,10 +612,12 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                             {giftSearchResults.map((product: any) => {
                               const imgSrc = product.image?.src || product.images?.[0]?.src || '';
                               const alreadyAdded = normalizeTier(tier).giftProducts.some(g => g.handle === product.handle);
+                              const firstVariant = product.variants?.[0];
+                              const isOutOfStock = firstVariant?.inventoryPolicy === 'DENY' && (firstVariant?.inventoryQuantity ?? 0) <= 0;
                               return (
                                 <div
                                   key={product.id}
-                                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderBottom: '1px solid #f3f4f6' }}
+                                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderBottom: '1px solid #f3f4f6', opacity: isOutOfStock ? 0.55 : 1 }}
                                 >
                                   {imgSrc ? (
                                     <img src={imgSrc} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', flexShrink: 0, border: '1px solid #e5e7eb' }} />
@@ -600,25 +626,42 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                                   )}
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: 13, fontWeight: 500, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.title}</div>
-                                    {product.variants?.[0]?.price && <div style={{ fontSize: 11, color: '#6b7280' }}>${product.variants[0].price}</div>}
+                                    {firstVariant?.price && <div style={{ fontSize: 11, color: '#6b7280' }}>${firstVariant.price}</div>}
+                                    {isOutOfStock && <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 600, marginTop: 1 }}>Out of stock — restock before adding as gift</div>}
                                   </div>
                                   {alreadyAdded ? (
                                     <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>Added</span>
+                                  ) : isOutOfStock ? (
+                                    <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 600, flexShrink: 0 }}>Unavailable</span>
                                   ) : (
                                     <button
                                       onClick={() => {
-                                        const newGift = { handle: product.handle, variantId: product.variants?.[0]?.id ?? 0, title: product.title, imageUrl: imgSrc, price: product.variants?.[0]?.price || '' };
-                                        let updated: any[];
-                                        if (replacingGiftIndex !== null) {
-                                          updated = [...normalizeTier(tier).giftProducts];
-                                          updated[replacingGiftIndex] = newGift;
-                                          setReplacingGiftIndex(null);
+                                        const normalized = normalizeTier(tier);
+                                        const tierAlreadyHasGifts = normalized.giftProducts.length > 0;
+                                        // First gift ever (no discounts on Shopify yet) → show confirmation modal
+                                        // Otherwise (replacing, adding more, or discounts already exist) → silent add
+                                        if (tierAlreadyHasGifts || replacingGiftIndex !== null || discountsExist) {
+                                          const newGift = { handle: product.handle, variantId: product.variants?.[0]?.id ?? 0, title: product.title, imageUrl: imgSrc, price: product.variants?.[0]?.price || '' };
+                                          let updated: any[];
+                                          if (replacingGiftIndex !== null) {
+                                            updated = [...normalized.giftProducts];
+                                            updated[replacingGiftIndex] = newGift;
+                                            setReplacingGiftIndex(null);
+                                          } else {
+                                            updated = [...normalized.giftProducts, newGift];
+                                          }
+                                          updateTier(tier.id, { giftProducts: updated, giftProduct: updated[0] });
+                                          setGiftSearchResults([]);
+                                          setGiftSearchQuery('');
                                         } else {
-                                          updated = [...normalizeTier(tier).giftProducts, newGift];
+                                          setPendingGift({
+                                            product: { ...product, imageUrl: imgSrc },
+                                            tierGoal: tier.goal,
+                                            tierId: tier.id,
+                                            isReplace: false,
+                                            replaceIndex: null,
+                                          });
                                         }
-                                        updateTier(tier.id, { giftProducts: updated, giftProduct: updated[0] });
-                                        setGiftSearchResults([]);
-                                        setGiftSearchQuery('');
                                       }}
                                       style={{ padding: '5px 14px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
                                     >
@@ -641,18 +684,27 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
 
                     {/* Gift Badge Settings — shown when tier has gifts */}
                     {normalizeTier(tier).giftProducts.length > 0 && (
-                      <div style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                      <div onClick={() => { emitStaging(tier.id, 'gift'); }} style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: (config.giftBadgeEnabled !== false) ? 8 : 0 }}>
                           <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>Gift Badge</span>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#6b7280' }}>
-                            <span>{config.giftBadgeEnabled !== false ? 'Visible' : 'Hidden'}</span>
-                            <input
-                              type="checkbox"
-                              checked={config.giftBadgeEnabled !== false}
-                              onChange={e => onConfigChange({ giftBadgeEnabled: e.target.checked })}
-                              style={{ width: 14, height: 14, cursor: 'pointer' }}
-                            />
-                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 11, color: '#6b7280' }}>{config.giftBadgeEnabled !== false ? 'On' : 'Off'}</span>
+                            <button
+                              onClick={() => onConfigChange({ giftBadgeEnabled: !(config.giftBadgeEnabled !== false) })}
+                              style={{
+                                position: 'relative', width: 36, height: 20, borderRadius: 10,
+                                border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
+                                background: (config.giftBadgeEnabled !== false) ? '#22c55e' : '#d1d5db',
+                                transition: 'background 0.2s',
+                              }}
+                            >
+                              <div style={{
+                                position: 'absolute', top: 2, left: (config.giftBadgeEnabled !== false) ? 18 : 2,
+                                width: 16, height: 16, borderRadius: 8, background: '#fff',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s',
+                              }} />
+                            </button>
+                          </div>
                         </div>
                         {config.giftBadgeEnabled !== false && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -770,15 +822,54 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                             <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>Show Compare Price</span>
                             <div style={{ fontSize: 10, color: '#6b7280', marginTop: 1 }}>Show crossed-out original price next to "Free"</div>
                           </div>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#6b7280' }}>
-                            <span>{config.giftShowComparePrice !== false ? 'On' : 'Off'}</span>
-                            <input
-                              type="checkbox"
-                              checked={config.giftShowComparePrice !== false}
-                              onChange={e => onConfigChange({ giftShowComparePrice: e.target.checked })}
-                              style={{ width: 14, height: 14, cursor: 'pointer' }}
-                            />
-                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 11, color: '#6b7280' }}>{config.giftShowComparePrice !== false ? 'On' : 'Off'}</span>
+                            <button
+                              onClick={() => onConfigChange({ giftShowComparePrice: !(config.giftShowComparePrice !== false) })}
+                              style={{
+                                position: 'relative', width: 36, height: 20, borderRadius: 10,
+                                border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
+                                background: (config.giftShowComparePrice !== false) ? '#22c55e' : '#d1d5db',
+                                transition: 'background 0.2s',
+                              }}
+                            >
+                              <div style={{
+                                position: 'absolute', top: 2, left: (config.giftShowComparePrice !== false) ? 18 : 2,
+                                width: 16, height: 16, borderRadius: 8, background: '#fff',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s',
+                              }} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Show Discount Label — shown when tier has gifts */}
+                    {normalizeTier(tier).giftProducts.length > 0 && (
+                      <div style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>Show Discount Label</span>
+                            <div style={{ fontSize: 10, color: '#6b7280', marginTop: 1 }}>Show the discount name in the cart summary</div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 11, color: '#6b7280' }}>{config.giftHideDiscountLabel !== false ? 'Off' : 'On'}</span>
+                            <button
+                              onClick={() => onConfigChange({ giftHideDiscountLabel: config.giftHideDiscountLabel === false ? true : false })}
+                              style={{
+                                position: 'relative', width: 36, height: 20, borderRadius: 10,
+                                border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
+                                background: config.giftHideDiscountLabel === false ? '#22c55e' : '#d1d5db',
+                                transition: 'background 0.2s',
+                              }}
+                            >
+                              <div style={{
+                                position: 'absolute', top: 2, left: config.giftHideDiscountLabel === false ? 18 : 2,
+                                width: 16, height: 16, borderRadius: 8, background: '#fff',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s',
+                              }} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -795,6 +886,79 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
           </div>
         )}
       </div>
+
+      {/* ── Gift Discount Confirmation Modal ── */}
+      {pendingGift && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+          onClick={() => { if (!discountSyncing) setPendingGift(null); }}>
+          <div style={{ background: '#1f2937', borderRadius: 12, padding: 24, maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#f9fafb', marginBottom: 12 }}>
+              Auto-Create Shopify Discount
+            </div>
+            <div style={{ fontSize: 13, color: '#d1d5db', lineHeight: 1.6, marginBottom: 16 }}>
+              {"We'll automatically create a Shopify discount so this gift product is "}
+              <strong style={{ color: '#34d399' }}>100% free</strong>
+              {" in the cart:"}
+            </div>
+            <div style={{ background: '#111827', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+              {pendingGift.product.imageUrl ? (
+                <img src={pendingGift.product.imageUrl} alt="" style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', border: '1px solid #374151' }} />
+              ) : (
+                <div style={{ width: 48, height: 48, borderRadius: 8, background: '#374151' }} />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#f9fafb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {pendingGift.product.title}
+                </div>
+                {pendingGift.product.variants?.[0]?.price && (
+                  <div style={{ fontSize: 12, color: '#6b7280', textDecoration: 'line-through' }}>${pendingGift.product.variants[0].price}</div>
+                )}
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#34d399' }}>FREE</span>
+            </div>
+            <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 16, lineHeight: 1.5 }}>
+              <div style={{ marginBottom: 4 }}><strong style={{ color: '#d1d5db' }}>Discount name:</strong> {`Free Gift \u2014 ${pendingGift.product.title}`}</div>
+              <div style={{ marginBottom: 4 }}><strong style={{ color: '#d1d5db' }}>Type:</strong> Automatic 100% off</div>
+              <div><strong style={{ color: '#d1d5db' }}>Stacks with:</strong> All other discounts</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setPendingGift(null)}
+                disabled={discountSyncing}
+                style={{ padding: '8px 16px', background: 'transparent', color: '#9ca3af', border: '1px solid #374151', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const pg = pendingGift;
+                  const newGift = { handle: pg.product.handle, variantId: pg.product.variants?.[0]?.id ?? 0, title: pg.product.title, imageUrl: pg.product.imageUrl, price: pg.product.variants?.[0]?.price || '' };
+                  const tierObj = tiers.find(t => t.id === pg.tierId);
+                  if (!tierObj) return;
+                  const normalized = normalizeTier(tierObj);
+                  let updated: any[];
+                  if (pg.isReplace && pg.replaceIndex !== null) {
+                    updated = [...normalized.giftProducts];
+                    updated[pg.replaceIndex] = newGift;
+                    setReplacingGiftIndex(null);
+                  } else {
+                    updated = [...normalized.giftProducts, newGift];
+                  }
+                  updateTier(pg.tierId, { giftProducts: updated, giftProduct: updated[0] });
+                  setPendingGift(null);
+                  setDiscountsExist(true); // User acknowledged — skip modal for subsequent gifts
+                  setGiftSearchResults([]);
+                  setGiftSearchQuery('');
+                }}
+                style={{ padding: '8px 20px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Confirm & Add Gift
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -807,6 +971,7 @@ interface WithSaveProps {
   onSave: (fullConfig: Record<string, any>) => void;
   onPreviewChange: (draftConfig: Record<string, any>) => void;
   storeId: string;
+  configTarget?: 'demo' | 'live';
   successColor?: string;
   messageColor?: string;
   themeFont?: string;
@@ -814,7 +979,7 @@ interface WithSaveProps {
   onStagingChange?: (hint: StagingHint | null) => void;
 }
 
-export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange, storeId, successColor, messageColor, themeFont, onStagingChange }: WithSaveProps) {
+export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange, storeId, configTarget, successColor, messageColor, themeFont, onStagingChange }: WithSaveProps) {
   // Migrate plain text → colorized HTML on initial load (both draft AND saved baseline)
   const migrateColors = useCallback((config: Record<string, any>) => {
     const sColor = successColor || '#1a7a1a';
@@ -885,7 +1050,11 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
     if (hasGifts && storeId) {
       setDiscountStatus('Syncing gift discounts...');
       try {
-        const res = await fetch(`/api/stores/${storeId}/gift-discounts`, { method: 'POST' });
+        const res = await fetch(`/api/stores/${storeId}/gift-discounts${configTarget ? '?target=' + configTarget : ''}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tiers: draft.tiers ?? [] }),
+        });
         const data = await res.json();
         if (data.success) {
           const count = data.discounts?.filter((d: any) => !d.error).length ?? 0;
