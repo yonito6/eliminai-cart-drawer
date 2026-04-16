@@ -31,6 +31,7 @@ export async function GET(
             id
             title
             handle
+            publishedOnCurrentPublication
             featuredImage { url }
             images(first: 1) { edges { node { url } } }
             variants(first: 5) {
@@ -81,6 +82,7 @@ export async function GET(
         id: parseInt(node.id.replace('gid://shopify/Product/', ''), 10),
         title: node.title,
         handle: node.handle,
+        publishedOnCurrentPublication: node.publishedOnCurrentPublication,
         image: { src: imgUrl },
         images: [{ src: imgUrl }],
         variants,

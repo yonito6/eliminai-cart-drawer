@@ -613,7 +613,8 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                               const imgSrc = product.image?.src || product.images?.[0]?.src || '';
                               const alreadyAdded = normalizeTier(tier).giftProducts.some(g => g.handle === product.handle);
                               const firstVariant = product.variants?.[0];
-                              const isOutOfStock = firstVariant?.inventoryPolicy === 'DENY' && (firstVariant?.inventoryQuantity ?? 0) <= 0;
+                              const isHidden = product.publishedOnCurrentPublication === false;
+                              const isOutOfStock = isHidden || (firstVariant?.inventoryPolicy === 'DENY' && (firstVariant?.inventoryQuantity ?? 0) <= 0);
                               return (
                                 <div
                                   key={product.id}
@@ -627,7 +628,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: 13, fontWeight: 500, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.title}</div>
                                     {firstVariant?.price && <div style={{ fontSize: 11, color: '#6b7280' }}>${firstVariant.price}</div>}
-                                    {isOutOfStock && <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 600, marginTop: 1 }}>Out of stock — restock before adding as gift</div>}
+                                    {isOutOfStock && <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 600, marginTop: 1 }}>{isHidden ? 'Not published to Online Store — publish it first' : 'Out of stock — restock before adding as gift'}</div>}
                                   </div>
                                   {alreadyAdded ? (
                                     <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>Added</span>
