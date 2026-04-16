@@ -151,6 +151,34 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     if (startIdx !== -1 && endIdx !== -1) {
       cartHtml = cartHtml.substring(0, startIdx + startMarker.length) + itemsHtml + cartHtml.substring(endIdx);
     }
+
+    // Recalculate checkout total and discount to match real preview products
+    if (addonKey !== 'shippingProtection') {
+      const productsTotal = previewProducts.slice(0, 2).reduce((sum, p) => sum + parseFloat(p.price), 0);
+      const hasDiscount = previewProducts.slice(0, 2).some(p => p.compareAtPrice);
+      const checkoutVal = productsTotal + 4.99; // default protection price
+      cartHtml = cartHtml.replace(
+        /(<span class="ccd-checkout-total">)\$[\d.]+(<\/span>)/,
+        '$1$' + checkoutVal.toFixed(2) + '$2'
+      );
+      if (!hasDiscount) {
+        cartHtml = cartHtml.replace(
+          /(<div class="ccd-discount-row"[^>]*style=")[^"]*(")/,
+          '$1display:none$2'
+        );
+      } else {
+        let discountAmt = 0;
+        for (const p of previewProducts.slice(0, 2)) {
+          if (p.compareAtPrice) discountAmt += parseFloat(p.compareAtPrice) - parseFloat(p.price);
+        }
+        if (discountAmt > 0) {
+          cartHtml = cartHtml.replace(
+            /(<span class="ccd-discount-row__amount">)-?\$[\d.]+(<\/span>)/,
+            '$1-$' + discountAmt.toFixed(2) + '$2'
+          );
+        }
+      }
+    }
   }
 
   // ── Trust Badges: dynamic icons + text + position ──────────────────
@@ -236,14 +264,13 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     }
   }
 
-  // ── Shipping Protection: dynamic price, description, style ─────────
+  // ── Shipping Protection: dynamic price, description ─────────
   if (addonKey === 'shippingProtection') {
     const price = addonConfig.price ?? 4.99;
     const desc = addonConfig.description || 'Covers lost, stolen, or damaged packages';
     const defaultOn = addonConfig.defaultOn !== false;
-    const spStyle = addonConfig.style || 'compact';
 
-    // Update price
+    // Update price display
     cartHtml = cartHtml.replace(
       /(<span class="ccd-shipping-protection__price">)\$[\d.]+(<\/span>)/,
       '$1$' + Number(price).toFixed(2) + '$2'
@@ -260,18 +287,50 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
         '<input type="checkbox">'
       );
     }
-    // Detailed style: add coverage bullets
-    if (spStyle === 'detailed') {
-      const bullets = '<div style="font-size:11px;color:#666;margin-top:4px;padding-left:38px">✓ Lost packages ✓ Damaged items ✓ Stolen deliveries</div>';
-      cartHtml = cartHtml.replace(
-        '</div>\n      </div>\n      <div class="ccd-discount-row"',
-        '</div>' + bullets + '</div><div class="ccd-discount-row"'
-      );
-      if (!cartHtml.includes('Lost packages')) {
+
+    // Recalculate checkout total based on preview products + protection price
+    let itemsTotal = 0;
+    if (previewProducts.length >= 2) {
+      itemsTotal = previewProducts.slice(0, 2).reduce((sum, p) => sum + parseFloat(p.price), 0);
+    } else {
+      // Fallback: extract from template prices
+      const priceMatches = cartHtml.match(/class="ccd-item__price">\$([\d.]+)/g);
+      if (priceMatches) {
+        itemsTotal = priceMatches.reduce((sum, m) => {
+          const n = parseFloat(m.replace(/.*\$/, ''));
+          return sum + (isNaN(n) ? 0 : n);
+        }, 0);
+      }
+    }
+    const protectionCost = defaultOn ? Number(price) : 0;
+    const checkoutTotal = (itemsTotal + protectionCost).toFixed(2);
+    cartHtml = cartHtml.replace(
+      /(<span class="ccd-checkout-total">)\$[\d.]+(<\/span>)/,
+      '$1$' + checkoutTotal + '$2'
+    );
+
+    // Hide discount row if no real discounts (template has hardcoded one)
+    if (previewProducts.length >= 2) {
+      const hasDiscount = previewProducts.some(p => p.compareAtPrice);
+      if (!hasDiscount) {
         cartHtml = cartHtml.replace(
-          '<div class="ccd-discount-row"',
-          bullets + '<div class="ccd-discount-row"'
+          /(<div class="ccd-discount-row"[^>]*style=")[^"]*(")/,
+          '$1display:none$2'
         );
+      } else {
+        // Recalculate discount from compare-at prices
+        let discountAmount = 0;
+        for (const p of previewProducts.slice(0, 2)) {
+          if (p.compareAtPrice) {
+            discountAmount += parseFloat(p.compareAtPrice) - parseFloat(p.price);
+          }
+        }
+        if (discountAmount > 0) {
+          cartHtml = cartHtml.replace(
+            /(<span class="ccd-discount-row__amount">)-?\$[\d.]+(<\/span>)/,
+            '$1-$' + discountAmount.toFixed(2) + '$2'
+          );
+        }
       }
     }
   }
