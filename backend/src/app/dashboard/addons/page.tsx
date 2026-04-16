@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import AddonPreview from './addon-preview';
 import type { StagingHint } from './addon-preview';
 import { RewardsTierEditorWithSave } from './rewards-tier-editor';
+import ProtectionEditor from './protection-editor';
 import { useStore } from '@/lib/hooks/use-store';
 import RichTextEditor from './rich-text-editor';
 
@@ -1801,6 +1802,17 @@ function AddonsPage() {
                           successColor={themeSettings?.ccd_color_success || '#1a7a1a'}
                           messageColor={'#333333'}
                           themeFont={themeSettings?.ccd_font_family}
+                        />
+                      )}
+
+                      {/* Shipping protection gets the dedicated editor */}
+                      {def.key === 'shippingProtection' && (
+                        <ProtectionEditor
+                          storeId={STORE_ID}
+                          config={addon.config ?? {}}
+                          onConfigChange={(patch) => {
+                            updateAddonConfig(def.key, patch);
+                          }}
                         />
                       )}
 
