@@ -1,0 +1,24 @@
+# Eliminai Cart Drawer — Shopify App Configuration
+# This file is required by Shopify CLI for extension deployment
+
+name = "Eliminai Cart Drawer"
+client_id = "b4bf1a31f5fa0233f9ca91177dbd5ce1"
+application_url = "https://eliminai-cart-drawer-production.up.railway.app"
+embedded = true
+
+[auth]
+redirect_urls = [
+  "https://eliminai-cart-drawer-production.up.railway.app/api/auth/callback",
+  "https://localhost:3004/api/auth/callback"
+]
+
+[webhooks]
+api_version = "2025-01"
+
+[access_scopes]
+scopes = "read_products,write_products,read_product_listings,read_orders,read_themes,write_themes,read_discounts,write_discounts"
+
+[app_proxy]
+url = "https://eliminai-cart-drawer-production.up.railway.app/api/proxy"
+subpath = "eliminai-cart"
+prefix = "apps"
