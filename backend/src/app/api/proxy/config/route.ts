@@ -87,9 +87,35 @@ async function handleRequest(req: NextRequest) {
       ? store.demoConfig
       : store.config;
 
-    // 8. Return config + experiment assignment
+    // 8. Build theme asset URLs so app-embed loads from theme (not stale extension CDN)
+    let jsUrl: string | undefined;
+    let cssUrl: string | undefined;
+    if (store.accessToken && themeId) {
+      try {
+        const assetResp = await fetch(
+          `https://${shopDomain}/admin/api/2025-01/themes/${themeId}/assets.json?asset[key]=assets/v14-complete.js`,
+          { headers: { 'X-Shopify-Access-Token': store.accessToken } }
+        );
+        const assetData = await assetResp.json();
+        if (assetData.asset?.public_url) {
+          jsUrl = assetData.asset.public_url;
+        }
+        const cssResp = await fetch(
+          `https://${shopDomain}/admin/api/2025-01/themes/${themeId}/assets.json?asset[key]=assets/v14-css.css`,
+          { headers: { 'X-Shopify-Access-Token': store.accessToken } }
+        );
+        const cssData = await cssResp.json();
+        if (cssData.asset?.public_url) {
+          cssUrl = cssData.asset.public_url;
+        }
+      } catch (e) {
+        // Fall through — app-embed will use extension CDN fallback
+      }
+    }
+
+    // 9. Return config + experiment assignment
     return NextResponse.json({
-      cartConfig,
+      cartConfig: { ...(cartConfig as any), ...(jsUrl ? { _jsUrl: jsUrl } : {}), ...(cssUrl ? { _cssUrl: cssUrl } : {}) },
       currency: store.currency,
       segment: assignment.segment,
       experiment: assignment.experiment
