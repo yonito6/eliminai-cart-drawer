@@ -259,16 +259,6 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
     impactMetric: 'attach_rate',
     dimensions: [
       {
-        key: 'price',
-        label: 'Protection Price',
-        type: 'number',
-        testable: false,
-        default: 4.99,
-        min: 0.99,
-        max: 19.99,
-        placeholder: '4.99',
-      },
-      {
         key: 'description',
         label: 'Description Text',
         type: 'text',
@@ -283,19 +273,19 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
         testable: true,
         default: true,
       },
-      {
-        key: 'style',
-        label: 'Display Style',
-        type: 'select',
-        testable: true,
-        options: [
-          { value: 'compact', label: 'Compact' },
-          { value: 'detailed', label: 'Detailed' },
-        ],
-        default: 'compact',
-      },
     ],
-    defaultConfig: { price: 4.99, description: 'Covers lost, stolen, or damaged packages', defaultOn: true, style: 'compact' },
+    defaultConfig: {
+      description: 'Covers lost, stolen, or damaged packages',
+      defaultOn: true,
+      pricingMode: 'single',
+      price: 499,
+      tiers: [],
+      iconId: 'box-shield',
+      iconUrl: null,
+      productId: null,
+      handle: null,
+      variantId: 0,
+    },
   },
 
   {
