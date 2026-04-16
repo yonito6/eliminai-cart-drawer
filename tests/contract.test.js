@@ -123,7 +123,7 @@ async function run() {
   test('Interceptor injects protection into JSON bodies', () => {
     assertContains(code, 'JSON.parse(opts.body)', 'Must parse JSON body');
     assertContains(code, 'body.items.push', 'Must push protection into items array');
-    assertRegex(code, /id:\s*PROT_VID/, 'Must use PROT_VID constant');
+    assertRegex(code, /getProtTier/, 'Must use getProtTier for tier-aware variant selection');
   });
 
   test('Interceptor converts form-encoded to JSON with protection inline', () => {
@@ -144,7 +144,7 @@ async function run() {
 
   test('Cart-open handler adds protection inline', () => {
     // refreshOnOpen should have inline protection add
-    assertContains(code, 'JSON.stringify({ items: [{ id: PROT_VID, quantity: 1 }] })', 'Must add protection via PROT_VID');
+    assert(code.includes('getProtTier(CCD.getAdjustedTotal(cart))') || code.includes('getProtTier(CCD.getAdjustedTotal(window.__ccd_last_cart'), 'Must add protection via getProtTier');
   });
 
   test('ensureProtection function exists as tertiary fallback', () => {
@@ -311,8 +311,8 @@ async function run() {
 
   test('Protection uses PROT_VID everywhere (no hardcoded IDs)', () => {
     // Count protection add calls that use PROT_VID
-    const protVidUses = countOccurrences(code, 'id: PROT_VID');
-    assert(protVidUses >= 3, `PROT_VID should be used in 3+ places (interceptor, cart-open, toggle, ensureProtection), found ${protVidUses}`);
+    const protVidUses = countOccurrences(code, 'getProtTier(');
+    assert(protVidUses >= 5, `getProtTier should be used in 5+ places (interceptor, cart-open, toggle, ensureProtection), found ${protVidUses}`);
   });
 
   // ================================================================
@@ -514,7 +514,7 @@ async function run() {
   });
 
   test('Converted JSON includes both original product and protection', () => {
-    assertRegex(code, /items\.push\(\{\s*id:\s*PROT_VID/, 'Must push protection into converted items array');
+    assertRegex(code, /items\.push\(\{\s*id:\s*\(getProtTier/, 'Must push protection via getProtTier into converted items array');
   });
 
   test('Converted request sets Content-Type to application/json', () => {
@@ -748,6 +748,127 @@ async function run() {
     assertContains(editorCode, 'Unavailable', 'Must show Unavailable label for blocked products');
     assertContains(editorCode, 'publish', 'Must tell user to publish hidden products');
     assertContains(editorCode, 'restock', 'Must tell user to restock out-of-stock products');
+  });
+
+  // ================================================================
+  // Contract 27: Browse Mode — Empty Search Returns Products
+  // ================================================================
+  console.log('\nContract 27: Browse Mode — Empty Search Returns Products');
+
+  test('API allows empty query for browse mode', () => {
+    const routePath = path.join(__dirname, '..', 'backend', 'src', 'app', 'api', 'stores', '[id]', 'products', 'search', 'route.ts');
+    let routeCode;
+    try { routeCode = fs.readFileSync(routePath, 'utf8'); } catch(e) { throw new Error('Cannot read product search route: ' + e.message); }
+    // Must NOT have early return for empty query (browse mode needs to work)
+    if (/if\s*\(\s*!q\.trim\(\)\s*\)\s*\{?\s*return/.test(routeCode)) {
+      throw new Error('API must not early-return on empty query — browse mode requires fetching products with empty q');
+    }
+    assertContains(routeCode, 'status:active', 'Must filter by active status');
+  });
+
+  // ================================================================
+  // Contract 28: Live Search — Debounced Search on Typing
+  // ================================================================
+  console.log('\nContract 28: Live Search — Debounced Search on Typing');
+
+  test('tier editor has debounced live search', () => {
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rewards-tier-editor.tsx');
+    let editorCode;
+    try { editorCode = fs.readFileSync(editorPath, 'utf8'); } catch(e) { throw new Error('Cannot read rewards-tier-editor.tsx: ' + e.message); }
+    assertContains(editorCode, 'debounce', 'Must have debounce logic for live search');
+    assertContains(editorCode, 'setTimeout', 'Must use setTimeout for debounce');
+    assertContains(editorCode, 'clearTimeout', 'Must clear previous timeout on new keystroke');
+    assertContains(editorCode, 'onFocus', 'Must have onFocus handler for browse mode');
+  });
+
+  // ================================================================
+  // Contract 29: No Theme Assets — Extension CDN Only
+  // ================================================================
+  console.log('\nContract 29: No Theme Assets — Extension CDN Only');
+
+  test('no _jsUrl override in demo or live configs', () => {
+    // Check that the API routes that return config don't hardcode _jsUrl
+    const configFiles = [
+      path.join(__dirname, '..', 'backend', 'src', 'app', 'api', 'stores', '[id]', 'cart-config', 'route.ts'),
+    ];
+    for (const f of configFiles) {
+      let code;
+      try { code = fs.readFileSync(f, 'utf8'); } catch(e) { continue; }
+      if (/_jsUrl/.test(code) && !/\/\/.*_jsUrl/.test(code)) {
+        // Allow commented-out references but not active ones
+        const lines = code.split('\n');
+        for (const line of lines) {
+          if (line.includes('_jsUrl') && !line.trim().startsWith('//') && !line.trim().startsWith('*')) {
+            throw new Error(`Active _jsUrl reference in ${path.basename(f)} — must use extension CDN, never theme assets`);
+          }
+        }
+      }
+    }
+  });
+
+  test('v14-complete.js never forces a theme asset URL', () => {
+    const jsPath = path.join(__dirname, '..', 'v14-complete.js');
+    let jsSrc;
+    try { jsSrc = fs.readFileSync(jsPath, 'utf8'); } catch(e) { throw new Error('Cannot read v14-complete.js: ' + e.message); }
+    if (new RegExp('cdn.shopify.com.+v14-complete.js').test(jsSrc)) {
+      throw new Error('v14-complete.js must not contain hardcoded theme asset URLs');
+    }
+  });
+
+
+  // ================================================================
+  // CONTRACT 30-35: Shipping Protection — Tiered Pricing
+  // ================================================================
+  console.log("\nContract 30-35: Shipping Protection Tiered Pricing");
+
+  test('Contract 30: getProtTier function exists and iterates tiers', () => {
+    assert(code.includes('function getProtTier'), 'Missing getProtTier function');
+    assert(code.includes('PROT_TIERS[i].maxValue'), 'getProtTier must check maxValue');
+    assert(code.includes('cartValueCents'), 'getProtTier must accept cartValueCents parameter');
+  });
+
+  test('Contract 31: Tier lookup returns correct variant by comparing cart value', () => {
+    assert(code.includes('cartValueCents <= PROT_TIERS[i].maxValue'), 'Must compare cartValue to tier maxValue');
+    assert(code.includes('PROT_TIERS[PROT_TIERS.length - 1]'), 'Must fallback to last tier');
+  });
+
+  test('Contract 32: Silent tier swap when variant changes', () => {
+    assert(code.includes('protItem.variant_id !== correctTier.vid') || code.includes('protItem.variant_id !== correctTierL.vid'), 'Must detect wrong tier');
+    assert(code.includes('correctTier.vid'), 'Must use correctTier.vid for swap');
+  });
+
+  test('Contract 33: Single-tier fallback builds PROT_TIERS from PROT_VID_SINGLE', () => {
+    assert(code.includes('PROT_VID_SINGLE'), 'Must define PROT_VID_SINGLE');
+    assert(code.includes('PROT_TIERS.length === 0 && PROT_VID_SINGLE'), 'Must build PROT_TIERS from single VID when no tiers');
+  });
+
+  test('Contract 34: Toggle price reads from current tier', () => {
+    assert(code.includes('getProtTier('), 'Must call getProtTier');
+    assert(code.includes('displayPrice') || code.includes('data-prot-price'), 'Must have dynamic price display');
+  });
+
+  test('Contract 35: Icon URL from config supported', () => {
+    assert(code.includes('iconUrl'), 'Must support iconUrl from config');
+  });
+
+  // ================================================================
+  // CONTRACT 36-37: Protection API Route
+  // ================================================================
+  console.log("\nContract 36-37: Protection API Route");
+
+  test('Contract 36: Protection create route sets non-physical product', () => {
+    const routePath = path.join(__dirname, '..', 'backend', 'src', 'app', 'api', 'stores', '[id]', 'protection', 'create', 'route.ts');
+    let routeFile;
+    try { routeFile = fs.readFileSync(routePath, 'utf8'); } catch(e) { throw new Error('Cannot read protection create route: ' + e.message); }
+    assert(routeFile.includes('requiresShipping: false') || routeFile.includes('requires_shipping: false'), 'Must set requiresShipping: false');
+    assert(routeFile.includes('_eliminai-cart-protection') || routeFile.includes('eliminai') || routeFile.includes('cart-protection'), 'Must tag with cart-protection identifier');
+  });
+
+  test('Contract 37: Protection create route unpublishes from Online Store', () => {
+    const routePath = path.join(__dirname, '..', 'backend', 'src', 'app', 'api', 'stores', '[id]', 'protection', 'create', 'route.ts');
+    let routeFile;
+    try { routeFile = fs.readFileSync(routePath, 'utf8'); } catch(e) { throw new Error('Cannot read protection create route: ' + e.message); }
+    assert(routeFile.includes('publishableUnpublish') || routeFile.includes('unpublish') || routeFile.includes('UNPUBLISH'), 'Must unpublish from storefront');
   });
 
   // ================================================================

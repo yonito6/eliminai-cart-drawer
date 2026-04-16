@@ -54,40 +54,77 @@
 
 
   var CFG = window.CCD_CONFIG || {};
-  var PROT = CFG.protectionHandle || 'shipping-protection-1';
-  var PROT_VID = parseInt(CFG.protectionVariantId) || 47779174023419;
+  var _sp = (CFG.addons && CFG.addons.shippingProtection) || {};
+  var PROT = _sp.handle || CFG.protectionHandle || 'shipping-protection-1';
+  var _spCfg = _sp.config || _sp;
+  var PROT_TIERS = _spCfg.tiers || [];
+  var PROT_VID_SINGLE = parseInt(_spCfg.variantId || CFG.protectionVariantId) || 0;
+  if (PROT_TIERS.length === 0 && PROT_VID_SINGLE) {
+    PROT_TIERS = [{ vid: PROT_VID_SINGLE, price: parseInt(_spCfg.price || CFG.protectionPrice) || 499, maxValue: null }];
+  }
+  var PROT_VID = PROT_TIERS.length > 0 ? PROT_TIERS[0].vid : 0;
+  function getProtTier(cartValueCents) {
+    for (var i = 0; i < PROT_TIERS.length; i++) {
+      if (PROT_TIERS[i].maxValue === null || cartValueCents <= PROT_TIERS[i].maxValue) {
+        return PROT_TIERS[i];
+      }
+    }
+    return PROT_TIERS[PROT_TIERS.length - 1] || null;
+  }
+  var PROT_ENABLED = _sp.enabled === true || (CFG.protectionEnabled === true);
   // ── Dynamic reward tiers (from dashboard config) ──
-  var REWARD_TIERS = CFG.tiers || [];
-  var THRESHOLD_MODE = CFG.thresholdMode || 'items'; // 'items' or 'dollars'
-  var HIGHEST_TIER_ONLY = !!CFG.highestTierOnly;
-  var ALL_REWARDS_TEXT = CFG.allRewardsUnlockedText || '\uD83C\uDF89 You\u2019ve unlocked all rewards!';
-  var MILESTONE_ANIMATION = CFG.milestoneAnimation !== false;
-  var MILESTONE_ANIM_TYPE = CFG.milestoneAnimationType || 'pulse';
-  var GIFT_BADGE_ENABLED = CFG.giftBadgeEnabled !== false;
-  var GIFT_BADGE_TEXT = CFG.giftBadgeText || 'Bonus gift';
-  var GIFT_BADGE_TEXT_COLOR = CFG.giftBadgeTextColor || '#1a7a1a';
-  var GIFT_BADGE_BG_COLOR = CFG.giftBadgeBgColor || '#edf7ed';
-  var GIFT_SHOW_COMPARE_PRICE = CFG.giftShowComparePrice !== false;
+  // Data lives at CFG.addons.freeShippingBar.config.* — flatten with fallback to flat CFG.*
+  var _fsb = (CFG.addons && CFG.addons.freeShippingBar && CFG.addons.freeShippingBar.config) || {};
+  var REWARD_TIERS = _fsb.tiers || CFG.tiers || [];
+  var THRESHOLD_MODE = _fsb.thresholdMode || CFG.thresholdMode || 'items';
+  var HIGHEST_TIER_ONLY = !!(_fsb.highestTierOnly || CFG.highestTierOnly);
+  var ALL_REWARDS_TEXT = _fsb.allRewardsUnlockedText || CFG.allRewardsUnlockedText || '\uD83C\uDF89 You\u2019ve unlocked all rewards!';
+  var MILESTONE_ANIMATION = (_fsb.milestoneAnimation !== undefined ? _fsb.milestoneAnimation : CFG.milestoneAnimation) !== false;
+  var MILESTONE_ANIM_TYPE = _fsb.milestoneAnimationType || CFG.milestoneAnimationType || 'pulse';
+  var GIFT_BADGE_ENABLED = (_fsb.giftBadgeEnabled !== undefined ? _fsb.giftBadgeEnabled : CFG.giftBadgeEnabled) !== false;
+  var GIFT_BADGE_TEXT = _fsb.giftBadgeText || CFG.giftBadgeText || 'Bonus gift';
+  var GIFT_BADGE_TEXT_COLOR = _fsb.giftBadgeTextColor || CFG.giftBadgeTextColor || '#1a7a1a';
+  var GIFT_BADGE_BG_COLOR = _fsb.giftBadgeBgColor || CFG.giftBadgeBgColor || '#edf7ed';
+  var GIFT_SHOW_COMPARE_PRICE = (_fsb.giftShowComparePrice !== undefined ? _fsb.giftShowComparePrice : CFG.giftShowComparePrice) !== false;
+  var GIFT_HIDE_DISCOUNT_LABEL = (_fsb.giftHideDiscountLabel !== undefined ? _fsb.giftHideDiscountLabel : CFG.giftHideDiscountLabel) !== false;
   // Backwards compat: derive PROMO_GOAL from last tier's goal
   var PROMO_GOAL = REWARD_TIERS.length > 0 ? REWARD_TIERS[REWARD_TIERS.length - 1].goal : (CFG.promoGoal || 3);
+  // Resolve primary gift from a tier — checks giftProducts[] first, falls back to giftProduct
+  // Returns first gift (for legacy/backwards compat)
+  function tierGift(t) {
+    if (t.giftProducts && t.giftProducts.length > 0) return t.giftProducts[0];
+    if (t.giftProduct) return t.giftProduct;
+    return null;
+  }
+  // Returns ALL gifts for a tier
+  function tierGifts(t) {
+    if (t.giftProducts && t.giftProducts.length > 0) return t.giftProducts;
+    if (t.giftProduct) return [t.giftProduct];
+    return [];
+  }
   // Build a set of all gift handles across tiers
   var GIFT_HANDLES = {};
+  var GIFT_DISCOUNT_CODES = [];
   var GIFT_TIERS = []; // tiers that have a gift product
   REWARD_TIERS.forEach(function(t) {
-    if (t.giftProduct && t.giftProduct.handle) {
-      GIFT_HANDLES[t.giftProduct.handle] = true;
+    var gifts = tierGifts(t);
+    if (gifts.length > 0) {
+      gifts.forEach(function(g) { if (g.handle) GIFT_HANDLES[g.handle] = true; });
       GIFT_TIERS.push(t);
     }
   });
   // Legacy single gift (backwards compat for stores not yet using tiers)
-  var WATCH_CASE_HANDLE = CFG.giftHandle || (GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].giftProduct.handle : 'eleganto-premium-watch-organizer');
-  var WATCH_CASE_VID = parseInt(CFG.giftVariantId) || (GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].giftProduct.variantId : 46941745742075);
+  var _lastGift = GIFT_TIERS.length > 0 ? tierGift(GIFT_TIERS[GIFT_TIERS.length - 1]) : null;
+  var WATCH_CASE_HANDLE = CFG.giftHandle || (_lastGift ? _lastGift.handle : 'eleganto-premium-watch-organizer');
+  var WATCH_CASE_VID = parseInt(CFG.giftVariantId) || (_lastGift ? _lastGift.variantId : 46941745742075);
   var WATCH_GOAL = CFG.giftGoal || (GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].goal : 3);
   var busy = false;
   var _pendingOp = null; // queued operation when busy
   var protectionDone = false;
   var toggling = false;
+  var _userToggledOff = false;
   var watchCaseBusy = false;
+    var _giftAddFails = {}; // handle → fail count, prevents infinite retry
   var scarcityVariantId = null;
   try { scarcityVariantId = sessionStorage.getItem('ccd_scarcity_vid'); } catch(e) {}
   var caseDismissed = false;
@@ -126,7 +163,7 @@
   var CCD = {
 
     fixMobileWidth: function() {
-      var drawer = document.getElementById('CartDrawer');
+      var drawer = document.getElementById('CCD-Drawer');
       if (!drawer) return;
       var vw = window.innerWidth;
       if (vw > 0 && vw < 385) {
@@ -155,19 +192,357 @@
         setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 350);
       }, 3000);
     },
+    // ── Theme-Independent Drawer Shell ──
+    // Creates our own complete drawer DOM so we don't depend on ANY theme's markup
+    renderDrawerShell: function() {
+      // Hide any theme cart drawer elements
+      var themeDrawer = document.getElementById('CartDrawer');
+      if (themeDrawer) {
+        themeDrawer.id = 'CartDrawer-theme-original';
+        themeDrawer.style.display = 'none !important';
+        themeDrawer.setAttribute('aria-hidden', 'true');
+      }
+      // Also hide <cart-drawer> custom element (used by some themes like Dawn)
+      var dawnDrawer = document.querySelector('cart-drawer');
+      if (dawnDrawer) {
+        dawnDrawer.style.display = 'none';
+        dawnDrawer.setAttribute('aria-hidden', 'true');
+        // Neutralize renderContents to prevent theme errors when product-form.js calls it
+        if (typeof dawnDrawer.renderContents === 'function') {
+          dawnDrawer.renderContents = function() {};
+        }
+        // Also neutralize getSectionsToRender if present
+        if (typeof dawnDrawer.getSectionsToRender === 'function') {
+          dawnDrawer.getSectionsToRender = function() { return []; };
+        }
+      }
+
+      // Create overlay
+      var overlay = document.createElement('div');
+      overlay.id = 'CCD-Overlay';
+      overlay.className = 'ccd-overlay';
+      overlay.addEventListener('click', function() { CCD.closeDrawer(); });
+      document.body.appendChild(overlay);
+
+      // Protection toggle HTML
+      var _currentTier = getProtTier(0);
+      var protPrice = _currentTier ? _currentTier.price : (parseInt(CFG.protectionPrice) || 499);
+      var displayPrice = (protPrice / 100).toFixed(2);
+      var protChecked = (CFG.protectionDefaultOn !== false) ? ' checked' : '';
+      var protHtml = '';
+      if (PROT_ENABLED && PROT_VID) {
+        protHtml = '<div class="ccd-shipping-protection">' +
+          '<div class="ccd-shipping-protection__icon">' + (_spCfg.iconUrl ? '<img src="' + _spCfg.iconUrl + '" style="width:20px;height:20px" alt="" />' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>') + '</div>' +
+          '<div class="ccd-shipping-protection__info">' +
+            '<div class="ccd-shipping-protection__title">' + (CFG.protectionTitle || 'Shipping Protection') + '</div>' +
+            '<div class="ccd-shipping-protection__desc">' + (CFG.protectionDesc || 'Against loss, theft & damage') + '</div>' +
+          '</div>' +
+          '<div class="ccd-shipping-protection__right">' +
+            '<span class="ccd-shipping-protection__price" data-prot-price="' + protPrice + '">' + CCD.fmt(protPrice) + '</span>' +
+            '<label class="ccd-toggle">' +
+              '<input type="checkbox" id="ccd-shipping-toggle"' + protChecked + '>' +
+              '<span class="ccd-toggle__slider ccd-toggle--instant"></span>' +
+            '</label>' +
+          '</div>' +
+        '</div>';
+      }
+
+      // Build the complete drawer HTML
+      var drawerHtml = '<div class="ccd-drawer-contents">' +
+        '<div class="ccd-fixed-header">' +
+          '<div class="ccd-header">' +
+            '<h2 class="ccd-title">' + (CFG.cartTitle || 'Your cart') + '</h2>' +
+            '<div class="ccd-close">' +
+              '<button class="ccd-close-btn" aria-label="Close cart">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="ccd-progress" data-ccd-progress>' +
+            '<div class="ccd-progress__message" data-ccd-progress-msg></div>' +
+            '<div class="ccd-progress__bar-wrap"></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ccd-inner" data-ccd-inner>' +
+          '<div class="ccd-scrollable" data-products>' +
+            '<div class="ccd-items" data-real-count="0" data-unique-count="0" data-cart-subtotal="0"></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ccd-cart-empty">' +
+          '<p>' + (CFG.emptyCartText || 'Your cart is empty') + '</p>' +
+          '<button class="ccd-continue-btn" onclick="CCD.close()">' + (CFG.continueShoppingText || 'Continue Shopping') + '</button>' +
+        '</div>' +
+        '<div class="ccd-sticky-footer" data-ccd-footer>' +
+          protHtml +
+          '<div class="ccd-discount-row" data-ccd-discounts style="display:none"></div>' +
+          '<button class="ccd-checkout-btn">' +
+            '<svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor"/></svg> ' +
+            (CFG.checkoutText || 'SECURE CHECKOUT') + ' · <span class="ccd-checkout-total" data-subtotal>$0.00</span>' +
+          '</button>' +
+          '<div class="ccd-trust">' +
+            '<div class="ccd-trust__line">' +
+              '<svg class="ccd-trust__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg> ' +
+              (CFG.trustText || '<strong>30 day</strong> risk free returns') +
+            '</div>' +
+            '<div class="ccd-trust__badges">' +
+              '<span class="ccd-badge">PayPal</span>' +
+              '<span class="ccd-badge ccd-badge--visa">VISA</span>' +
+              '<span class="ccd-badge ccd-badge--amex">AMEX</span>' +
+              '<span class="ccd-badge ccd-badge--discover"><svg viewBox="0 0 38 24"><rect width="38" height="24" rx="3" fill="#f76b1c"/><text x="19" y="15" fill="#fff" font-size="8" font-weight="700" text-anchor="middle">DISC</text></svg></span>' +
+              '<span class="ccd-badge ccd-badge--mc"><svg viewBox="0 0 38 24"><circle cx="15" cy="12" r="7" fill="#eb001b" opacity=".8"/><circle cx="23" cy="12" r="7" fill="#f79e1b" opacity=".8"/></svg></span>' +
+              '<span class="ccd-badge"><svg viewBox="0 0 38 24"><rect width="38" height="24" rx="3" fill="#000"/><text x="19" y="15" fill="#fff" font-size="7" font-weight="500" text-anchor="middle" font-family="sans-serif">Pay</text></svg></span>' +
+              '<span class="ccd-badge"><svg viewBox="0 0 38 24"><rect width="38" height="24" rx="3" fill="#fff" stroke="#ddd"/><text x="19" y="15" fill="#5f6368" font-size="7" font-weight="500" text-anchor="middle" font-family="sans-serif">GPay</text></svg></span>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+      var drawer = document.createElement('div');
+      drawer.id = 'CCD-Drawer';
+      drawer.className = 'ccd-drawer ccd--right';
+      drawer.style.cssText = 'position:fixed;top:0;right:0;';
+      drawer.innerHTML = drawerHtml;
+      document.body.appendChild(drawer);
+
+      // Close button handler
+      drawer.querySelector('.ccd-close-btn').addEventListener('click', function() {
+        CCD.closeDrawer();
+      });
+
+      // ESC key handler
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') CCD.closeDrawer();
+      });
+
+      return drawer;
+    },
+
+    // Render a single cart item from /cart.js JSON
+    renderItemHTML: function(item) {
+      var imgUrl = item.image || (item.featured_image ? item.featured_image.url : '');
+      // Shopify returns protocol-relative URLs — ensure they work
+      if (imgUrl && imgUrl.indexOf('//') === 0) imgUrl = 'https:' + imgUrl;
+      // Resize to 240px for performance
+      if (imgUrl && imgUrl.indexOf('cdn.shopify.com') !== -1) {
+        imgUrl = imgUrl.replace(/(\.[a-z]+)\?/, '_240x$1?');
+        if (imgUrl.indexOf('_240x') === -1) imgUrl = imgUrl.replace(/(\.[a-z]+)$/, '_240x$1');
+      }
+
+      var variantHtml = '';
+      if (item.variant_title) {
+        variantHtml = '<div class="ccd-item__variant-row"><span class="ccd-item__variant">' +
+          item.variant_title.replace(/</g, '&lt;') + '</span></div>';
+      }
+
+      // Price display — show compare price if discounted
+      var priceRowHtml = '';
+      var unitPrice = item.final_price != null ? item.final_price : item.price;
+      var linePrice = item.final_line_price != null ? item.final_line_price : (unitPrice * item.quantity);
+      var origLinePrice = item.original_line_price || (item.original_price || item.price) * item.quantity;
+      if (origLinePrice > linePrice && linePrice > 0) {
+        priceRowHtml = '<div class="ccd-item__price-row">' +
+          '<span class="ccd-item__compare-price">' + CCD.fmt(origLinePrice) + '</span>' +
+          '<span class="ccd-item__price">' + CCD.fmt(linePrice) + '</span>' +
+        '</div>';
+      } else {
+        priceRowHtml = '<div class="ccd-item__price-row">' +
+          '<span class="ccd-item__price">' + CCD.fmt(linePrice) + '</span>' +
+        '</div>';
+      }
+
+      return '<div class="ccd-item" data-key="' + item.key + '" data-variant-id="' + item.variant_id + '">' +
+        '<div class="ccd-item__image">' +
+          '<a href="' + (item.url || '/products/' + item.handle) + '">' +
+            '<img src="' + imgUrl + '" alt="' + (item.title || '').replace(/"/g, '&quot;') + '" loading="lazy">' +
+          '</a>' +
+        '</div>' +
+        '<div class="ccd-item__details">' +
+          '<div class="ccd-item__title-row">' +
+            '<a class="ccd-item__name" href="' + (item.url || '/products/' + item.handle) + '">' + (item.product_title || item.title || '').replace(/</g, '&lt;') + '</a>' +
+            '<button class="ccd-item__remove" data-key="' + item.key + '" aria-label="Remove">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14M10 11v6M14 11v6"/></svg>' +
+            '</button>' +
+          '</div>' +
+          variantHtml +
+          '<div class="ccd-item__bottom">' +
+            '<div class="ccd-qty">' +
+              '<button class="ccd-qty__btn ccd-qty__btn--minus" aria-label="Decrease quantity">' +
+                '<svg viewBox="0 0 12 2"><line x1="0" y1="1" x2="12" y2="1" stroke="currentColor" stroke-width="1.5"/></svg>' +
+              '</button>' +
+              '<input class="ccd-qty__input" type="number" value="' + item.quantity + '" min="0" data-id="' + item.key + '">' +
+              '<button class="ccd-qty__btn ccd-qty__btn--plus" aria-label="Increase quantity">' +
+                '<svg viewBox="0 0 12 12"><line x1="6" y1="0" x2="6" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="6" x2="12" y2="6" stroke="currentColor" stroke-width="1.5"/></svg>' +
+              '</button>' +
+            '</div>' +
+            '<div class="ccd-item__price-col">' + priceRowHtml + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    },
+
+    // Build a .ccd-items element with all items rendered from cart JSON
+    renderCartItems: function(cart) {
+      if (!cart || !cart.items) return null;
+      var el = document.createElement('div');
+      el.className = 'ccd-items';
+      el.setAttribute('data-real-count', CCD.getRealCount(cart));
+      el.setAttribute('data-unique-count', CCD.getUniqueVariants(cart));
+      el.setAttribute('data-watch-count', CCD.getWatchCount(cart));
+      el.setAttribute('data-cart-subtotal', CCD.getAdjustedTotal(cart));
+      // Preserve watch handles from config
+      if (CCD._watchHandles) {
+        el.setAttribute('data-watch-handles', CCD._watchHandles.join(','));
+      }
+      var html = '';
+      cart.items.forEach(function(item) {
+        html += CCD.renderItemHTML(item);
+      });
+      el.innerHTML = html;
+      return el;
+    },
+
+    _lastRealCount: -1,
+    openDrawer: function() {
+      var d = document.getElementById('CCD-Drawer');
+      if (!d) return;
+      if (d.classList.contains('ccd--open')) return;
+      // Use last known cart state to show correct view instantly (no flash)
+      var _pb = d.querySelector('[data-ccd-progress]');
+      var _ft = d.querySelector('[data-ccd-footer]');
+      var _id = d.querySelector('[data-ccd-inner]');
+      var _es = d.querySelector('.ccd-cart-empty');
+      if (CCD._lastRealCount === 0) {
+        // Cart was empty last time — show empty state, hide content
+        if (_pb) _pb.style.display = 'none';
+        if (_ft) _ft.style.display = 'none';
+        if (_id) _id.style.display = 'none';
+        if (_es) _es.classList.add('ccd-show');
+      } else if (CCD._lastRealCount > 0) {
+        // Cart had items — show content, hide empty state
+        if (_es) _es.classList.remove('ccd-show');
+        if (_id) _id.style.display = 'flex';
+        if (_pb) _pb.style.display = 'block';
+        if (_ft) _ft.style.display = 'block';
+      } else {
+        // First open ever (_lastRealCount is -1) — hide everything, let fetch decide
+        if (_pb) _pb.style.display = 'none';
+        if (_ft) _ft.style.display = 'none';
+        if (_id) _id.style.display = 'none';
+      }
+      d.classList.add('ccd--open');
+      d.style.display = 'flex';
+      var ov = document.getElementById('CCD-Overlay');
+      if (ov) ov.classList.add('ccd-overlay--visible');
+      document.body.style.overflow = 'hidden';
+      CCD.refreshOnOpen();
+    },
+
+    closeDrawer: function() {
+      var d = document.getElementById('CCD-Drawer');
+      if (!d) return;
+      d.classList.remove('ccd--open');
+      var ov = document.getElementById('CCD-Overlay');
+      if (ov) ov.classList.remove('ccd-overlay--visible');
+      document.body.style.overflow = '';
+      window._ccdReturnUrl = null;
+      protectionDone = false;
+    },
+
+    // Universal cart open interception — works on ANY theme
+    interceptCartOpens: function() {
+      document.addEventListener('click', function(e) {
+        // Already inside our drawer? Let it through
+        if (e.target.closest('#CCD-Drawer')) return;
+
+        var link = e.target.closest('a[href*="/cart"]');
+        var cartBtn = e.target.closest('[data-cart-toggle], .cart-icon-bubble, .js-cart-toggle, .site-header__cart, .header__icon--cart, [data-action="toggle-cart"], cart-toggle');
+
+        // Cart link — but NOT checkout links
+        if (link) {
+          var href = link.getAttribute('href') || '';
+          // Allow checkout and cart/clear
+          if (href.indexOf('/checkout') !== -1 || href.indexOf('/cart/clear') !== -1) return;
+          // Only intercept /cart (exact or with query params)
+          if (href === '/cart' || href.match(/^\/cart(\?|$)/)) {
+            e.preventDefault();
+            e.stopPropagation();
+            CCD.openDrawer();
+            return;
+          }
+        }
+
+        // Cart icon buttons
+        if (cartBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          CCD.openDrawer();
+          return;
+        }
+
+        // Dawn-specific: cart-icon-bubble inside header
+        var bubble = e.target.closest('.cart-count-bubble, #cart-icon-bubble');
+        if (bubble) {
+          e.preventDefault();
+          e.stopPropagation();
+          CCD.openDrawer();
+          return;
+        }
+      }, true); // useCapture to fire before theme handlers
+
+      // Intercept Shopify's cart-drawer open via custom events
+      document.addEventListener('cart:toggle', function(e) { e.stopImmediatePropagation(); CCD.openDrawer(); }, true);
+    },
+
+    // Update all cart count indicators on the page (theme header bubble, etc.)
+    updateCartBubble: function(cart) {
+      if (!cart) return;
+      var rc = CCD.getRealCount(cart); CCD._lastRealCount = rc;
+      // Try common cart count selectors across themes
+      var selectors = [
+        '.cart-link__bubble-num',      // Impulse
+        '.cart-count-bubble span',     // Dawn
+        '#cart-icon-bubble span',      // Dawn alternate
+        '.cart-count',                 // Various
+        '.site-header__cart-count',    // Debut
+        '.cart-link__count',           // Various
+        '[data-cart-count]',           // Various
+        '.js-cart-count',             // Various
+        '.header__cart-count'         // Various
+      ];
+      selectors.forEach(function(sel) {
+        document.querySelectorAll(sel).forEach(function(el) {
+          el.textContent = rc;
+        });
+      });
+      // Toggle bubble visibility
+      var bubbles = document.querySelectorAll('.cart-link__bubble, .cart-count-bubble, #cart-icon-bubble');
+      bubbles.forEach(function(b) {
+        if (b.classList.contains('cart-link__bubble')) {
+          b.classList.toggle('cart-link__bubble--visible', cart.item_count > 0);
+        } else {
+          b.style.display = cart.item_count > 0 ? '' : 'none';
+        }
+      });
+    },
+
     init: function() {
-      // VERSION STAMP — remove after debugging
-      console.log('%c[CCD v14.15] Cart drawer loaded', 'background:#6b21a8;color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold');
-      window.__ccd_version = '14.8-debug';
+      // VERSION STAMP
+      console.log('%c[CCD v15.9] Theme-independent cart drawer loaded', 'background:#6b21a8;color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold');
+      window.__ccd_version = '15.0';
+      window.__eliminai_cart_loaded = true;
+
+      // Build our own drawer DOM (theme-independent)
+      this.renderDrawerShell();
       this.fixMobileWidth();
       this.bindEvents();
       this.interceptAddToCart();
+      this.interceptCartOpens();
       this.setupScrollIndicator();
       this.buildProgressBar();
       this.updateProgress();
       this.checkOverflow();
       // Pre-fetch experiment config on page load so cart opens instantly
-      this.loadExperiment(function() {}, true);
+      this.loadExperiment(function(c2) { if (c2) CCD._mergeTiersFromConfig(c2); }, true);
       // Remove instant class only on first user interaction with the toggle
       var tglInput = document.getElementById("ccd-shipping-toggle");
       if (tglInput) {
@@ -177,6 +552,34 @@
           tglInput.removeEventListener("change", onFirstToggle);
         });
       }
+    },
+
+
+    _mergeTiersFromConfig: function(config) {
+      if (!config || !config.cartConfig || !config.cartConfig.addons) return;
+      var fsb = config.cartConfig.addons.freeShippingBar;
+      if (!fsb || !fsb.config || !fsb.config.tiers || fsb.config.tiers.length === 0) return;
+      REWARD_TIERS = fsb.config.tiers;
+      THRESHOLD_MODE = fsb.config.thresholdMode || 'items';
+      HIGHEST_TIER_ONLY = !!fsb.config.highestTierOnly;
+      if (fsb.config.allRewardsUnlockedText) ALL_REWARDS_TEXT = fsb.config.allRewardsUnlockedText;
+      GIFT_HANDLES = {};
+      GIFT_TIERS = [];
+      REWARD_TIERS.forEach(function(t) {
+        var gifts = tierGifts(t);
+        if (gifts.length > 0) {
+          gifts.forEach(function(g) { if (g.handle) GIFT_HANDLES[g.handle] = true; });
+          GIFT_TIERS.push(t);
+        }
+      });
+      var _lg2 = GIFT_TIERS.length > 0 ? tierGift(GIFT_TIERS[GIFT_TIERS.length - 1]) : null;
+      if (_lg2) {
+        WATCH_CASE_HANDLE = _lg2.handle;
+        WATCH_CASE_VID = parseInt(_lg2.variantId) || WATCH_CASE_VID;
+      }
+      WATCH_GOAL = GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].goal : (CFG.giftGoal || 3);
+      GIFT_DISCOUNT_CODES = config.cartConfig.giftDiscountCodes || [];
+      console.log('[CCD] Loaded tiers from backend:', REWARD_TIERS.length, 'tiers, GIFT_HANDLES=', JSON.stringify(GIFT_HANDLES), 'GIFT_CODES=', GIFT_DISCOUNT_CODES.length);
     },
 
     _isExcludedHandle: function(handle) {
@@ -221,6 +624,30 @@
       return count;
     },
 
+    // Calculate what Shopify is actually charging for gift items.
+    // If Shopify applied a discount, final_line_price is 0 — nothing to subtract.
+    // If Shopify didn't apply a discount, final_line_price is full price — subtract it.
+    getGiftSavings: function(cart) {
+      var cost = 0;
+      if (!cart || !cart.items) return 0;
+      cart.items.forEach(function(item) {
+        var isGift = GIFT_HANDLES[item.handle] || item.handle === WATCH_CASE_HANDLE;
+        if (!isGift) return;
+        // Use explicit null check — 0 is a valid value (means Shopify already made it free)
+        var lineCost = (item.final_line_price != null) ? item.final_line_price : (item.price * item.quantity);
+        cost += lineCost;
+      });
+      return cost;
+    },
+
+    // Get the total to display = cart.total_price minus any gift costs Shopify didn't discount
+    getAdjustedTotal: function(cart) {
+      if (!cart) return 0;
+      var giftCost = CCD.getGiftSavings(cart);
+      var total = cart.total_price - giftCost;
+      return total < 0 ? 0 : total;
+    },
+
     bindEvents: function() {
 
       // Reset checkout button when returning via back button (bfcache)
@@ -232,11 +659,17 @@
         }
       });
 
-      // Checkout button loading — CSS-only, never touch innerHTML
+      // Checkout button — apply gift discount code if case is in cart
       document.addEventListener('click', function(e) {
         var checkoutBtn = e.target.closest('.ccd-checkout-btn');
         if (checkoutBtn && !checkoutBtn.classList.contains('ccd-checkout-btn--loading')) {
           checkoutBtn.classList.add('ccd-checkout-btn--loading');
+          // If gift case is in cart, redirect through /discount/FREECASE to auto-apply code
+          // All gift discounts are automatic BXGY — no codes needed.
+          // Just go straight to checkout.
+          e.preventDefault();
+          e.stopPropagation();
+          window.location.href = '/checkout';
         }
       });
 
@@ -292,9 +725,9 @@
             try { sessionStorage.setItem('ccd_case_dismissed', '1'); } catch(ex) {}
           }
           // If removing a watch might drop below gift goal, hide gift instantly
-          var curWatchCount = parseInt((document.querySelector(".cart__items") || {}).dataset && document.querySelector(".cart__items").dataset.watchCount || "0");
+          var curWatchCount = parseInt((document.querySelector(".ccd-items") || {}).dataset && document.querySelector(".ccd-items").dataset.watchCount || "0");
           if (curWatchCount <= WATCH_GOAL) {
-            var gEl = document.querySelector('#CartDrawer .ccd-item[data-gift="1"]');
+            var gEl = document.querySelector('#CCD-Drawer .ccd-item[data-gift="1"]');
             if (gEl) { gEl.classList.add("ccd-item--removing"); }
           }
           // Optimistic progress update: count will decrease
@@ -397,6 +830,9 @@
         if (_pendingOp) {
           var p = _pendingOp;
           _pendingOp = null;
+          // Reset remove flags so the queued op gets a proper refresh path
+          window.__ccd_is_removing = false;
+          window.__ccd_block_rebuild = false;
           // Start collapse animation for queued removes
           if (p.qty === 0) {
             var qItem = p.btnEl ? p.btnEl.closest('.ccd-item') : document.querySelector('.ccd-item[data-key="' + p.key + '"]');
@@ -425,14 +861,11 @@
         if (_isRemoving) {
           // Item removed — lightweight update (skip morphDOM to avoid flicker)
           // Minimal update: only bubble + totals, zero DOM ops on items
-          var _b = document.querySelector('.cart-link__bubble');
-          if (_b) _b.classList.toggle('cart-link__bubble--visible', cart.item_count > 0);
-          var _bn = document.querySelector('.cart-link__bubble-num');
-          if (_bn) _bn.textContent = CCD.getRealCount(cart);
+          CCD.updateCartBubble(cart);
           var _ct = document.querySelector('.ccd-checkout-total');
-          if (_ct) _ct.textContent = CCD.fmt(cart.total_price);
-          var _st = document.querySelector('#CartDrawer [data-subtotal]');
-          if (_st) _st.textContent = CCD.fmt(cart.total_price);
+          if (_ct) _ct.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
+          var _st = document.querySelector('#CCD-Drawer [data-subtotal]');
+          if (_st) _st.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
           // Update progress with real cart data
           CCD.updateProgress(cart);
 
@@ -470,56 +903,72 @@
     },
 
     toggleProtection: function(isChecked) {
-      if (toggling) return; // block rapid clicks
+      if (toggling) return;
       toggling = true;
+      if (isChecked) { _userToggledOff = false; }
+      else { _userToggledOff = true; protectionDone = true; }
       var cb = document.getElementById('ccd-shipping-toggle');
-      if (cb) cb.disabled = true; // disable checkbox during API call
+      if (cb) cb.disabled = true;
 
+      // Read protection price from last known cart, DOM, or config
+      var protPrice = 0;
+      var lastCart = window.__ccd_last_cart;
+      if (lastCart && lastCart.items) {
+        var protCartItem = lastCart.items.find(function(i) { return i.handle === PROT; });
+        if (protCartItem) protPrice = protCartItem.price || 0;
+      }
+      if (!protPrice) {
+        var protEl = document.querySelector('[data-prot-price]');
+        if (protEl) protPrice = parseInt(protEl.getAttribute('data-prot-price')) || 0;
+      }
+      if (!protPrice) protPrice = parseInt(CFG.protectionPrice) || 499;
+
+      // Read displayed total and update optimistically
       var ct = document.querySelector('.ccd-checkout-total');
-      var st = document.querySelector('#CartDrawer [data-subtotal]');
-      var cie = document.querySelector('#CartDrawer .cart__items');
-      var currentTotal = cie ? parseInt(cie.getAttribute('data-cart-subtotal') || '0', 10) : 0;
-      if (isNaN(currentTotal) || currentTotal < 0) currentTotal = 0;
-      var newTotal = isChecked ? currentTotal + 499 : Math.max(0, currentTotal - 499);
-      if (isNaN(newTotal) || newTotal < 0) newTotal = 0;
-      if (ct) ct.textContent = CCD.fmt(newTotal);
-      if (st) st.textContent = CCD.fmt(newTotal);
+      var st = document.querySelector('#CCD-Drawer [data-subtotal]');
+      var displayedText = (ct && ct.textContent) || (st && st.textContent) || '0';
+      var displayedCents = Math.round(parseFloat(displayedText.replace(/[^0-9.]/g, '')) * 100) || 0;
+      var newCents = isChecked ? displayedCents + protPrice : Math.max(0, displayedCents - protPrice);
+      if (isNaN(newCents) || newCents < 0) newCents = 0;
+      if (ct) ct.textContent = CCD.fmt(newCents);
+      if (st) st.textContent = CCD.fmt(newCents);
 
+      var _of = CCD._origFetch || fetch;
       var unlock = function() { toggling = false; if (cb) cb.disabled = false; };
 
       if (isChecked) {
-        fetch('/cart/add.js', {
+        _of('/cart/add.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: [{ id: PROT_VID, quantity: 1 }] })
+          body: JSON.stringify({ items: [{ id: (getProtTier(CCD.getAdjustedTotal(window.__ccd_last_cart || {items:[]})) || {vid:PROT_VID}).vid, quantity: 1 }] })
         })
-        .then(function() { return fetch('/cart.js'); })
+        .then(function() { return _of('/cart.js'); })
         .then(function(r) { return r.json(); })
-        .then(function(cart) { unlock(); CCD.refresh(cart); })
+        .then(function(cart) { unlock(); CCD.refreshLight(cart); })
         .catch(function() { unlock(); });
       } else {
         if (CCD._protKey) {
-          fetch('/cart/change.js', {
+          _of('/cart/change.js', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: CCD._protKey, quantity: 0 })
           })
           .then(function(r) { return r.json(); })
-          .then(function(c) { CCD._protKey = null; unlock(); CCD.refresh(c); })
+          .then(function(c) { CCD._protKey = null; unlock(); CCD.refreshLight(c); })
           .catch(function() { unlock(); });
         } else {
-          fetch('/cart.js')
+          _of('/cart.js')
           .then(function(r) { return r.json(); })
           .then(function(cart) {
             var item = cart.items.find(function(i) { return i.handle === PROT; });
             if (item) {
-              fetch('/cart/change.js', {
+              _of('/cart/change.js', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: item.key, quantity: 0 })
               })
               .then(function(r) { return r.json(); })
-              .then(function(c) { CCD._protKey = null; unlock(); CCD.refresh(c); })
+              .then(function(c) { CCD._protKey = null; unlock(); CCD.refreshLight(c); })
               .catch(function() { unlock(); });
             } else {
               unlock();
@@ -531,9 +980,9 @@
     },
 
     ensureProtection: function() {
-      if (protectionDone || toggling) return;
+      if (protectionDone || toggling || _userToggledOff) return;
       // Respect defaultOn setting — if false, don't auto-add protection
-      var shouldAutoAdd = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
+      var shouldAutoAdd = PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
       if (!shouldAutoAdd) return;
       protectionDone = true;
       // Immediately show toggle as ON so user never sees a flash of OFF
@@ -541,14 +990,14 @@
       fetch('/cart.js')
       .then(function(r) { return r.json(); })
       .then(function(cart) {
-        var rc = CCD.getRealCount(cart);
+        var rc = CCD.getRealCount(cart); CCD._lastRealCount = rc;
         if (rc === 0) { CCD.setToggleNoTransition(false); return; }
         var has = cart.items.some(function(i) { return i.handle === PROT; });
         if (!has) {
           fetch('/cart/add.js', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: [{ id: PROT_VID, quantity: 1 }] })
+            body: JSON.stringify({ items: [{ id: (getProtTier(CCD.getAdjustedTotal(cart)) || {vid:PROT_VID}).vid, quantity: 1 }] })
           })
           .then(function() { return fetch('/cart.js'); })
           .then(function(r) { return r.json(); })
@@ -582,19 +1031,63 @@
       }, true); // useCapture=true to fire BEFORE theme handlers
 
       var origFetch = window.fetch;
+      CCD._origFetch = origFetch;
       window.fetch = function(url, opts) {
         if (typeof url === 'string' && url.indexOf('/cart/add') !== -1 && opts && opts.method && opts.method.toUpperCase() === 'POST') {
           try {
             var body = JSON.parse(opts.body);
             if (body && body.items && Array.isArray(body.items)) {
-              var hasProt = body.items.some(function(it) { return it.id === PROT_VID || it.id === String(PROT_VID); });
-              if (!hasProt && !protectionDone && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false) {
-                body.items.push({ id: PROT_VID, quantity: 1 });
+              var hasProt = body.items.some(function(it) { return PROT_TIERS.some(function(t){return t.vid === it.id || String(t.vid) === String(it.id);}); });
+              var cartAlreadyHasProt = window.__ccd_last_cart && window.__ccd_last_cart.items && window.__ccd_last_cart.items.some(function(ci) { return ci.handle === PROT; });
+              if (!hasProt && !cartAlreadyHasProt && !protectionDone && !_userToggledOff && PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false) {
+                body.items.push({ id: (getProtTier(0) || {vid:PROT_VID}).vid, quantity: 1 });
                 opts.body = JSON.stringify(body);
                 protectionDone = true;
               }
             }
-          } catch(ex) {}
+          } catch(ex) {
+            // Body is form-encoded — convert to JSON and inject protection into same request
+            var _cartAlreadyHasProt = window.__ccd_last_cart && window.__ccd_last_cart.items && window.__ccd_last_cart.items.some(function(ci) { return ci.handle === PROT; });
+            if (!_cartAlreadyHasProt && !protectionDone && !_userToggledOff && PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false) {
+              try {
+                var formParams = new URLSearchParams(opts.body);
+                var formId = formParams.get('id');
+                var formQty = parseInt(formParams.get('quantity')) || 1;
+                if (formId) {
+                  var items = [{ id: parseInt(formId) || formId, quantity: formQty }];
+                  var props = {};
+                  formParams.forEach(function(v, k) {
+                    var pm = k.match(/^properties\[(.+)\]$/);
+                    if (pm) props[pm[1]] = v;
+                  });
+                  if (Object.keys(props).length > 0) items[0].properties = props;
+                  items.push({ id: (getProtTier(0) || {vid:PROT_VID}).vid, quantity: 1 });
+                  opts.body = JSON.stringify({ items: items });
+                  opts.headers = opts.headers || {};
+                  if (typeof opts.headers.set === 'function') {
+                    opts.headers.set('Content-Type', 'application/json');
+                  } else {
+                    opts.headers['Content-Type'] = 'application/json';
+                  }
+                  protectionDone = true;
+                } else {
+                  protectionDone = true;
+                  CCD._pendingProtAdd = origFetch('/cart/add.js', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: [{ id: (getProtTier(0) || {vid:PROT_VID}).vid, quantity: 1 }] })
+                  });
+                }
+              } catch(formEx) {
+                protectionDone = true;
+                CCD._pendingProtAdd = origFetch('/cart/add.js', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ items: [{ id: (getProtTier(0) || {vid:PROT_VID}).vid, quantity: 1 }] })
+                });
+              }
+            }
+          }
 
           // Scarcity check: block adding more of the locked item
           // Read fresh from sessionStorage (not stale closure variable)
@@ -637,16 +1130,52 @@
             }
           } catch(caseEx) {}
 
+          // Hide empty-state immediately so theme can't flash it during add
+          var _es = document.querySelector('#CCD-Drawer .ccd-cart-empty');
+          if (_es) _es.classList.remove('ccd-show');
           return origFetch.call(this, url, opts).then(function(resp) {
             var clone = resp.clone();
             clone.json().then(function() {
-              origFetch('/cart.js').then(function(r) { return r.json(); }).then(function(cart) {
-                CCD.refresh(cart);
-                var d = document.getElementById('CartDrawer');
-                if (d && !d.classList.contains('drawer--is-open')) {
-                  d.classList.add('drawer--is-open');
-                  d.style.display = 'flex';
-                }
+              // Wait for any pending separate protection add (form-encoded path) before fetching cart
+              (CCD._pendingProtAdd || Promise.resolve()).then(function() {
+                CCD._pendingProtAdd = null;
+                origFetch('/cart.js').then(function(r) { return r.json(); }).then(function(cart) {
+                  // After add completes: if protection missing and should be on, add it now
+                  var _hasProt = cart.items.some(function(i) { return i.handle === PROT; });
+                  var _shouldAdd = PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
+                  if (!_hasProt && !_userToggledOff && _shouldAdd && CCD.getRealCount(cart) > 0) {
+                    protectionDone = true;
+                    CCD.setToggleNoTransition(true);
+                    var _updObj = {};
+                    _updObj[(getProtTier(CCD.getAdjustedTotal(cart)) || {vid:PROT_VID}).vid] = 1;
+                    origFetch('/cart/update.js', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ updates: _updObj })
+                    })
+                    .then(function(r2) { return r2.json(); })
+                    .then(function(fullCart) { CCD.refresh(fullCart); })
+                    .catch(function() { CCD.refresh(cart); });
+                  } else {
+                    if (_hasProt) CCD.setToggleNoTransition(true);
+                    var _protQtyItem = cart.items.find(function(i) { return i.handle === PROT; });
+                    if (_protQtyItem && _protQtyItem.quantity > 1) {
+                      var _fixObj = {};
+                      _fixObj[_protQtyItem.variant_id] = 1;
+                      origFetch('/cart/update.js', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ updates: _fixObj })
+                      })
+                      .then(function(r3) { return r3.json(); })
+                      .then(function(fixedCart) { CCD.refresh(fixedCart); })
+                      .catch(function() { CCD.refresh(cart); });
+                    } else {
+                      CCD.refresh(cart);
+                    }
+                  }
+                  CCD.openDrawer();
+                });
               });
             }).catch(function(){});
             return resp;
@@ -727,10 +1256,12 @@
 
       var discounts = [];
       var seenTitles = {};
+      var hiddenGiftDiscountAmount = 0;
 
       if (cart.cart_level_discount_applications) {
         cart.cart_level_discount_applications.forEach(function(d) {
           if (d.title && !seenTitles[d.title]) {
+            if (GIFT_HIDE_DISCOUNT_LABEL && (d.title.indexOf('Free Gift') === 0 || d.title.indexOf('Eliminai Gift') === 0)) return;
             discounts.push(d.title);
             seenTitles[d.title] = true;
           }
@@ -739,10 +1270,16 @@
 
       if (cart.items) {
         cart.items.forEach(function(item) {
+          var isGift = GIFT_HANDLES[item.handle] || item.handle === WATCH_CASE_HANDLE;
           if (item.line_level_discount_allocations) {
             item.line_level_discount_allocations.forEach(function(a) {
               var title = a.discount_application ? a.discount_application.title : '';
+              if (GIFT_HIDE_DISCOUNT_LABEL && isGift) {
+                hiddenGiftDiscountAmount += (a.amount ? parseInt(a.amount, 10) : 0);
+                return;
+              }
               if (title && !seenTitles[title]) {
+                if (GIFT_HIDE_DISCOUNT_LABEL && (title.indexOf('Free Gift') === 0 || title.indexOf('Eliminai Gift') === 0)) return;
                 discounts.push(title);
                 seenTitles[title] = true;
               }
@@ -751,7 +1288,12 @@
         });
       }
 
-      if (discounts.length > 0) {
+      // Show only non-gift discounts in the discount row
+      // Gift savings are already handled by getAdjustedTotal()
+      var visibleDiscount = cart.total_discount - hiddenGiftDiscountAmount;
+      if (visibleDiscount < 0) visibleDiscount = 0;
+
+      if (discounts.length > 0 && visibleDiscount > 0) {
         dr.style.display = 'flex';
         var badgesHtml = discounts.map(function(title) {
           return '<span class="ccd-discount-row__promo-name">' + TAG_SVG + ' ' + title + '</span>';
@@ -760,18 +1302,19 @@
           '<span class="ccd-discount-row__label">Discount</span> ' +
           badgesHtml +
           '</div>' +
-          '<span class="ccd-discount-row__amount">-' + CCD.fmt(cart.total_discount) + '</span>';
+          '<span class="ccd-discount-row__amount">-' + CCD.fmt(visibleDiscount) + '</span>';
       } else {
         dr.style.display = 'none';
       }
     },
 
     checkWatchCase: function(cart) {
+      console.log('[CCD GIFT] checkWatchCase called. watchCaseBusy=' + watchCaseBusy + ' GIFT_TIERS=' + GIFT_TIERS.length + ' items=' + (cart && cart.items ? cart.items.length : 'null'));
       if (watchCaseBusy) return;
       if (!cart || !cart.items) return;
 
       var score = THRESHOLD_MODE === 'dollars'
-        ? (cart.total_price / 100)
+        ? (CCD.getAdjustedTotal(cart) / 100)
         : CCD.getRealCount(cart);
 
       // Build map of gift handles currently in cart
@@ -779,6 +1322,7 @@
       cart.items.forEach(function(i) {
         if (GIFT_HANDLES[i.handle]) {
           giftInCart[i.handle] = { key: i.key, qty: i.quantity };
+          _giftAddFails[i.handle] = 0; // reset fail count on success
         }
         // Legacy single gift compat
         if (i.handle === WATCH_CASE_HANDLE) {
@@ -789,20 +1333,21 @@
       // Determine which gifts SHOULD be in cart
       var shouldHave = {}; // handle → variantId
       if (GIFT_TIERS.length > 0) {
-        // New tier-based gifts
+        // New tier-based gifts -- each tier can have MULTIPLE gift products
         var eligibleGifts = [];
         GIFT_TIERS.forEach(function(t) {
-          if (t.giftProduct && t.giftProduct.handle && score >= t.goal) {
+          var gifts = tierGifts(t);
+          if (gifts.length > 0 && score >= t.goal) {
             eligibleGifts.push(t);
           }
         });
         if (HIGHEST_TIER_ONLY && eligibleGifts.length > 0) {
-          // Only keep the highest tier gift
+          // Only keep the highest tier's gifts (all of them)
           var highest = eligibleGifts[eligibleGifts.length - 1];
-          shouldHave[highest.giftProduct.handle] = highest.giftProduct.variantId;
+          tierGifts(highest).forEach(function(g) { if (g.handle) shouldHave[g.handle] = g.variantId; });
         } else {
           eligibleGifts.forEach(function(t) {
-            shouldHave[t.giftProduct.handle] = t.giftProduct.variantId;
+            tierGifts(t).forEach(function(g) { if (g.handle) shouldHave[g.handle] = g.variantId; });
           });
         }
       } else if (WATCH_CASE_HANDLE && WATCH_CASE_VID) {
@@ -830,10 +1375,16 @@
         return;
       }
 
+      console.log('[CCD GIFT] score=' + score + ' GIFT_TIERS=' + GIFT_TIERS.length + ' shouldHave=' + JSON.stringify(shouldHave) + ' giftInCart=' + JSON.stringify(Object.keys(giftInCart)) + ' HIGHEST_TIER_ONLY=' + HIGHEST_TIER_ONLY + ' GIFT_HANDLES=' + JSON.stringify(GIFT_HANDLES));
+      GIFT_TIERS.forEach(function(t) { console.log('[CCD GIFT] tier goal=' + t.goal + ' giftProducts=' + JSON.stringify((t.giftProducts||[]).map(function(g){return g.handle})) + ' eligible=' + (score >= t.goal)); });
       // ADD gifts that should be in cart but aren't
       var toAdd = [];
       Object.keys(shouldHave).forEach(function(h) {
         if (!giftInCart[h] && !caseDismissed) {
+          if ((_giftAddFails[h] || 0) >= 3) {
+            console.warn('[CCD GIFT] Skipping ' + h + ' — failed ' + _giftAddFails[h] + ' times');
+            return;
+          }
           toAdd.push({ id: shouldHave[h], quantity: 1, properties: { _eliminai_gift: 'true' } });
         }
       });
@@ -852,11 +1403,32 @@
         try { sessionStorage.removeItem('ccd_case_dismissed'); } catch(e) {}
       }
 
+      // Helper: add one gift using form-encoded (JSON items array fails for some variants)
+      function _addOneGift(item) {
+        var body = 'id=' + item.id + '&quantity=1&properties%5B_eliminai_gift%5D=true';
+        return fetch('/cart/add.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body
+        }).then(function(r) {
+          if (r.status !== 200) {
+            return r.json().then(function(err) {
+              console.error('[CCD GIFT] add failed id=' + item.id + ':', JSON.stringify(err));
+              var h = Object.keys(shouldHave).find(function(k) { return shouldHave[k] == item.id; });
+              if (h) _giftAddFails[h] = (_giftAddFails[h] || 0) + 1;
+            });
+          }
+          console.log('[CCD GIFT] added id=' + item.id);
+          var h = Object.keys(shouldHave).find(function(k) { return shouldHave[k] == item.id; });
+          if (h) _giftAddFails[h] = 0;
+        });
+      }
+
       // Execute removals first, then adds
       if (toRemove.length > 0) {
         watchCaseBusy = true;
         // Instantly hide from DOM
-        document.querySelectorAll('#CartDrawer .ccd-item[data-gift="1"]').forEach(function(el) { el.remove(); });
+        document.querySelectorAll('#CCD-Drawer .ccd-item[data-gift="1"]').forEach(function(el) { el.remove(); });
         var removeChain = Promise.resolve();
         toRemove.forEach(function(key) {
           removeChain = removeChain.then(function() {
@@ -868,29 +1440,28 @@
           });
         });
         removeChain.then(function() {
-          if (toAdd.length > 0) {
-            return fetch('/cart/add.js', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ items: toAdd })
-            });
-          }
+          var addChain = Promise.resolve();
+          toAdd.forEach(function(item) {
+            addChain = addChain.then(function() { return _addOneGift(item); });
+          });
+          return addChain;
         })
         .then(function() { return fetch('/cart.js'); })
         .then(function(r) { return r.json(); })
         .then(function(c) { watchCaseBusy = false; CCD.refresh(c); })
-        .catch(function() { watchCaseBusy = false; });
+        .catch(function(err) { console.error('[CCD GIFT] remove+add catch:', err); watchCaseBusy = false; });
       } else if (toAdd.length > 0) {
         watchCaseBusy = true;
-        fetch('/cart/add.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: toAdd })
-        })
+        console.log('[CCD GIFT] Adding items:', JSON.stringify(toAdd));
+        var addChain = Promise.resolve();
+        toAdd.forEach(function(item) {
+          addChain = addChain.then(function() { return _addOneGift(item); });
+        });
+        addChain
         .then(function() { return fetch('/cart.js'); })
         .then(function(r) { return r.json(); })
         .then(function(c) { watchCaseBusy = false; CCD.refresh(c); })
-        .catch(function() { watchCaseBusy = false; });
+        .catch(function(err) { console.error('[CCD GIFT] add catch:', err); watchCaseBusy = false; });
       }
 
       // Update _caseKey for dismiss tracking (use first gift found)
@@ -902,7 +1473,7 @@
 
     /* Smart DOM morph — updates items in-place, preserves images (no blink) */
     morphDOM: function(container, newCartItems) {
-      var existing = container.querySelector('.cart__items');
+      var existing = container.querySelector('.ccd-items');
       if (!existing) {
         container.innerHTML = newCartItems.outerHTML;
         return;
@@ -1054,7 +1625,7 @@
 
 
     enforceGiftItem: function(cart) {
-      var container = document.querySelector("#CartDrawer .cart__items");
+      var container = document.querySelector("#CCD-Drawer .ccd-items");
       if (!container) return;
 
       // Find ALL gift items in cart
@@ -1118,39 +1689,69 @@
           priceRow.insertBefore(cp, priceRow.firstChild);
         }
 
-        // 5. Mark gift for dismiss tracking
+        // 5. Hide discount labels on gift item (Shopify theme renders these from line_level_discount_allocations)
+        if (GIFT_HIDE_DISCOUNT_LABEL) {
+          giftEl.querySelectorAll('.ccd-badge, .cart-discount, .cart-item__discount, [class*="discount-label"]').forEach(function(el) {
+            el.style.display = 'none';
+          });
+        }
+
+        // 6. Mark gift for dismiss tracking
         giftEl.setAttribute('data-gift', '1');
       });
     },
     // Lightweight refresh: update totals, progress, empty state — NO morphDOM
     refreshLight: function(cart) {
-      var bubble = document.querySelector('.cart-link__bubble');
-      if (bubble) bubble.classList.toggle('cart-link__bubble--visible', cart.item_count > 0);
-      var bubbleNum = document.querySelector('.cart-link__bubble-num');
-      if (bubbleNum) bubbleNum.textContent = CCD.getRealCount(cart);
+      CCD.updateCartBubble(cart);
       CCD.enforceGiftItem(cart);
       var ct = document.querySelector('.ccd-checkout-total');
-      if (ct) ct.textContent = CCD.fmt(cart.total_price);
-      var st = document.querySelector('#CartDrawer [data-subtotal]');
-      if (st) st.textContent = CCD.fmt(cart.total_price);
+      if (ct) ct.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
+      var st = document.querySelector('#CCD-Drawer [data-subtotal]');
+      if (st) st.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
       CCD.rebuildDiscountRow(cart);
       var protItem = cart.items.find(function(i) { return i.handle === PROT; });
       CCD._protKey = protItem ? protItem.key : null;
+      if (protItem && protItem.quantity > 1) {
+        fetch('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: protItem.key, quantity: 1 }) });
+      }
+      // Silent tier swap in refreshLight
+      if (protItem && PROT_TIERS.length > 1) {
+        var cartValExProtL = CCD.getAdjustedTotal(cart);
+        var correctTierL = getProtTier(cartValExProtL);
+        if (correctTierL && protItem.variant_id !== correctTierL.vid) {
+          var _oSwapL = CCD._origFetch || fetch;
+          _oSwapL('/cart/change.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: protItem.key, quantity: 0 }) })
+          .then(function() { return _oSwapL('/cart/add.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: [{ id: correctTierL.vid, quantity: 1 }] }) }); })
+          .then(function() { return _oSwapL('/cart.js'); })
+          .then(function(r) { return r.json(); })
+          .then(function(swappedCart) { CCD.refreshLight(swappedCart); });
+          return;
+        }
+      }
+      // Update protection price display for current tier (refreshLight)
+      var _tierNowL = getProtTier(CCD.getAdjustedTotal(cart));
+      if (_tierNowL) {
+        var _priceElL = document.querySelector('.ccd-shipping-protection__price');
+        if (_priceElL) {
+          _priceElL.textContent = CCD.fmt(_tierNowL.price);
+          _priceElL.setAttribute('data-prot-price', _tierNowL.price);
+        }
+      }
       // If defaultOn and protection is being auto-added, keep toggle ON to avoid flash
-      var defaultOnPending = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false && !protItem && CCD.getRealCount(cart) > 0;
+      var defaultOnPending = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false && !_userToggledOff && !protItem && CCD.getRealCount(cart) > 0;
       CCD.setToggleNoTransition(!!protItem || defaultOnPending);
-      var cie = document.querySelector('#CartDrawer .cart__items');
+      var cie = document.querySelector('#CCD-Drawer .ccd-items');
       if (cie) {
         cie.setAttribute('data-real-count', CCD.getRealCount(cart));
         cie.setAttribute('data-unique-count', CCD.getUniqueVariants(cart));
-        cie.setAttribute('data-cart-subtotal', cart.total_price);
+        cie.setAttribute('data-cart-subtotal', CCD.getAdjustedTotal(cart));
       }
       CCD.updateProgress(cart);
       CCD.applyScarcity(cart);
       CCD.lockScarcityQty();
-      var rc = CCD.getRealCount(cart);
-      var es = document.querySelector('#CartDrawer .drawer__cart-empty');
-      var id = document.querySelector('#CartDrawer [data-ccd-inner]');
+      var rc = CCD.getRealCount(cart); CCD._lastRealCount = rc;
+      var es = document.querySelector('#CCD-Drawer .ccd-cart-empty');
+      var id = document.querySelector('#CCD-Drawer [data-ccd-inner]');
       var pb = document.querySelector('[data-ccd-progress]');
       var ft = document.querySelector('[data-ccd-footer]');
       if (rc === 0) {
@@ -1159,117 +1760,128 @@
             fetch('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pi.key, quantity: 0 }) });
           });
         }
-        if (es) es.style.display = 'block';
+        if (es) es.classList.add('ccd-show');
         if (id) id.style.display = 'none';
         if (pb) pb.style.display = 'none';
         if (ft) ft.style.display = 'none';
       } else {
-        if (es) es.style.display = 'none';
+        if (es) es.classList.remove('ccd-show');
         if (id) id.style.display = '';
         if (pb) pb.style.display = '';
         if (ft) ft.style.display = '';
       }
     },
     refresh: function(cart) {
-      console.log('[CCD] refresh() called', new Error().stack.split('\n')[2]);
-      var bubble = document.querySelector('.cart-link__bubble');
-      if (bubble) bubble.classList.toggle('cart-link__bubble--visible', cart.item_count > 0);
-      var bubbleNum = document.querySelector('.cart-link__bubble-num');
-      if (bubbleNum) bubbleNum.textContent = CCD.getRealCount(cart);
+      console.log("[CCD] refresh() called");
+      CCD.updateCartBubble(cart);
 
       // Pre-set toggle to ON before morphDOM can flash it off
       var shouldDefaultOn = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
       if (shouldDefaultOn && CCD.getRealCount(cart) > 0) {
         CCD.setToggleNoTransition(true);
       }
-      fetch('/cart?view=ajax')
-      .then(function(r) { return r.text(); })
-      .then(function(html) {
-        var pc = document.querySelector('#CartDrawer [data-products]');
-        if (pc) {
-          var parser = new DOMParser();
-          var doc = parser.parseFromString(html, 'text/html');
-          var ni = doc.querySelector('.cart__items');
-          if (ni) {
-            // If defaultOn, pre-check the toggle in the incoming HTML so morphDOM doesn't flash it off
-            if (shouldDefaultOn) {
-              var incomingToggle = ni.querySelector('#ccd-shipping-toggle');
-              if (incomingToggle) {
-                incomingToggle.checked = true;
-                // Also add instant class to slider so there's no slide animation
-                var incomingSlider = incomingToggle.nextElementSibling;
-                if (incomingSlider) incomingSlider.classList.add('ccd-toggle--instant');
-              }
-            }
-            CCD.morphDOM(pc, ni);
-          }
+
+      // Theme-independent: render items from cart JSON (no /cart?view=ajax)
+      var pc = document.querySelector("#CCD-Drawer [data-products]");
+      if (pc) {
+        var ni = CCD.renderCartItems(cart);
+        if (ni) {
+          CCD.morphDOM(pc, ni);
         }
+      }
 
-        CCD.enforceGiftItem(cart);
+      CCD.enforceGiftItem(cart);
 
-        var ct = document.querySelector('.ccd-checkout-total');
-        if (ct) ct.textContent = CCD.fmt(cart.total_price);
-        var st = document.querySelector('#CartDrawer [data-subtotal]');
-        if (st) st.textContent = CCD.fmt(cart.total_price);
+      var ct = document.querySelector('.ccd-checkout-total');
+      if (ct) ct.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
+      var st = document.querySelector('#CCD-Drawer [data-subtotal]');
+      if (st) st.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
 
-        CCD.rebuildDiscountRow(cart);
+      CCD.rebuildDiscountRow(cart);
 
-        var protItem = cart.items.find(function(i) { return i.handle === PROT; });
-        CCD._protKey = protItem ? protItem.key : null;
-        // If defaultOn and protection is being auto-added, keep toggle ON to avoid flash
-        var defaultOnPending = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false && !protItem && CCD.getRealCount(cart) > 0;
-        CCD.setToggleNoTransition(!!protItem || defaultOnPending);
-
-        var cie = document.querySelector('#CartDrawer .cart__items');
-        if (cie) {
-          var whs = (cie.getAttribute('data-watch-handles') || '').split(',').filter(Boolean);
-          if (whs.length > 0) CCD._watchHandles = whs;
+      var protItem = cart.items.find(function(i) { return i.handle === PROT; });
+      CCD._protKey = protItem ? protItem.key : null;
+      if (protItem && protItem.quantity > 1) {
+        fetch('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: protItem.key, quantity: 1 }) });
+      }
+      // Silent tier swap — if cart value changed, swap to correct tier
+      if (protItem && PROT_TIERS.length > 1) {
+        var cartValExProt = CCD.getAdjustedTotal(cart);
+        var correctTier = getProtTier(cartValExProt);
+        if (correctTier && protItem.variant_id !== correctTier.vid) {
+          var _oSwap = CCD._origFetch || fetch;
+          _oSwap('/cart/change.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: protItem.key, quantity: 0 }) })
+          .then(function() { return _oSwap('/cart/add.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: [{ id: correctTier.vid, quantity: 1 }] }) }); })
+          .then(function() { return _oSwap('/cart.js'); })
+          .then(function(r) { return r.json(); })
+          .then(function(swappedCart) { CCD.refresh(swappedCart); });
+          return; // Skip rest of refresh — will re-enter with correct cart
         }
-
-        if (cie) {
-          cie.setAttribute('data-real-count', CCD.getRealCount(cart));
-          cie.setAttribute('data-unique-count', CCD.getUniqueVariants(cart));
-          cie.setAttribute('data-cart-subtotal', cart.total_price);
+      }
+      // Update protection price display for current tier
+      var _tierNow = getProtTier(CCD.getAdjustedTotal(cart));
+      if (_tierNow) {
+        var _priceEl = document.querySelector('.ccd-shipping-protection__price');
+        if (_priceEl) {
+          _priceEl.textContent = CCD.fmt(_tierNow.price);
+          _priceEl.setAttribute('data-prot-price', _tierNow.price);
         }
+      }
+      window.__ccd_last_cart = cart;
 
-        CCD.updateProgress(cart);
-        CCD.applyScarcity(cart);
-        CCD.lockScarcityQty();
+      // If defaultOn and protection is being auto-added, keep toggle ON to avoid flash
+      var defaultOnPending = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false && !_userToggledOff && !protItem && CCD.getRealCount(cart) > 0;
+      CCD.setToggleNoTransition(!!protItem || defaultOnPending);
 
-        var rc = CCD.getRealCount(cart);
-        var es = document.querySelector('#CartDrawer .drawer__cart-empty');
-        var id = document.querySelector('#CartDrawer [data-ccd-inner]');
-        var pb = document.querySelector('[data-ccd-progress]');
-        var ft = document.querySelector('[data-ccd-footer]');
+      var cie = document.querySelector('#CCD-Drawer .ccd-items');
+      if (cie) {
+        var whs = (cie.getAttribute('data-watch-handles') || '').split(',').filter(Boolean);
+        if (whs.length > 0) CCD._watchHandles = whs;
+      }
 
-        if (rc === 0) {
-          if (cart.item_count > 0) {
-            var toRemove = cart.items.filter(function(i) {
-              return CCD._isExcludedHandle(i.handle);
+      if (cie) {
+        cie.setAttribute('data-real-count', CCD.getRealCount(cart));
+        cie.setAttribute('data-unique-count', CCD.getUniqueVariants(cart));
+        cie.setAttribute('data-cart-subtotal', CCD.getAdjustedTotal(cart));
+      }
+
+      CCD.updateProgress(cart);
+      CCD.applyScarcity(cart);
+      CCD.lockScarcityQty();
+
+      var rc = CCD.getRealCount(cart); CCD._lastRealCount = rc;
+      var es = document.querySelector('#CCD-Drawer .ccd-cart-empty');
+      var id = document.querySelector('#CCD-Drawer [data-ccd-inner]');
+      var pb = document.querySelector('[data-ccd-progress]');
+      var ft = document.querySelector('[data-ccd-footer]');
+
+      if (rc === 0) {
+        if (cart.item_count > 0) {
+          var toRemove = cart.items.filter(function(i) {
+            return CCD._isExcludedHandle(i.handle);
+          });
+          toRemove.forEach(function(pi) {
+            fetch('/cart/change.js', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: pi.key, quantity: 0 })
             });
-            toRemove.forEach(function(pi) {
-              fetch('/cart/change.js', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: pi.key, quantity: 0 })
-              });
-            });
-          }
-          if (es) es.style.display = 'block';
-          if (id) id.style.display = 'none';
-          if (pb) pb.style.display = 'none';
-          if (ft) ft.style.display = 'none';
-          protectionDone = false;
-        } else {
-          if (es) es.style.display = 'none';
-          if (id) id.style.display = 'flex';
-          if (pb) pb.style.display = 'block';
-          if (ft) ft.style.display = 'block';
+          });
         }
+        if (es) es.classList.add('ccd-show');
+        if (id) id.style.display = 'none';
+        if (pb) pb.style.display = 'none';
+        if (ft) ft.style.display = 'none';
+        protectionDone = false;
+      } else {
+        if (es) es.classList.remove('ccd-show');
+        if (id) id.style.display = 'flex';
+        if (pb) pb.style.display = 'block';
+        if (ft) ft.style.display = 'block';
+      }
 
-        CCD.checkWatchCase(cart);
-        CCD.checkOverflow();
-      });
+      CCD.checkWatchCase(cart);
+      CCD.checkOverflow();
     },
 
     getScarcitySvg: function() {
@@ -1359,7 +1971,7 @@
       } catch(e) {}
 
       // Render badges
-      var items = document.querySelectorAll('#CartDrawer .ccd-item');
+      var items = document.querySelectorAll('#CCD-Drawer .ccd-item');
       items.forEach(function(el) {
         var inp = el.querySelector('.ccd-qty__input');
         var existingBadge = el.querySelector('.ccd-scarcity-badge');
@@ -1392,7 +2004,7 @@
 
                 lockScarcityQty: function() {
       if (CFG.scarcityEnabled === false || !scarcityVariantId) return;
-      var items = document.querySelectorAll('#CartDrawer .ccd-item');
+      var items = document.querySelectorAll('#CCD-Drawer .ccd-item');
       items.forEach(function(el) {
         var inp = el.querySelector('.ccd-qty__input');
         var lockVid = inp ? String(inp.dataset.id).split(':')[0] : '';
@@ -1440,7 +2052,7 @@
       } else if (cart) {
         rc = CCD.getRealCount(cart);
         uv = CCD.getUniqueVariants(cart);
-        cartTotal = (cart.total_price || 0) / 100;
+        cartTotal = (CCD.getAdjustedTotal(cart) || 0) / 100;
       } else {
         var a = document.querySelector('[data-real-count]');
         rc = a ? parseInt(a.getAttribute('data-real-count') || '0') : 0;
@@ -1567,28 +2179,62 @@
               if ('defaultOn' in sp.config) CFG.protectionDefaultOn = sp.config.defaultOn;
               if ('price' in sp.config) CFG.protectionPrice = sp.config.price;
             }
+            // ── Merge reward tiers from backend config ──
+            CCD._mergeTiersFromConfig(config);
+            
           }
         }
-        // Now that backend config is merged, safe to run ensureProtection
-        CCD.ensureProtection();
         // Track CART_OPENED on first actual cart open (not on pre-fetch)
         if (!self._cartOpenTracked) {
           self._cartOpenTracked = true;
           self.sendEvent('CART_OPENED', { source: 'client-open' });
         }
+        // Single cart fetch — no race between ensureProtection and refresh
+        fetch('/cart.js')
+        .then(function(r) { return r.json(); })
+        .then(function(cart) {
+          var rc = CCD.getRealCount(cart); CCD._lastRealCount = rc;
+          // Add protection if needed (inline instead of separate ensureProtection to avoid double fetch)
+          var shouldAutoAdd = PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
+          var hasProt = cart.items.some(function(i) { return i.handle === PROT; });
+          if (!protectionDone && !toggling && !_userToggledOff && shouldAutoAdd && rc > 0 && !hasProt) {
+            // Nobody added protection yet — add via /cart/update.js (returns full cart in one call)
+            protectionDone = true;
+            CCD.setToggleNoTransition(true);
+            var _oF = CCD._origFetch || fetch;
+            var updObj = {};
+            updObj[(getProtTier(CCD.getAdjustedTotal(cart)) || {vid:PROT_VID}).vid] = 1;
+            _oF('/cart/update.js', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ updates: updObj })
+            })
+            .then(function(r2) { return r2.json(); })
+            .then(function(updatedCart) { CCD.refresh(updatedCart); })
+            .catch(function() { CCD.refresh(cart); });
+          } else if (protectionDone && !hasProt && !_userToggledOff && shouldAutoAdd && rc > 0) {
+            // Interceptor already injected protection into the add request — just wait for it to land
+            CCD.setToggleNoTransition(true);
+            setTimeout(function() {
+              var _oF2 = CCD._origFetch || fetch;
+              _oF2('/cart.js')
+                .then(function(r) { return r.json(); })
+                .then(function(freshCart) { CCD.refresh(freshCart); })
+                .catch(function() { CCD.refresh(cart); });
+            }, 300);
+          } else {
+            if (shouldAutoAdd && hasProt) protectionDone = true;
+            CCD.refresh(cart);
+          }
+        })
+        .catch(function() {});
       });
       CCD.fixMobileWidth();
-      fetch('/cart.js')
-      .then(function(r) { return r.json(); })
-      .then(function(cart) {
-        CCD.refresh(cart);
-      })
-      .catch(function() {});
     },
 
     setupScrollIndicator: function() {
-      var scrollable = document.querySelector('#CartDrawer .drawer__scrollable');
-      var inner = document.querySelector('#CartDrawer .drawer__inner');
+      var scrollable = document.querySelector('#CCD-Drawer .ccd-scrollable');
+      var inner = document.querySelector('#CCD-Drawer .ccd-inner');
       if (scrollable && inner) {
         scrollable.addEventListener('scroll', function() {
           var atBottom = scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight < 8;
@@ -1598,8 +2244,8 @@
     },
 
     checkOverflow: function() {
-      var scrollable = document.querySelector('#CartDrawer .drawer__scrollable');
-      var inner = document.querySelector('#CartDrawer .drawer__inner');
+      var scrollable = document.querySelector('#CCD-Drawer .ccd-scrollable');
+      var inner = document.querySelector('#CCD-Drawer .ccd-inner');
       if (scrollable && inner) {
         var hasOverflow = scrollable.scrollHeight > scrollable.clientHeight + 8;
         inner.classList.toggle('has-overflow', hasOverflow);
@@ -1628,12 +2274,17 @@
       var visitCount = 1;
       try {
         var prev = localStorage.getItem(STORAGE_KEY);
-        if (prev) isReturning = true;
+        if (prev) {
+          isReturning = true;
+          token = prev; // Reuse localStorage token — same browser = same session across tabs
+        }
         var vc = parseInt(localStorage.getItem(VISIT_KEY)) || 0;
         visitCount = vc + 1;
         localStorage.setItem(VISIT_KEY, String(visitCount));
       } catch(e) {}
-      token = 'ecart_' + Math.random().toString(36).substr(2) + Date.now().toString(36);
+      if (!token) {
+        token = 'ecart_' + Math.random().toString(36).substr(2) + Date.now().toString(36);
+      }
       try {
         sessionStorage.setItem(STORAGE_KEY, token);
         localStorage.setItem(STORAGE_KEY, token);
@@ -1768,16 +2419,16 @@
 
       // 1. Always-on addons (enabled + NOT being A/B tested)
       for (var k in addons) {
-        if (addons[k] && addons[k].enabled && addons[k].mode !== 'locked') {
+        if (addons[k] && addons[k].enabled && addons[k].mode !== 'auto-optimize') {
           show[k] = addons[k].config || {};
         }
       }
 
-      // 2. A/B tested addons (mode === 'locked') — show ONLY if experiment says _enabled: true
+      // 2. A/B tested addons (mode === 'auto-optimize') — show ONLY if experiment says _enabled: true
       if (config.experiment && config.experiment.features) {
         var feat = config.experiment.features;
         for (var ak in addons) {
-          if (addons[ak] && addons[ak].mode === 'locked') {
+          if (addons[ak] && addons[ak].mode === 'auto-optimize') {
             if (feat._enabled) { show[ak] = addons[ak].config || {}; }
             else { delete show[ak]; }
           }
@@ -1884,13 +2535,15 @@
       GIFT_BADGE_TEXT_COLOR = cfg.giftBadgeTextColor || '#1a7a1a';
       GIFT_BADGE_BG_COLOR = cfg.giftBadgeBgColor || '#edf7ed';
       GIFT_SHOW_COMPARE_PRICE = cfg.giftShowComparePrice !== false;
+      GIFT_HIDE_DISCOUNT_LABEL = cfg.giftHideDiscountLabel !== false;
       PROMO_GOAL = REWARD_TIERS[REWARD_TIERS.length - 1].goal;
       // Rebuild gift handles map
       GIFT_HANDLES = {};
       GIFT_TIERS = [];
       REWARD_TIERS.forEach(function(t) {
-        if (t.giftProduct && t.giftProduct.handle) {
-          GIFT_HANDLES[t.giftProduct.handle] = true;
+        var gifts = tierGifts(t);
+        if (gifts.length > 0) {
+          gifts.forEach(function(g) { if (g.handle) GIFT_HANDLES[g.handle] = true; });
           GIFT_TIERS.push(t);
         }
       });
@@ -1918,36 +2571,8 @@
     CCD.init();
   }
 
-  var observer = new MutationObserver(function(mutations) {
-    mutations.forEach(function(m) {
-      if (m.target.id === 'CartDrawer' && m.target.classList.contains('drawer--is-open')) {
-        // Store the page URL the user was on when opening the cart
-        if (!window._ccdReturnUrl) {
-          window._ccdReturnUrl = window.location.href;
-        }
-        CCD.refreshOnOpen();
-        // ensureProtection is now called INSIDE refreshOnOpen's loadExperiment callback
-        // so it runs AFTER backend config (defaultOn) is loaded
-      } else if (m.target.id === 'CartDrawer' && !m.target.classList.contains('drawer--is-open')) {
-        // Clear when drawer closes so next open captures fresh URL
-        window._ccdReturnUrl = null;
-        // Reset so next cart open re-adds protection if defaultOn
-        protectionDone = false;
-      }
-    });
-  });
-
-  var drawerEl = document.getElementById('CartDrawer');
-  if (drawerEl) {
-    observer.observe(drawerEl, { attributes: true, attributeFilter: ['class'] });
-    if (drawerEl.classList.contains('drawer--is-open')) {
-      CCD.refreshOnOpen();
-      // ensureProtection runs inside refreshOnOpen after backend config loads
-    }
-  }
-
+  // No MutationObserver needed — we control our own drawer open/close via openDrawer()/closeDrawer()
   // Protection is handled inside refreshOnOpen's loadExperiment callback
-  // No standalone timeout needed — ensureProtection runs after config loads
 
   window.CustomCartDrawer = CCD;
 })();

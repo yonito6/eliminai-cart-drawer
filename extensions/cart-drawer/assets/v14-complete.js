@@ -1718,7 +1718,7 @@
       if (protItem && PROT_TIERS.length > 1) {
         var cartValExProtL = CCD.getAdjustedTotal(cart);
         var correctTierL = getProtTier(cartValExProtL);
-        if (correctTierL && protItem.variant_id \!== correctTierL.vid) {
+        if (correctTierL && protItem.variant_id !== correctTierL.vid) {
           var _oSwapL = CCD._origFetch || fetch;
           _oSwapL('/cart/change.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: protItem.key, quantity: 0 }) })
           .then(function() { return _oSwapL('/cart/add.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: [{ id: correctTierL.vid, quantity: 1 }] }) }); })
@@ -1808,7 +1808,7 @@
       if (protItem && PROT_TIERS.length > 1) {
         var cartValExProt = CCD.getAdjustedTotal(cart);
         var correctTier = getProtTier(cartValExProt);
-        if (correctTier && protItem.variant_id \!== correctTier.vid) {
+        if (correctTier && protItem.variant_id !== correctTier.vid) {
           var _oSwap = CCD._origFetch || fetch;
           _oSwap('/cart/change.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: protItem.key, quantity: 0 }) })
           .then(function() { return _oSwap('/cart/add.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: [{ id: correctTier.vid, quantity: 1 }] }) }); })
