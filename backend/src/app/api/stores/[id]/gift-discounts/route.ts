@@ -39,7 +39,7 @@ async function shopifyGraphQL(shopDomain: string, token: string, query: string, 
 async function duplicateAndZeroPrice(
   shopDomain: string, token: string, originalProductGid: string, originalTitle: string, originalPrice: string,
 ): Promise<{ duplicateGid: string; duplicateVariantId: string; duplicateHandle: string } | { error: string }> {
-  const newTitle = `[Gift] ${originalTitle}`;
+  const newTitle = originalTitle;
 
   // 1. Duplicate the product (copies images, fulfillment, weight, etc.)
   const result = await shopifyGraphQL(shopDomain, token, `
@@ -140,7 +140,7 @@ async function duplicateAndZeroPrice(
   };
 }
 
-// Delete a product (our duplicate only — caller must verify [Gift] title)
+// Delete a product (our duplicate only — caller must verify _eliminai-gift tag)
 async function deleteProduct(shopDomain: string, token: string, productGid: string) {
   const result = await shopifyGraphQL(shopDomain, token, `
     mutation productDelete($input: ProductDeleteInput!) {
@@ -155,7 +155,7 @@ async function deleteProduct(shopDomain: string, token: string, productGid: stri
   }
 }
 
-// Find all our duplicate gift products (tagged _eliminai-gift + title starts with [Gift])
+// Find all our duplicate gift products (tagged _eliminai-gift)
 async function findGiftDuplicates(shopDomain: string, token: string): Promise<{ id: string; title: string; handle: string }[]> {
   const result = await shopifyGraphQL(shopDomain, token, `{
     products(first: 50, query: "tag:${GIFT_TAG}") {
@@ -163,8 +163,9 @@ async function findGiftDuplicates(shopDomain: string, token: string): Promise<{ 
     }
   }`);
   const nodes = result?.data?.products?.nodes ?? [];
-  // SAFETY: Only return products whose title starts with "[Gift]" — OUR duplicates only.
-  return nodes.filter((n: any) => n.title.startsWith('[Gift]'));
+  // SAFETY: Only return products tagged with _eliminai-gift — OUR duplicates only.
+  // The tag is ONLY applied by duplicateAndZeroPrice(), never by external scripts.
+  return nodes;
 }
 
 // Look up product GID + title + price from handle
@@ -254,10 +255,6 @@ export async function POST(
     // 1. Delete existing gift duplicates
     const existingDuplicates = await findGiftDuplicates(store.shopDomain, token);
     for (const dup of existingDuplicates) {
-      if (!dup.title.startsWith('[Gift]')) {
-        console.warn(`[gift-discounts] SAFETY: Skipping "${dup.title}" (${dup.id}) — not a [Gift] duplicate`);
-        continue;
-      }
       await deleteProduct(store.shopDomain, token, dup.id);
       console.log(`[gift-discounts] Deleted old duplicate: ${dup.title} (${dup.id})`);
     }
@@ -437,10 +434,6 @@ export async function DELETE(
     const duplicates = await findGiftDuplicates(store.shopDomain, token);
     let deleted = 0;
     for (const dup of duplicates) {
-      if (!dup.title.startsWith('[Gift]')) {
-        console.warn(`[gift-discounts] SAFETY: Skipping "${dup.title}" (${dup.id}) — not a [Gift] duplicate`);
-        continue;
-      }
       await deleteProduct(store.shopDomain, token, dup.id);
       console.log(`[gift-discounts] Deleted duplicate: ${dup.title} (${dup.id})`);
       deleted++;
