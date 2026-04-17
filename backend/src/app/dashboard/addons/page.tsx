@@ -385,6 +385,7 @@ function AddonsPage() {
   const saveToastTimer = useRef<any>(null);
   const [themeSettings, setThemeSettings] = useState<Record<string, any> | null>(null);
   const [startingTest, setStartingTest] = useState<Record<string, boolean>>({});
+  const [desktopWidth, setDesktopWidth] = useState<number>(480);
 
   // ── Autopilot state ──────────────────────────────────────────────────────
   const [autopilot, setAutopilot] = useState<{
@@ -568,10 +569,35 @@ function AddonsPage() {
     } catch (e) { console.error('Failed to fetch store stats', e); }
   }, [STORE_ID]);
 
+  // ── Layout settings ─────────────────────────────────────────────────────
+  const loadLayout = useCallback(async () => {
+    if (!STORE_ID) return;
+    try {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/layout');
+      if (res.ok) {
+        const json = await res.json();
+        setDesktopWidth(json.desktopWidth ?? 480);
+      }
+    } catch (e) { /* ignore */ }
+  }, [STORE_ID]);
+
+  async function saveDesktopWidth(w: number) {
+    if (!STORE_ID) return;
+    setDesktopWidth(w);
+    try {
+      await fetch(API + '/api/stores/' + STORE_ID + '/layout', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ desktopWidth: w }),
+      });
+      showSaveToast();
+    } catch (e) { console.error('Failed to save layout', e); }
+  }
+
   // ── Unified refresh: load everything on mount + every 15s ────────────────
   const refreshAll = useCallback(async () => {
-    await Promise.all([load(), loadAutopilot(), loadExperiments(), fetchExperiments(), fetchStoreStats()]);
-  }, [load, loadAutopilot, loadExperiments, fetchExperiments, fetchStoreStats]);
+    await Promise.all([load(), loadAutopilot(), loadExperiments(), fetchExperiments(), fetchStoreStats(), loadLayout()]);
+  }, [load, loadAutopilot, loadExperiments, fetchExperiments, fetchStoreStats, loadLayout]);
 
   useEffect(() => {
     refreshAll();
@@ -1586,6 +1612,48 @@ function AddonsPage() {
               )}
             </div>
           )}
+        </div>
+
+        {/* ── Cart Layout ──────────────────────────────────────────── */}
+        <div style={{
+          background: '#fff',
+          border: '1px solid #e5e7eb',
+          borderRadius: 12,
+          padding: '16px 20px',
+          marginBottom: 16,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          flexWrap: 'wrap' as const,
+        }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>Desktop Cart Width</div>
+            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>Width of the cart drawer on desktop screens (px)</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="range"
+              min={360}
+              max={680}
+              step={10}
+              value={desktopWidth}
+              onChange={(e) => setDesktopWidth(parseInt(e.target.value))}
+              onMouseUp={(e) => saveDesktopWidth(parseInt((e.target as HTMLInputElement).value))}
+              onTouchEnd={(e) => saveDesktopWidth(parseInt((e.target as HTMLInputElement).value))}
+              style={{ width: 140, accentColor: '#7c3aed' }}
+            />
+            <span style={{
+              display: 'inline-block',
+              width: 50,
+              textAlign: 'center',
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#7c3aed',
+              background: '#f3f0ff',
+              borderRadius: 6,
+              padding: '4px 0',
+            }}>{desktopWidth}px</span>
+          </div>
         </div>
 
         {/* ── Addon Cards ──────────────────────────────────────────── */}

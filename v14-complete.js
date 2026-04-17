@@ -101,7 +101,8 @@
       '.ccd-scarcity-badge { display: flex !important; width: fit-content !important; align-items: center !important; gap: 4px !important; font-size: 10px !important; position: relative !important; top: -1px !important; font-weight: 600 !important; color: var(--ccd-scarcity-color, #d32f2f) !important; background: var(--ccd-scarcity-bg, #fff3f3) !important; padding: 2px 8px !important; border-radius: 4px !important; margin-top: 4px !important; letter-spacing: 0.3px !important; animation: ccdScarcityPulse 2s ease-in-out infinite !important; }\n' +
       '.ccd-scarcity-badge svg { width: 14px !important; height: 14px !important; fill: var(--ccd-scarcity-color, #d32f2f) !important; flex-shrink: 0 !important; }\n' +
       '@keyframes ccdScarcityPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }\n' +
-      '.ccd-gift-item { border-top: 1px dashed #ddd !important; margin-top: 8px !important; padding-top: 8px !important; transition: opacity 0.3s ease, max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), padding 0.35s cubic-bezier(0.4, 0, 0.2, 1), margin 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important; }\n' +
+      '.ccd-gift-item--entering { opacity: 0 !important; max-height: 0 !important; overflow: hidden !important; }\n' +
+      ''.ccd-gift-item { border-top: 1px dashed #ddd !important; margin-top: 8px !important; padding-top: 8px !important; transition: opacity 0.3s ease, max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), padding 0.35s cubic-bezier(0.4, 0, 0.2, 1), margin 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important; }\n' +
       '.ccd-gift-label { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 6px !important; font-size: 12px !important; font-weight: 700 !important; color: #1a7a1a !important; background: color-mix(in srgb, var(--ccd-success, #1a7a1a) 10%, white) !important; padding: 4px 12px !important; border-radius: 20px !important; margin-bottom: 8px !important; letter-spacing: 0.3px !important; }\n' +
       '.ccd-gift-label svg { width: 16px !important; height: 16px !important; fill: var(--ccd-success, #1a7a1a) !important; }\n' +
       '.ccd-gift-item__body { display: flex !important; gap: 12px !important; align-items: center !important; }\n' +
@@ -146,7 +147,7 @@
       '#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty { color: #fff !important; text-align: center !important; flex: 1 !important; display: none !important; align-items: center !important; justify-content: flex-start !important; padding-top: 80px !important; }\n' +
       '#CCD-Drawer .ccd-cart-empty.ccd-show, #CCD-Drawer .ccd-empty.ccd-show { display: flex !important; flex-direction: column !important; gap: 16px !important; padding: 20px 20px 60px !important; }\n' +
       '.ccd-continue-btn { background: #111 !important; color: #fff !important; border: none !important; padding: 12px 24px !important; border-radius: 6px !important; cursor: pointer !important; font-size: 14px !important; font-weight: 600 !important; }\n' +
-      '@media (min-width: 769px) { #CCD-Drawer { max-width: 520px !important; } }\n' +
+      '@media (min-width: 769px) { #CCD-Drawer { max-width: var(--ccd-desktop-width, 480px) !important; } }\n' +
       '@media (max-width: 768px) { #CCD-Drawer { max-width: var(--ccd-mobile-width, 78%) !important; } #CCD-Drawer.ccd-open { transform: translateX(0) !important; } #CCD-Drawer .ccd-close { display: flex !important; position: static !important; flex-shrink: 0 !important; margin: 0 !important; padding: 0 !important; width: auto !important; } #CCD-Drawer .ccd-close-btn { position: static !important; right: auto !important; left: auto !important; margin: 0 !important; padding: 12px !important; display: flex !important; height: auto !important; } .ccd-item__image { width: 100px !important; min-width: 100px !important; } .ccd-item { padding: 14px 0 !important; gap: 12px !important; } .ccd-progress { padding: 6px 16px 10px !important; } .ccd-progress__icon { width: 36px !important; height: 36px !important; } .ccd-progress__icon svg { width: 18px !important; height: 18px !important; } .ccd-progress__milestone { width: 36px !important; } .ccd-progress__line { margin-top: 18px !important; } .ccd-progress__message { font-size: 14px !important; margin-bottom: 8px !important; } .ccd-progress__label { font-size: 10px !important; } #CCD-Drawer .ccd-header { padding: 16px 16px 6px 16px !important; } .ccd-sticky-footer { padding: 0 16px 8px !important; } .ccd-checkout-btn { padding: 13px 20px !important; font-size: 14px !important; } .ccd-gift-item__body .ccd-item__image { width: 60px !important; min-width: 60px !important; } }\n' +
       '@keyframes ccdSpin { to { transform: rotate(360deg); } }\n' +
       '.ccd-spinner { display: inline-block !important; width: 16px !important; height: 16px !important; border: 2px solid rgba(255,255,255,0.3) !important; border-top-color: #fff !important; border-radius: 50% !important; animation: ccdSpin 0.6s linear infinite !important; }\n' +
@@ -155,6 +156,8 @@
       '.ccd-qty__btn--loading::after { content: "" !important; display: block !important; width: 12px !important; height: 12px !important; border: 1.5px solid rgba(0,0,0,0.15) !important; border-top-color: #333 !important; border-radius: 50% !important; animation: ccdSpin 0.6s linear infinite !important; }\n' +
       '.ccd-checkout-btn--loading { pointer-events: none !important; }\n' +
       '.ccd-checkout-btn--loading > svg { display: none !important; }\n' +
+      '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer, .drawer--cart { display: none !important; visibility: hidden !important; }
+' +
       '.ccd-checkout-btn--loading::before { content: "" !important; display: inline-block !important; width: 16px !important; height: 16px !important; border: 2px solid rgba(255,255,255,0.3) !important; border-top-color: #fff !important; border-radius: 50% !important; animation: ccdSpin 0.7s linear infinite !important; vertical-align: middle !important; flex-shrink: 0 !important; }\n' +
       '.ccd-gift-badge { width: fit-content !important; display: inline-flex !important; white-space: nowrap !important; align-self: flex-end !important; align-items: center !important; gap: 4px !important; font-size: 11px !important; font-weight: 600 !important; color: #1a7a1a !important; background: #edf7ed !important; border-radius: 4px !important; padding: 2px 8px !important; margin-top: 4px !important; line-height: 1.4 !important; }\n' +
       '.ccd-gift-badge svg { width: 14px !important; height: 14px !important; flex-shrink: 0 !important; }\n' +
@@ -933,7 +936,15 @@
       if (!cart) return 0;
       var giftCost = CCD.getGiftSavings(cart);
       var total = cart.total_price - giftCost;
-      return total < 0 ? 0 : total;
+      // Safety: if Shopify reports 0 but items exist, recalculate from line prices
+      if ((total <= 0 || isNaN(total)) && cart.items && cart.items.length > 0) {
+        var recalc = 0;
+        cart.items.forEach(function(i) {
+          if (!CCD._isExcludedHandle(i.handle)) recalc += (i.final_line_price || i.line_price || 0);
+        });
+        if (recalc > 0) total = recalc - giftCost;
+      }
+      return total < 0 ? 0 : (isNaN(total) ? 0 : total);
     },
 
     bindEvents: function() {
@@ -1520,7 +1531,7 @@
                   // After add completes: if protection missing and should be on, add it now
                   var _hasProt = cart.items.some(function(i) { return i.handle === PROT; });
                   var _shouldAdd = PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
-                  if (!_hasProt && !_userToggledOff && _shouldAdd && CCD.getRealCount(cart) > 0) {
+                  if (!_hasProt && !_userToggledOff && _shouldAdd && !protectionDone && CCD.getRealCount(cart) > 0) {
                     protectionDone = true;
                     CCD.setToggleNoTransition(true);
                     var _updObj = {};
@@ -1849,45 +1860,49 @@
         });
       }
 
-      // Execute removals first, then adds
-      if (toRemove.length > 0) {
+      // Execute removals and adds — batch for speed
+      if (toRemove.length > 0 || toAdd.length > 0) {
         watchCaseBusy = true;
-        // Instantly hide from DOM
-        document.querySelectorAll('#CCD-Drawer .ccd-item[data-gift="1"]').forEach(function(el) { el.remove(); });
-        var _oF2 = CCD._origFetch || fetch;
-        var removeChain = Promise.resolve();
-        toRemove.forEach(function(key) {
-          removeChain = removeChain.then(function() {
-            return _oF2('/cart/change.js', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: key, quantity: 0 })
-            });
+        if (toRemove.length > 0) {
+          document.querySelectorAll('#CCD-Drawer .ccd-item[data-gift="1"]').forEach(function(el) {
+            var rmBtn = el.querySelector('.ccd-item__remove');
+            var elKey = rmBtn && rmBtn.dataset.key;
+            if (elKey && toRemove.indexOf(elKey) !== -1) el.remove();
           });
-        });
-        removeChain.then(function() {
-          var addChain = Promise.resolve();
-          toAdd.forEach(function(item) {
-            addChain = addChain.then(function() { return _addOneGift(item); });
+        }
+        var _oFBatch = CCD._origFetch || fetch;
+        var removePromise = Promise.resolve();
+        if (toRemove.length > 0) {
+          var removeUpdates = {};
+          toRemove.forEach(function(key) { removeUpdates[key] = 0; });
+          removePromise = _oFBatch('/cart/update.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates: removeUpdates })
           });
-          return addChain;
+        }
+        removePromise.then(function() {
+          if (toAdd.length === 0) return _oFBatch('/cart.js');
+          console.log('[CCD GIFT] Adding items:', JSON.stringify(toAdd));
+          return _oFBatch('/cart/add.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: toAdd })
+          }).then(function(r) {
+            if (r.status !== 200) {
+              console.warn('[CCD GIFT] batch add failed, falling back to sequential');
+              var addChain = Promise.resolve();
+              toAdd.forEach(function(item) {
+                addChain = addChain.then(function() { return _addOneGift(item); });
+              });
+              return addChain.then(function() { return _oFBatch('/cart.js'); });
+            }
+            return _oFBatch('/cart.js');
+          });
         })
-        .then(function() { var _oF3 = CCD._origFetch || fetch; return _oF3('/cart.js'); })
         .then(function(r) { return r.json(); })
         .then(function(c) { watchCaseBusy = false; ++_refreshGen; CCD.refresh(c); })
-        .catch(function(err) { console.error('[CCD GIFT] remove+add catch:', err); watchCaseBusy = false; });
-      } else if (toAdd.length > 0) {
-        watchCaseBusy = true;
-        console.log('[CCD GIFT] Adding items:', JSON.stringify(toAdd));
-        var addChain = Promise.resolve();
-        toAdd.forEach(function(item) {
-          addChain = addChain.then(function() { return _addOneGift(item); });
-        });
-        addChain
-        .then(function() { var _oF4 = CCD._origFetch || fetch; return _oF4('/cart.js'); })
-        .then(function(r) { return r.json(); })
-        .then(function(c) { watchCaseBusy = false; ++_refreshGen; CCD.refresh(c); })
-        .catch(function(err) { console.error('[CCD GIFT] add catch:', err); watchCaseBusy = false; });
+        .catch(function(err) { console.error('[CCD GIFT] batch catch:', err); watchCaseBusy = false; });
       }
 
       // Update _caseKey for dismiss tracking (use first gift found)
@@ -2512,8 +2527,15 @@
       }
       this._lastProgressValue = currentValue;
 
-      // Legacy fallback when no dynamic tiers configured
+      // Hide progress bar if no tiers
       if (!tiers || tiers.length === 0) {
+        if (progressWrap) progressWrap.style.display = 'none';
+        return;
+      }
+      // Show progress bar when tiers exist
+      if (progressWrap) progressWrap.style.display = '';
+      // Legacy fallback when no dynamic tiers configured (dead code after above)
+      if (false) {
         tiers = [
           { id: 'legacy-1', goal: 1, label: '', icon: 'shipping', beforeText: '', afterText: '' },
           { id: 'legacy-2', goal: PROMO_GOAL, label: '', icon: 'tag', beforeText: 'Add {remaining} more for FREE', afterText: '' }
@@ -2621,7 +2643,13 @@
             }
             // ── Merge reward tiers from backend config ──
             CCD._mergeTiersFromConfig(config);
-            
+          }
+          // ── Apply desktop width from backend config ──
+          if (config.cartConfig && config.cartConfig.desktopWidth) {
+            var dw = parseInt(config.cartConfig.desktopWidth);
+            if (dw > 0 && !isNaN(dw)) {
+              document.documentElement.style.setProperty('--ccd-desktop-width', dw + 'px');
+            }
           }
         }
         // Track CART_OPENED on first actual cart open (not on pre-fetch)
