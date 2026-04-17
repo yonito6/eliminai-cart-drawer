@@ -6,6 +6,11 @@ import { prisma } from '@/lib/prisma';
  *
  * CRITICAL RULE: Shopify only allows ONE automatic discount per cart.
  * - Tier 1 (first gift) → DiscountAutomaticBxgy (auto-applies at checkout)
+          ... on DiscountCodeBasic {
+            title
+            status
+            codes(first: 1) { nodes { code } }
+          }
  * - Tier 2+ (subsequent gifts) → DiscountCodeBxgy (code-based, applied via /discount/CODE redirect)
  *
  * POST — Clean-sync gift discounts: deletes old, recreates with correct types.
@@ -86,13 +91,18 @@ async function findExistingGiftDiscounts(shopDomain: string, token: string): Pro
   });
 }
 
-// Find existing CODE-based gift discounts
+// Find existing CODE-based gift discounts (both Basic and Bxgy types)
 async function findExistingCodeDiscounts(shopDomain: string, token: string): Promise<{ id: string; title: string; code: string }[]> {
   const result = await shopifyGraphQL(shopDomain, token, `{
     codeDiscountNodes(first: 50, query: "title:Gift") {
       nodes {
         id
         codeDiscount {
+          ... on DiscountCodeBasic {
+            title
+            status
+            codes(first: 1) { nodes { code } }
+          }
           ... on DiscountCodeBxgy {
             title
             status
@@ -187,6 +197,11 @@ function generateGiftCode(tierNumber: number): string {
 }
 
 // Create CODE-based BASIC discount (100% off specific product) — for tier 2+ gifts.
+          ... on DiscountCodeBasic {
+            title
+            status
+            codes(first: 1) { nodes { code } }
+          }
 // Uses DiscountCodeBasic instead of DiscountCodeBxgy to avoid BXGY stacking conflicts
 // with the tier 1 automatic BXGY discount.
 // Cart drawer redirects checkout through /discount/CODE?redirect=/checkout
