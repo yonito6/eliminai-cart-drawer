@@ -76,7 +76,11 @@ async function findExistingGiftDiscounts(shopDomain: string, token: string): Pro
   }`);
 
   const nodes = result?.data?.automaticDiscountNodes?.nodes ?? [];
-  return nodes.map((node: any) => {
+  // SAFETY: Only include discounts whose title starts with "Gift" — never touch store's own discounts
+  return nodes.filter((node: any) => {
+    const title = node.automaticDiscount?.title ?? '';
+    return title.startsWith('Gift');
+  }).map((node: any) => {
     const disc = node.automaticDiscount;
     const giftProductGid = disc?.customerGets?.items?.products?.nodes?.[0]?.id ?? null;
     const buyQuantity = disc?.customerBuys?.value?.quantity
@@ -113,8 +117,9 @@ async function findExistingCodeDiscounts(shopDomain: string, token: string): Pro
     }
   }`);
   const nodes = result?.data?.codeDiscountNodes?.nodes ?? [];
+  // SAFETY: Only include discounts whose title starts with "Gift" — never touch store's other codes
   return nodes
-    .filter((n: any) => n.codeDiscount?.title)
+    .filter((n: any) => n.codeDiscount?.title?.startsWith('Gift'))
     .map((n: any) => ({
       id: n.id,
       title: n.codeDiscount.title,
