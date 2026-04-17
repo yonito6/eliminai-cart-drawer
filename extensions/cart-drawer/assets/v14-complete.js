@@ -540,7 +540,7 @@
       var origLinePrice = item.original_line_price || (item.original_price || item.price) * item.quantity;
       var hasDiscount = item.discounts && item.discounts.length > 0;
       var isGiftItem = GIFT_HANDLES[item.handle] || item.handle === WATCH_CASE_HANDLE;
-      var showFree = (linePrice === 0 && hasDiscount) || (isGiftItem && GIFT_DISCOUNT_CODES.length > 0);
+      var showFree = linePrice === 0 && (isGiftItem || hasDiscount);
       if (showFree) {
         priceRowHtml = '<div class="ccd-item__price-row">' +
           (origLinePrice > 0 ? '<span class="ccd-item__compare-price">' + CCD.fmt(origLinePrice) + '</span>' : '') +
@@ -946,20 +946,7 @@
           e.stopPropagation();
 
           // Check if any gift product is in the cart
-          var hasGiftInCart = false;
-          if (CCD._lastCart && CCD._lastCart.items) {
-            CCD._lastCart.items.forEach(function(item) {
-              if (GIFT_HANDLES[item.handle] || item.handle === WATCH_CASE_HANDLE) hasGiftInCart = true;
-            });
-          }
-
-          // If gift in cart AND we have discount codes, chain them via /discount/CODE
-          if (hasGiftInCart && GIFT_DISCOUNT_CODES.length > 0) {
-            var codes = GIFT_DISCOUNT_CODES.join(',');
-            window.location.href = '/discount/' + codes + '?redirect=/checkout';
-          } else {
-            window.location.href = '/checkout';
-          }
+          window.location.href = '/checkout';
         }
       });
 

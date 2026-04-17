@@ -136,8 +136,8 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
-  async function searchGiftProducts(query: string) {
-    if (!query.trim() || !storeId) return;
+  const searchGiftProducts = useCallback(async (query: string) => {
+    if (!storeId) return;
     setGiftSearchLoading(true);
     try {
       const res = await fetch(`/api/stores/${storeId}/products/search?q=${encodeURIComponent(query)}`);
@@ -150,7 +150,19 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
     } finally {
       setGiftSearchLoading(false);
     }
-  }
+  }, [storeId]);
+
+  // Debounced live search — triggers 300ms after user stops typing
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    // Only auto-search when there's a query (browse mode is triggered by button click)
+    if (!giftSearchQuery.trim()) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      searchGiftProducts(giftSearchQuery);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [giftSearchQuery, searchGiftProducts]);
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -594,8 +606,9 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                             type="text"
                             value={giftSearchQuery}
                             onChange={e => setGiftSearchQuery(e.target.value)}
+                            onFocus={() => { if (!giftSearchQuery.trim() && giftSearchResults.length === 0) searchGiftProducts(''); }}
                             onKeyDown={e => { if (e.key === 'Enter') searchGiftProducts(giftSearchQuery); }}
-                            placeholder={replacingGiftIndex !== null ? 'Search for replacement product...' : 'Search Shopify products to add as gift...'}
+                            placeholder={replacingGiftIndex !== null ? 'Search for replacement product...' : 'Search or browse Shopify products to add as gift...'}
                             style={{ ...inputStyle, flex: 1 }}
                           />
                           <button
@@ -874,6 +887,30 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                         </div>
                       </div>
                     )}
+
+                    {/* Free Price Label — shown when tier has gifts */}
+                    {normalizeTier(tier).giftProducts.length > 0 && (
+                      <div style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                        <span style={labelStyle}>Free Price Label</span>
+                        <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 4 }}>Text shown instead of $0.00 for discounted items</div>
+                        <input
+                          type="text"
+                          value={config.freePriceLabel ?? 'Free'}
+                          onChange={e => onConfigChange({ freePriceLabel: e.target.value })}
+                          placeholder="Free"
+                          style={{ ...inputStyle }}
+                        />
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+                          <span style={{ fontSize: 11, color: "#6b7280" }}>Color</span>
+                          <input
+                            type="color"
+                            value={config.freePriceColor ?? "#111111"}
+                            onChange={e => onConfigChange({ freePriceColor: e.target.value })}
+                            style={{ width: 28, height: 28, border: "1px solid #d1d5db", borderRadius: 4, padding: 0, cursor: "pointer" }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -895,10 +932,10 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
           <div style={{ background: '#1f2937', borderRadius: 12, padding: 24, maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}
             onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#f9fafb', marginBottom: 12 }}>
-              Auto-Create Shopify Discount
+              Add Gift Product
             </div>
             <div style={{ fontSize: 13, color: '#d1d5db', lineHeight: 1.6, marginBottom: 16 }}>
-              {"We'll automatically create a Shopify discount so this gift product is "}
+              {"We'll duplicate this product at /usr/bin/bash so it's "}
               <strong style={{ color: '#34d399' }}>100% free</strong>
               {" in the cart:"}
             </div>
@@ -919,9 +956,9 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
               <span style={{ fontSize: 14, fontWeight: 700, color: '#34d399' }}>FREE</span>
             </div>
             <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 16, lineHeight: 1.5 }}>
-              <div style={{ marginBottom: 4 }}><strong style={{ color: '#d1d5db' }}>Discount name:</strong> {`Free Gift \u2014 ${pendingGift.product.title}`}</div>
-              <div style={{ marginBottom: 4 }}><strong style={{ color: '#d1d5db' }}>Type:</strong> Automatic 100% off</div>
-              <div><strong style={{ color: '#d1d5db' }}>Stacks with:</strong> All other discounts</div>
+              <div style={{ marginBottom: 4 }}><strong style={{ color: '#d1d5db' }}>How it works:</strong> Product is duplicated with price set to /usr/bin/bash</div>
+              <div style={{ marginBottom: 4 }}><strong style={{ color: '#d1d5db' }}>Storefront:</strong> Hidden from store (customers can't browse to it)</div>
+              <div><strong style={{ color: '#d1d5db' }}>Cart link:</strong> Points to the original product page</div>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
