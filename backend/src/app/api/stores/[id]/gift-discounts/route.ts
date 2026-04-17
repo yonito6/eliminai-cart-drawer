@@ -44,7 +44,7 @@ interface ExistingDiscount {
 // Find all existing AUTOMATIC gift discounts
 async function findExistingGiftDiscounts(shopDomain: string, token: string): Promise<ExistingDiscount[]> {
   const result = await shopifyGraphQL(shopDomain, token, `{
-    automaticDiscountNodes(first: 50, query: "title:Gift") {
+    automaticDiscountNodes(first: 50, query: "title:Gift*") {
       nodes {
         id
         automaticDiscount {
@@ -94,7 +94,7 @@ async function findExistingGiftDiscounts(shopDomain: string, token: string): Pro
 // Find existing CODE-based gift discounts (both Basic and Bxgy types)
 async function findExistingCodeDiscounts(shopDomain: string, token: string): Promise<{ id: string; title: string; code: string }[]> {
   const result = await shopifyGraphQL(shopDomain, token, `{
-    codeDiscountNodes(first: 50, query: "title:Gift") {
+    codeDiscountNodes(first: 50, query: "title:Gift*") {
       nodes {
         id
         codeDiscount {
