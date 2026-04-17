@@ -120,7 +120,9 @@ async function findGiftDuplicates(shopDomain: string, token: string): Promise<{ 
       nodes { id title handle }
     }
   }`);
-  return (result?.data?.products?.nodes ?? []);
+  const nodes = result?.data?.products?.nodes ?? [];
+  // SAFETY: Only return products whose title starts with "[Gift]" — OUR duplicates only.
+  return nodes.filter((n) => n.title.startsWith("[Gift]"));
 }
 
 // --- Discount Management ---
@@ -415,6 +417,10 @@ export async function POST(
     // 2. Delete ALL existing gift duplicate products
     const existingDuplicates = await findGiftDuplicates(store.shopDomain, token);
     for (const dup of existingDuplicates) {
+      if (!dup.title.startsWith("[Gift]")) {
+        console.warn(`[gift-discounts] SAFETY: Skipping "${dup.title}" (${dup.id}) — not a [Gift] duplicate`);
+        continue;
+      }
       await deleteProduct(store.shopDomain, token, dup.id);
       console.log(`[gift-discounts] Deleted old duplicate: ${dup.title} (${dup.id})`);
     }
@@ -623,6 +629,10 @@ export async function DELETE(
     // Delete duplicate products
     const duplicates = await findGiftDuplicates(store.shopDomain, token);
     for (const dup of duplicates) {
+      if (!dup.title.startsWith("[Gift]")) {
+        console.warn(`[gift-discounts] SAFETY: Skipping "${dup.title}" (${dup.id}) — not a [Gift] duplicate`);
+        continue;
+      }
       await deleteProduct(store.shopDomain, token, dup.id);
       console.log(`[gift-discounts] Deleted duplicate: ${dup.title} (${dup.id})`);
     }
