@@ -4,6 +4,172 @@
    scroll overflow indicator, trust icon, gift item
    ============================================ */
 (function() {
+  // === INJECT EMBEDDED CSS (standalone — no external stylesheet needed) ===
+  (function() {
+    if (document.getElementById('ccd-embedded-css')) return;
+    var s = document.createElement('style');
+    s.id = 'ccd-embedded-css';
+    s.textContent = '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer { display: none !important; visibility: hidden !important; }' +
+      '/* Cart Drawer v15 — Theme-Independent. Standalone embedded CSS. */\n' +
+      '#CCD-Drawer, #CCD-Drawer *, #CCD-Drawer *::before, #CCD-Drawer *::after { box-sizing: border-box !important; }\n' +
+      '#CCD-Drawer .drawer__nav, #CCD-Drawer .drawer__cart-items-wrapper, #CCD-Drawer .cart__footer:not(.ccd-sticky-footer), #CCD-Drawer .cart__item-row, #CCD-Drawer .cart__item-sub, #CCD-Drawer .cart__discounts, #CCD-Drawer .cart__items:not(.ccd-items), #CCD-Drawer .drawer__footer, #CCD-Drawer .drawer__header:not(.ccd-header), #CCD-Drawer .drawer__scrollable:not(.ccd-scrollable), #CCD-Drawer .drawer__inner:not(.ccd-inner), #CCD-Drawer .drawer__fixed-header:not(.ccd-fixed-header), #CCD-Drawer .drawer__contents:not(.ccd-contents), #CCD-Drawer .drawer__cart-empty:not(.ccd-empty), #CCD-Drawer cart-drawer-items, #CCD-Drawer cart-items, #CCD-Drawer .cart-drawer__overlay { display: none !important; }\n' +
+      '#CCD-Drawer .appear-animation { opacity: 1 !important; transform: none !important; animation: none !important; transition: none !important; }\n' +
+      '#CCD-Drawer { position: fixed !important; top: 0 !important; right: 0 !important; bottom: 0 !important; background: var(--ccd-bg, #fff) !important; color: #111 !important; max-width: 380px !important; width: 100% !important; z-index: 9999 !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important; height: 100vh !important; height: 100dvh !important; max-height: 100vh !important; max-height: 100dvh !important; transform: translateX(100%) !important; transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1) !important; will-change: transform !important; overflow: hidden !important; }\n' +
+      '#CCD-Drawer.ccd-open { display: flex !important; flex-direction: column !important; transform: translateX(0) !important; box-shadow: -12px 0 45px rgba(0,0,0,0.25) !important; }\n' +
+      '#CCD-Drawer .ccd-fixed-header { background: var(--ccd-bg, #fff) !important; padding: 0 !important; flex-shrink: 0 !important; position: relative !important; z-index: 2 !important; height: auto !important; max-height: none !important; min-height: 0 !important; overflow: visible !important; border-bottom: none !important; }\n' +
+      '#CCD-Drawer .ccd-fixed-header::after { display: none !important; }\n' +
+      '#CCD-Drawer .ccd-header { display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 20px 20px 8px 20px !important; width: 100% !important; overflow: visible !important; border-bottom: none !important; }\n' +
+      '#CCD-Drawer .ccd-title { font-size: 22px !important; font-weight: 700 !important; color: #111 !important; letter-spacing: 0 !important; text-transform: none !important; margin: 0 !important; line-height: 1 !important; }\n' +
+      '#CCD-Drawer .ccd-close { display: block !important; position: static !important; flex-shrink: 0 !important; width: auto !important; vertical-align: initial !important; text-align: right !important; }\n' +
+      '#CCD-Drawer .ccd-close-btn { background: none !important; border: none !important; color: #111 !important; cursor: pointer !important; padding: 8px !important; margin-right: 0 !important; line-height: 0 !important; display: flex !important; align-items: center !important; justify-content: center !important; position: static !important; right: auto !important; left: auto !important; height: auto !important; }\n' +
+      '#CCD-Drawer .ccd-close-btn svg { width: 22px !important; height: 22px !important; stroke: #111 !important; stroke-width: 2.5 !important; }\n' +
+      '#CCD-Drawer .ccd-sr-only { position: absolute !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; height: 1px !important; width: 1px !important; margin: -1px !important; padding: 0 !important; border: 0 !important; }\n' +
+      '.ccd-progress { padding: 10px 24px 14px !important; background: #f9f9f9 !important; border-bottom: none !important; }\n' +
+      '.ccd-progress__message { text-align: center !important; font-size: 15px !important; margin-bottom: 10px !important; line-height: 1.4 !important; }\n' +
+      '.ccd-progress__message strong { font-weight: 700 !important; }\n' +
+      '.ccd-progress__bar-wrap { display: flex !important; align-items: flex-start !important; gap: 0 !important; position: relative !important; }\n' +
+      '.ccd-progress__line { flex: 1 !important; height: 3px !important; background: var(--ccd-progress-bg, #ddd) !important; margin-top: 21px !important; border-radius: 0 !important; transition: background 0.4s !important; margin-left: -3px !important; margin-right: -3px !important; position: relative !important; z-index: 0 !important; }\n' +
+      '.ccd-progress__line--filled { background: #ddd !important; }\n' +
+      '.ccd-progress__line::after { content: "" !important; position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; background: var(--ccd-primary, #111) !important; border-radius: 0 !important; transform: scaleX(0) !important; transform-origin: left !important; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1) !important; }\n' +
+      '.ccd-progress__line--filled::after { transform: scaleX(1) !important; }\n' +
+      '.ccd-progress__line--half::after { transform: scaleX(0.5) !important; }\n' +
+      '.ccd-progress--instant .ccd-progress__line::after { transition: none !important; }\n' +
+      '.ccd-progress--instant .ccd-progress__icon { transition: none !important; animation: none !important; }\n' +
+      '.ccd-progress--instant .ccd-progress__line { transition: none !important; }\n' +
+      '.ccd-progress__milestone { display: flex !important; flex-direction: column !important; align-items: center !important; gap: 6px !important; z-index: 1 !important; flex-shrink: 0 !important; width: 44px !important; overflow: visible !important; }\n' +
+      '.ccd-progress__icon { width: 44px !important; height: 44px !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; background: var(--ccd-progress-bg, #ddd) !important; transition: all 0.4s !important; }\n' +
+      '.ccd-progress__icon--reached { background: #111 !important; }\n' +
+      '.ccd-progress__icon svg { width: 22px !important; height: 22px !important; fill: #999 !important; transition: fill 0.4s !important; }\n' +
+      '.ccd-progress__icon--reached svg { fill: #fff !important; }\n' +
+      '.ccd-progress__label { font-size: 11px !important; color: #888 !important; text-align: center !important; white-space: nowrap !important; letter-spacing: 0.3px !important; line-height: 1.3 !important; font-weight: 500 !important; }\n' +
+      '.ccd-progress__milestone--reached .ccd-progress__label { color: #111 !important; font-weight: 600 !important; }\n' +
+      '@keyframes ccdMilestonePulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); box-shadow: 0 0 0 6px rgba(17,17,17,0.08); } }\n' +
+      '@keyframes ccdMilestoneBounce { 0%, 100% { transform: translateY(0) scale(1); } 30% { transform: translateY(-5px) scale(1.05); } 50% { transform: translateY(-2px) scale(1.02); } 70% { transform: translateY(-4px) scale(1.04); } }\n' +
+      '@keyframes ccdMilestoneHeartbeat { 0%, 100% { transform: scale(1); } 14% { transform: scale(1.15); } 28% { transform: scale(1); } 42% { transform: scale(1.1); } 56% { transform: scale(1); } }\n' +
+      '@keyframes ccdMilestoneShake { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(-10deg); } 30% { transform: rotate(10deg); } 45% { transform: rotate(-6deg); } 60% { transform: rotate(6deg); } 75% { transform: rotate(-2deg); } }\n' +
+      '.ccd-progress__icon--reached { animation: ccdMilestonePulse 1.8s ease-in-out infinite; }\n' +
+      '#CCD-Drawer .ccd-contents { display: flex !important; flex-direction: column !important; height: 100% !important; background: #fff !important; overflow: hidden !important; }\n' +
+      '#CCD-Drawer .ccd-inner { background: var(--ccd-bg, #fff) !important; display: flex !important; flex-direction: column !important; flex: 1 1 0% !important; min-height: 0 !important; overflow: hidden !important; position: relative !important; }\n' +
+      '#CCD-Drawer .ccd-scrollable { flex: 1 1 0% !important; overflow-y: auto !important; padding: 0 20px !important; -webkit-overflow-scrolling: touch !important; min-height: 0 !important; }\n' +
+      '#CCD-Drawer .ccd-scrollable::-webkit-scrollbar { width: 6px; }\n' +
+      '#CCD-Drawer .ccd-scrollable::-webkit-scrollbar-track { background: #f0f0f0; border-radius: 6px; }\n' +
+      '#CCD-Drawer .ccd-scrollable::-webkit-scrollbar-thumb { background: #bbb; border-radius: 6px; }\n' +
+      '#CCD-Drawer .ccd-scrollable::-webkit-scrollbar-thumb:hover { background: #999; }\n' +
+      '#CCD-Drawer .ccd-inner::after { content: "" !important; position: absolute !important; bottom: 0 !important; left: 0 !important; right: 0 !important; height: 50px !important; background: linear-gradient(transparent 0%, rgba(255,255,255,0.6) 35%, rgba(255,255,255,0.95) 100%) !important; pointer-events: none !important; z-index: 3 !important; transition: opacity 0.3s !important; }\n' +
+      '#CCD-Drawer .ccd-inner.scrolled-bottom::after { opacity: 0 !important; }\n' +
+      '#CCD-Drawer .ccd-items { margin: 0 !important; padding: 0 !important; list-style: none !important; }\n' +
+      '#CCD-Drawer a { color: var(--ccd-primary, #111) !important; }\n' +
+      '.ccd-item { display: flex !important; gap: 16px !important; padding: 18px 0 !important; border-bottom: 1px solid #eee !important; position: relative !important; transition: opacity 0.3s ease, transform 0.3s ease !important; }\n' +
+      '.ccd-item--removing { opacity: 0 !important; transform: translateX(30px) scale(0.95) !important; pointer-events: none !important; transition: opacity 0.3s ease, transform 0.3s ease, max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1) 0.1s, padding 0.35s cubic-bezier(0.4, 0, 0.2, 1) 0.1s, margin 0.35s cubic-bezier(0.4, 0, 0.2, 1) 0.1s, border-width 0.35s cubic-bezier(0.4, 0, 0.2, 1) 0.1s !important; }\n' +
+      '.ccd-item--adding { animation: ccdSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards !important; }\n' +
+      '@keyframes ccdSlideIn { from { opacity: 0; transform: translateY(-15px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }\n' +
+      '.ccd-item:last-child { border-bottom: none !important; }\n' +
+      '.ccd-item__image { width: 120px !important; min-width: 120px !important; border-radius: 8px !important; overflow: hidden !important; background: #f8f8f8 !important; align-self: flex-start !important; }\n' +
+      '.ccd-item__image a { display: block !important; }\n' +
+      '.ccd-item__image img { width: 100% !important; height: auto !important; display: block !important; object-fit: cover !important; }\n' +
+      '.ccd-item__details { flex: 1 !important; display: flex !important; flex-direction: column !important; gap: 2px !important; min-width: 0 !important; }\n' +
+      '.ccd-item__title-row { display: flex !important; justify-content: space-between !important; align-items: flex-start !important; gap: 8px !important; }\n' +
+      '.ccd-item__name { font-size: 14px !important; font-weight: 700 !important; color: #111 !important; text-transform: uppercase !important; letter-spacing: 0.5px !important; text-decoration: none !important; line-height: 1.3 !important; }\n' +
+      '.ccd-item__name:hover { color: #555 !important; text-decoration: none !important; }\n' +
+      '.ccd-item__remove { background: none !important; border: none !important; color: #bbb !important; cursor: pointer !important; padding: 2px !important; flex-shrink: 0 !important; transition: color 0.2s !important; line-height: 0 !important; }\n' +
+      '.ccd-item__remove:hover { color: #333 !important; }\n' +
+      '.ccd-item__remove svg { width: 18px !important; height: 18px !important; }\n' +
+      '.ccd-item__variant-row { display: inline-flex !important; flex-wrap: wrap !important; align-items: center !important; gap: 4px 8px !important; margin-top: 2px !important; }\n' +
+      '.ccd-item__variant { font-size: 11px !important; color: #888 !important; text-transform: uppercase !important; letter-spacing: 2.5px !important; font-weight: 400 !important; }\n' +
+      '.ccd-item__bottom { display: flex !important; justify-content: space-between !important; align-items: flex-end !important; margin-top: 8px !important; }\n' +
+      '.ccd-qty { display: flex !important; align-items: center !important; border: 1px solid #ddd !important; border-radius: 6px !important; overflow: hidden !important; }\n' +
+      '.ccd-qty__btn { width: 36px !important; height: 36px !important; display: flex !important; align-items: center !important; justify-content: center !important; background: transparent !important; border: none !important; color: #333 !important; cursor: pointer !important; transition: background 0.15s !important; padding: 0 !important; }\n' +
+      '.ccd-qty__btn:hover { background: #f5f5f5 !important; }\n' +
+      '.ccd-qty__btn svg { width: 12px !important; height: 12px !important; fill: #333 !important; }\n' +
+      '.ccd-qty__input { width: 32px !important; text-align: center !important; background: transparent !important; border: none !important; border-left: 1px solid #ddd !important; border-right: 1px solid #ddd !important; color: #111 !important; font-size: 14px !important; font-weight: 500 !important; padding: 0 !important; height: 36px !important; -moz-appearance: textfield !important; }\n' +
+      '.ccd-qty__input::-webkit-inner-spin-button, .ccd-qty__input::-webkit-outer-spin-button { -webkit-appearance: none !important; margin: 0 !important; }\n' +
+      '.ccd-qty__input--pulse { animation: ccdPulse 0.15s !important; }\n' +
+      '@keyframes ccdPulse { 50% { transform: scale(1.15); } }\n' +
+      '.ccd-item__price-col { text-align: right !important; display: flex !important; flex-direction: column !important; align-items: flex-end !important; gap: 2px !important; }\n' +
+      '.ccd-item__price-row { display: flex !important; align-items: center !important; gap: 8px !important; }\n' +
+      '.ccd-item__compare-price { font-size: 13px !important; color: #aaa !important; text-decoration: line-through !important; }\n' +
+      '.ccd-item__price { font-size: 15px !important; font-weight: 600 !important; color: #111 !important; }\n' +
+      '.ccd-item__price--free { font-weight: 700 !important; color: var(--ccd-free-color, #111) !important; }\n' +
+      '.ccd-badge { display: inline-flex !important; align-items: center !important; gap: 5px !important; background: #111 !important; color: #fff !important; font-size: 10px !important; font-weight: 600 !important; padding: 4px 10px !important; border-radius: 4px !important; letter-spacing: 0.5px !important; white-space: nowrap !important; }\n' +
+      '#CCD-Drawer .ccd-continue-btn { display: inline-block !important; padding: 12px 28px !important; background: #111 !important; border: none !important; border-radius: 6px !important; color: #fff !important; text-decoration: none !important; font-size: 14px !important; letter-spacing: 0.5px !important; cursor: pointer !important; }\n' +
+      '.ccd-badge svg { width: 13px !important; height: 13px !important; fill: #fff !important; }\n' +
+      '.ccd-qty__btn--locked { opacity: 0.3 !important; cursor: not-allowed !important; pointer-events: none !important; }\n' +
+      '.ccd-qty__btn--locked:hover { background: transparent !important; }\n' +
+      '.ccd-scarcity-toast { position: fixed !important; top: 20px !important; left: 50% !important; transform: translateX(-50%) translateY(-20px) !important; background: #1a1a1a !important; color: #fff !important; padding: 14px 24px !important; border-radius: 10px !important; font-size: 14px !important; font-weight: 500 !important; z-index: 99999 !important; display: flex !important; align-items: center !important; gap: 10px !important; box-shadow: 0 8px 30px rgba(0,0,0,0.2) !important; opacity: 0 !important; transition: opacity 0.3s, transform 0.3s !important; pointer-events: none !important; max-width: 90vw !important; text-align: center !important; }\n' +
+      '.ccd-scarcity-toast--visible { opacity: 1 !important; transform: translateX(-50%) translateY(0) !important; }\n' +
+      '.ccd-scarcity-toast svg { width: 20px !important; height: 20px !important; fill: #ff6b6b !important; flex-shrink: 0 !important; }\n' +
+      '.ccd-scarcity-badge { display: flex !important; width: fit-content !important; align-items: center !important; gap: 4px !important; font-size: 10px !important; position: relative !important; top: -1px !important; font-weight: 600 !important; color: var(--ccd-scarcity-color, #d32f2f) !important; background: var(--ccd-scarcity-bg, #fff3f3) !important; padding: 2px 8px !important; border-radius: 4px !important; margin-top: 4px !important; letter-spacing: 0.3px !important; animation: ccdScarcityPulse 2s ease-in-out infinite !important; }\n' +
+      '.ccd-scarcity-badge svg { width: 14px !important; height: 14px !important; fill: var(--ccd-scarcity-color, #d32f2f) !important; flex-shrink: 0 !important; }\n' +
+      '@keyframes ccdScarcityPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }\n' +
+      '.ccd-gift-item { border-top: 1px dashed #ddd !important; margin-top: 8px !important; padding-top: 8px !important; transition: opacity 0.3s ease, max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), padding 0.35s cubic-bezier(0.4, 0, 0.2, 1), margin 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important; }\n' +
+      '.ccd-gift-label { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 6px !important; font-size: 12px !important; font-weight: 700 !important; color: #1a7a1a !important; background: color-mix(in srgb, var(--ccd-success, #1a7a1a) 10%, white) !important; padding: 4px 12px !important; border-radius: 20px !important; margin-bottom: 8px !important; letter-spacing: 0.3px !important; }\n' +
+      '.ccd-gift-label svg { width: 16px !important; height: 16px !important; fill: var(--ccd-success, #1a7a1a) !important; }\n' +
+      '.ccd-gift-item__body { display: flex !important; gap: 12px !important; align-items: center !important; }\n' +
+      '.ccd-gift-item__body .ccd-item__image { width: 80px !important; min-width: 80px !important; }\n' +
+      '.ccd-gift-item__info { flex: 1 !important; display: flex !important; flex-direction: column !important; gap: 4px !important; }\n' +
+      '.ccd-gift-item__price-row { display: flex !important; align-items: center !important; gap: 8px !important; }\n' +
+      '.ccd-gift-item__price-row .ccd-item__compare-price { font-size: 14px !important; }\n' +
+      '.ccd-gift-item__remove { background: none !important; border: none !important; color: #999 !important; cursor: pointer !important; padding: 4px !important; line-height: 0 !important; flex-shrink: 0 !important; transition: color 0.15s !important; }\n' +
+      '.ccd-gift-item__remove:hover { color: #333 !important; }\n' +
+      '.ccd-gift-item__remove svg { width: 14px !important; height: 14px !important; }\n' +
+      '#CCD-Drawer .ccd-sticky-footer { flex-shrink: 0 !important; flex-grow: 0 !important; }\n' +
+      '.ccd-sticky-footer { flex-shrink: 0 !important; padding: 0 20px 10px !important; border-top: 1px solid #eee !important; background: var(--ccd-bg, #fff) !important; z-index: 10 !important; }\n' +
+      '.ccd-shipping-protection { display: flex !important; align-items: center !important; gap: 10px !important; padding: 8px 0 4px !important; }\n' +
+      '.ccd-shipping-protection__icon { width: 32px !important; height: 32px !important; flex-shrink: 0 !important; display: flex !important; align-items: center !important; justify-content: center !important; }\n' +
+      '.ccd-shipping-protection__icon svg { width: 24px !important; height: 24px !important; fill: #555 !important; }\n' +
+      '.ccd-shipping-protection__info { flex: 1 !important; min-width: 0 !important; }\n' +
+      '.ccd-shipping-protection__title { font-size: 13px !important; font-weight: 600 !important; color: #111 !important; }\n' +
+      '.ccd-shipping-protection__desc { font-size: 10px !important; color: #888 !important; margin-top: 1px !important; }\n' +
+      '.ccd-shipping-protection__right { display: flex !important; flex-direction: column !important; align-items: flex-end !important; gap: 4px !important; flex-shrink: 0 !important; }\n' +
+      '.ccd-shipping-protection__price { font-size: 13px !important; font-weight: 600 !important; color: #111 !important; }\n' +
+      '.ccd-toggle { position: relative !important; width: 40px !important; height: 22px !important; display: inline-block !important; }\n' +
+      '.ccd-toggle input { opacity: 0 !important; width: 0 !important; height: 0 !important; position: absolute !important; }\n' +
+      '.ccd-toggle__slider { position: absolute !important; cursor: pointer !important; inset: 0 !important; background: #ccc !important; transition: 0.3s !important; border-radius: 22px !important; }\n' +
+      '.ccd-toggle__slider:before { position: absolute !important; content: "" !important; height: 16px !important; width: 16px !important; left: 3px !important; bottom: 3px !important; background: var(--ccd-bg, #fff) !important; transition: 0.3s !important; border-radius: 50% !important; }\n' +
+      '.ccd-toggle input:checked + .ccd-toggle__slider { background: #111 !important; }\n' +
+      '.ccd-toggle input:checked + .ccd-toggle__slider:before { transform: translateX(18px) !important; }\n' +
+      '.ccd-toggle--instant { transition: none !important; }\n' +
+      '.ccd-toggle--instant:before { transition: none !important; }\n' +
+      '.ccd-discount-row { display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 2px 0 !important; }\n' +
+      '.ccd-discount-row__left { display: flex !important; align-items: center !important; gap: 8px !important; flex-wrap: wrap !important; }\n' +
+      '.ccd-discount-row__label { font-size: 13px !important; color: #111 !important; }\n' +
+      '.ccd-discount-row__amount { font-size: 13px !important; font-weight: 600 !important; color: #111 !important; }\n' +
+      '.ccd-discount-row__promo-name { display: inline-flex !important; align-items: center !important; gap: 4px !important; font-size: 12px !important; font-weight: 600 !important; color: #111 !important; }\n' +
+      '.ccd-discount-row__promo-name svg { width: 14px !important; height: 14px !important; fill: #111 !important; flex-shrink: 0 !important; }\n' +
+      '.ccd-checkout-btn { display: flex !important; align-items: center !important; justify-content: center !important; gap: 8px !important; width: 100% !important; padding: 14px 24px !important; background: #111 !important; color: #fff !important; border: 1px solid #222 !important; border-radius: 8px !important; font-size: 15px !important; font-weight: 700 !important; letter-spacing: 1px !important; text-transform: uppercase !important; cursor: pointer !important; transition: all 0.15s !important; margin-top: 6px !important; }\n' +
+      '.ccd-checkout-btn:hover { background: #222 !important; }\n' +
+      '.ccd-checkout-btn:active { background: #000 !important; }\n' +
+      '.ccd-checkout-btn svg { width: 16px !important; height: 16px !important; fill: #fff !important; }\n' +
+      '.ccd-trust { display: flex !important; align-items: center !important; justify-content: center !important; gap: 8px !important; padding: 4px 0 2px !important; font-size: 14px !important; color: #777 !important; }\n' +
+      '.ccd-trust svg { width: 18px !important; height: 18px !important; fill: #6BA4E8 !important; }\n' +
+      '.ccd-trust strong { color: #111 !important; font-weight: 700 !important; }\n' +
+      '#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty { color: #fff !important; text-align: center !important; flex: 1 !important; display: none !important; align-items: center !important; justify-content: flex-start !important; padding-top: 80px !important; }\n' +
+      '#CCD-Drawer .ccd-cart-empty.ccd-show, #CCD-Drawer .ccd-empty.ccd-show { display: flex !important; flex-direction: column !important; gap: 16px !important; padding: 20px 20px 60px !important; }\n' +
+      '.ccd-continue-btn { background: #111 !important; color: #fff !important; border: none !important; padding: 12px 24px !important; border-radius: 6px !important; cursor: pointer !important; font-size: 14px !important; font-weight: 600 !important; }\n' +
+      '@media (min-width: 769px) { #CCD-Drawer { max-width: 520px !important; } }\n' +
+      '@media (max-width: 768px) { #CCD-Drawer { max-width: var(--ccd-mobile-width, 78%) !important; } #CCD-Drawer.ccd-open { transform: translateX(0) !important; } #CCD-Drawer .ccd-close { display: flex !important; position: static !important; flex-shrink: 0 !important; margin: 0 !important; padding: 0 !important; width: auto !important; } #CCD-Drawer .ccd-close-btn { position: static !important; right: auto !important; left: auto !important; margin: 0 !important; padding: 12px !important; display: flex !important; height: auto !important; } .ccd-item__image { width: 100px !important; min-width: 100px !important; } .ccd-item { padding: 14px 0 !important; gap: 12px !important; } .ccd-progress { padding: 6px 16px 10px !important; } .ccd-progress__icon { width: 36px !important; height: 36px !important; } .ccd-progress__icon svg { width: 18px !important; height: 18px !important; } .ccd-progress__milestone { width: 36px !important; } .ccd-progress__line { margin-top: 18px !important; } .ccd-progress__message { font-size: 14px !important; margin-bottom: 8px !important; } .ccd-progress__label { font-size: 10px !important; } #CCD-Drawer .ccd-header { padding: 16px 16px 6px 16px !important; } .ccd-sticky-footer { padding: 0 16px 8px !important; } .ccd-checkout-btn { padding: 13px 20px !important; font-size: 14px !important; } .ccd-gift-item__body .ccd-item__image { width: 60px !important; min-width: 60px !important; } }\n' +
+      '@keyframes ccdSpin { to { transform: rotate(360deg); } }\n' +
+      '.ccd-spinner { display: inline-block !important; width: 16px !important; height: 16px !important; border: 2px solid rgba(255,255,255,0.3) !important; border-top-color: #fff !important; border-radius: 50% !important; animation: ccdSpin 0.6s linear infinite !important; }\n' +
+      '.ccd-item--loading { opacity: 0.5 !important; pointer-events: none !important; }\n' +
+      '.ccd-qty__btn--loading svg { display: none !important; }\n' +
+      '.ccd-qty__btn--loading::after { content: "" !important; display: block !important; width: 12px !important; height: 12px !important; border: 1.5px solid rgba(0,0,0,0.15) !important; border-top-color: #333 !important; border-radius: 50% !important; animation: ccdSpin 0.6s linear infinite !important; }\n' +
+      '.ccd-checkout-btn--loading { pointer-events: none !important; }\n' +
+      '.ccd-checkout-btn--loading > svg { display: none !important; }\n' +
+      '.ccd-checkout-btn--loading::before { content: "" !important; display: inline-block !important; width: 16px !important; height: 16px !important; border: 2px solid rgba(255,255,255,0.3) !important; border-top-color: #fff !important; border-radius: 50% !important; animation: ccdSpin 0.7s linear infinite !important; vertical-align: middle !important; flex-shrink: 0 !important; }\n' +
+      '.ccd-gift-badge { width: fit-content !important; display: inline-flex !important; white-space: nowrap !important; align-self: flex-end !important; align-items: center !important; gap: 4px !important; font-size: 11px !important; font-weight: 600 !important; color: #1a7a1a !important; background: #edf7ed !important; border-radius: 4px !important; padding: 2px 8px !important; margin-top: 4px !important; line-height: 1.4 !important; }\n' +
+      '.ccd-gift-badge svg { width: 14px !important; height: 14px !important; flex-shrink: 0 !important; }\n' +
+      '.ccd-trust-badges { text-align: center !important; padding: 8px 0 4px !important; opacity: 1 !important; }\n' +
+      '.ccd-trust-icons { display: flex !important; align-items: center !important; justify-content: center !important; gap: 6px !important; margin-bottom: 4px !important; }\n' +
+      '.ccd-trust-label { font-size: 9px !important; color: var(--ccd-text-muted, #999) !important; margin-right: 4px !important; }\n' +
+      '.ccd-trust-text { font-size: 11px !important; color: var(--ccd-text-muted, #999) !important; letter-spacing: 0.02em !important; }\n' +
+      '.ccd-overlay { position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; background: rgba(0,0,0,0.4) !important; z-index: 9998 !important; opacity: 0 !important; transition: opacity 0.35s !important; pointer-events: none !important; }\n' +
+      '.ccd-overlay--visible { opacity: 1 !important; pointer-events: auto !important; }';
+    // Remove any existing external CSS link (we're standalone now)
+    var oldCss = document.getElementById('ccd-css-fallback');
+    if (oldCss) oldCss.parentNode.removeChild(oldCss);
+    document.head.appendChild(s);
+  })();
+
   // === THEME CART OVERRIDE ===
   // Neutralize the theme's cart rebuild to prevent flicker during our animations.
   // Every major cart app (Rebuy, Slide Cart, EliteCart) does this.
@@ -87,6 +253,8 @@
   var GIFT_BADGE_BG_COLOR = _fsb.giftBadgeBgColor || CFG.giftBadgeBgColor || '#edf7ed';
   var GIFT_SHOW_COMPARE_PRICE = (_fsb.giftShowComparePrice !== undefined ? _fsb.giftShowComparePrice : CFG.giftShowComparePrice) !== false;
   var GIFT_HIDE_DISCOUNT_LABEL = (_fsb.giftHideDiscountLabel !== undefined ? _fsb.giftHideDiscountLabel : CFG.giftHideDiscountLabel) !== false;
+  var FREE_PRICE_LABEL = _fsb.freePriceLabel || CFG.freePriceLabel || 'Free';
+  var FREE_PRICE_COLOR = _fsb.freePriceColor || CFG.freePriceColor || '#111';
   // Backwards compat: derive PROMO_GOAL from last tier's goal
   var PROMO_GOAL = REWARD_TIERS.length > 0 ? REWARD_TIERS[REWARD_TIERS.length - 1].goal : (CFG.promoGoal || 3);
   // Resolve primary gift from a tier — checks giftProducts[] first, falls back to giftProduct
@@ -105,6 +273,7 @@
   // Build a set of all gift handles across tiers
   var GIFT_HANDLES = {};
   var GIFT_DISCOUNT_CODES = [];
+  var GIFT_URL_MAP = {}; // duplicate handle → original product URL
   var GIFT_TIERS = []; // tiers that have a gift product
   REWARD_TIERS.forEach(function(t) {
     var gifts = tierGifts(t);
@@ -120,6 +289,7 @@
   var WATCH_GOAL = CFG.giftGoal || (GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].goal : 3);
   var busy = false;
   var _pendingOp = null; // queued operation when busy
+  var _refreshGen = 0; // generation counter — stale refreshes silently no-op
   var protectionDone = false;
   var toggling = false;
   var _userToggledOff = false;
@@ -195,11 +365,27 @@
     // ── Theme-Independent Drawer Shell ──
     // Creates our own complete drawer DOM so we don't depend on ANY theme's markup
     renderDrawerShell: function() {
+      // If our drawer already exists (Liquid-rendered), just ensure overlay exists and return
+      var existingDrawer = document.getElementById('CCD-Drawer');
+      if (existingDrawer) {
+        if (!document.getElementById('CCD-Overlay')) {
+          var ov = document.createElement('div');
+          ov.id = 'CCD-Overlay';
+          ov.className = 'ccd-overlay';
+          ov.addEventListener('click', function() { CCD.closeDrawer(); });
+          document.body.appendChild(ov);
+        }
+        return;
+      }
       // Hide any theme cart drawer elements
       var themeDrawer = document.getElementById('CartDrawer');
       if (themeDrawer) {
-        themeDrawer.id = 'CartDrawer-theme-original';
-        themeDrawer.style.display = 'none !important';
+        // Keep #CartDrawer ID so theme JS doesn't fallback to /cart redirect
+        // But empty its contents and ensure it stays hidden
+        themeDrawer.innerHTML = '';
+        themeDrawer.style.setProperty('display', 'none', 'important');
+        themeDrawer.style.setProperty('visibility', 'hidden', 'important');
+        themeDrawer.style.setProperty('pointer-events', 'none', 'important');
         themeDrawer.setAttribute('aria-hidden', 'true');
       }
       // Also hide <cart-drawer> custom element (used by some themes like Dawn)
@@ -258,21 +444,22 @@
               '</button>' +
             '</div>' +
           '</div>' +
-          '<div class="ccd-progress" data-ccd-progress>' +
+          '<div class="ccd-progress" data-ccd-progress style="display:none">'  +
             '<div class="ccd-progress__message" data-ccd-progress-msg></div>' +
             '<div class="ccd-progress__bar-wrap"></div>' +
           '</div>' +
         '</div>' +
-        '<div class="ccd-inner" data-ccd-inner>' +
+        '<div class="ccd-inner" data-ccd-inner style="display:none">'  +
           '<div class="ccd-scrollable" data-products>' +
             '<div class="ccd-items" data-real-count="0" data-unique-count="0" data-cart-subtotal="0"></div>' +
           '</div>' +
         '</div>' +
         '<div class="ccd-cart-empty">' +
+          '<svg viewBox="0 0 24 24" width="48" height="48" fill="#fff" style="margin-bottom:8px"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>' +
           '<p>' + (CFG.emptyCartText || 'Your cart is empty') + '</p>' +
           '<button class="ccd-continue-btn" onclick="CCD.close()">' + (CFG.continueShoppingText || 'Continue Shopping') + '</button>' +
         '</div>' +
-        '<div class="ccd-sticky-footer" data-ccd-footer>' +
+        '<div class="ccd-sticky-footer" data-ccd-footer style="display:none">'  +
           protHtml +
           '<div class="ccd-discount-row" data-ccd-discounts style="display:none"></div>' +
           '<button class="ccd-checkout-btn">' +
@@ -318,6 +505,18 @@
     },
 
     // Render a single cart item from /cart.js JSON
+    _renderDiscountBadges: function(item) {
+      if (!item.line_level_discount_allocations || !item.line_level_discount_allocations.length) return '';
+      var html = '';
+      for (var i = 0; i < item.line_level_discount_allocations.length; i++) {
+        var da = item.line_level_discount_allocations[i];
+        var title = da.discount_application ? da.discount_application.title : '';
+        if (!title) continue;
+        html += '<span class="ccd-badge"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>' + title.replace(/</g, '&lt;') + '</span>';
+      }
+      return html;
+    },
+
     renderItemHTML: function(item) {
       var imgUrl = item.image || (item.featured_image ? item.featured_image.url : '');
       // Shopify returns protocol-relative URLs — ensure they work
@@ -334,12 +533,20 @@
           item.variant_title.replace(/</g, '&lt;') + '</span></div>';
       }
 
-      // Price display — show compare price if discounted
+      // Price display — show Free for gift items (code applied at checkout) or discounted items
       var priceRowHtml = '';
       var unitPrice = item.final_price != null ? item.final_price : item.price;
       var linePrice = item.final_line_price != null ? item.final_line_price : (unitPrice * item.quantity);
       var origLinePrice = item.original_line_price || (item.original_price || item.price) * item.quantity;
-      if (origLinePrice > linePrice && linePrice > 0) {
+      var hasDiscount = item.discounts && item.discounts.length > 0;
+      var isGiftItem = GIFT_HANDLES[item.handle] || item.handle === WATCH_CASE_HANDLE;
+      var showFree = (linePrice === 0 && hasDiscount) || (isGiftItem && GIFT_DISCOUNT_CODES.length > 0);
+      if (showFree) {
+        priceRowHtml = '<div class="ccd-item__price-row">' +
+          (origLinePrice > 0 ? '<span class="ccd-item__compare-price">' + CCD.fmt(origLinePrice) + '</span>' : '') +
+          '<span class="ccd-item__price ccd-item__price--free">' + FREE_PRICE_LABEL + '</span>' +
+        '</div>';
+      } else if (origLinePrice > linePrice) {
         priceRowHtml = '<div class="ccd-item__price-row">' +
           '<span class="ccd-item__compare-price">' + CCD.fmt(origLinePrice) + '</span>' +
           '<span class="ccd-item__price">' + CCD.fmt(linePrice) + '</span>' +
@@ -350,15 +557,16 @@
         '</div>';
       }
 
+      var itemUrl = GIFT_URL_MAP[item.handle] || item.url || '/products/' + item.handle;
       return '<div class="ccd-item" data-key="' + item.key + '" data-variant-id="' + item.variant_id + '">' +
         '<div class="ccd-item__image">' +
-          '<a href="' + (item.url || '/products/' + item.handle) + '">' +
+          '<a href="' + itemUrl + '">' +
             '<img src="' + imgUrl + '" alt="' + (item.title || '').replace(/"/g, '&quot;') + '" loading="lazy">' +
           '</a>' +
         '</div>' +
         '<div class="ccd-item__details">' +
           '<div class="ccd-item__title-row">' +
-            '<a class="ccd-item__name" href="' + (item.url || '/products/' + item.handle) + '">' + (item.product_title || item.title || '').replace(/</g, '&lt;') + '</a>' +
+            '<a class="ccd-item__name" href="' + itemUrl + '">' + (function(t) { return t.replace(/^\[Gift\]\s*/, ''); })(item.product_title || item.title || '').replace(/</g, '&lt;') + '</a>' +
             '<button class="ccd-item__remove" data-key="' + item.key + '" aria-label="Remove">' +
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14M10 11v6M14 11v6"/></svg>' +
             '</button>' +
@@ -374,7 +582,7 @@
                 '<svg viewBox="0 0 12 12"><line x1="6" y1="0" x2="6" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="0" y1="6" x2="12" y2="6" stroke="currentColor" stroke-width="1.5"/></svg>' +
               '</button>' +
             '</div>' +
-            '<div class="ccd-item__price-col">' + priceRowHtml + '</div>' +
+            '<div class="ccd-item__price-col">' + priceRowHtml + CCD._renderDiscountBadges(item) + '</div>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -395,6 +603,7 @@
       }
       var html = '';
       cart.items.forEach(function(item) {
+        if (item.handle === PROT) return; // Only filter protection — gifts rendered by enforceGiftItem
         html += CCD.renderItemHTML(item);
       });
       el.innerHTML = html;
@@ -405,12 +614,12 @@
     openDrawer: function() {
       var d = document.getElementById('CCD-Drawer');
       if (!d) return;
-      if (d.classList.contains('ccd--open')) return;
+      if (d.classList.contains('ccd-open')) return;
       // Use last known cart state to show correct view instantly (no flash)
       var _pb = d.querySelector('[data-ccd-progress]');
       var _ft = d.querySelector('[data-ccd-footer]');
       var _id = d.querySelector('[data-ccd-inner]');
-      var _es = d.querySelector('.ccd-cart-empty');
+      var _es = d.querySelector('.ccd-cart-empty, .ccd-empty');
       if (CCD._lastRealCount === 0) {
         // Cart was empty last time — show empty state, hide content
         if (_pb) _pb.style.display = 'none';
@@ -429,7 +638,7 @@
         if (_ft) _ft.style.display = 'none';
         if (_id) _id.style.display = 'none';
       }
-      d.classList.add('ccd--open');
+      d.classList.add('ccd-open');
       d.style.display = 'flex';
       var ov = document.getElementById('CCD-Overlay');
       if (ov) ov.classList.add('ccd-overlay--visible');
@@ -440,7 +649,7 @@
     closeDrawer: function() {
       var d = document.getElementById('CCD-Drawer');
       if (!d) return;
-      d.classList.remove('ccd--open');
+      d.classList.remove('ccd-open');
       var ov = document.getElementById('CCD-Overlay');
       if (ov) ov.classList.remove('ccd-overlay--visible');
       document.body.style.overflow = '';
@@ -491,6 +700,36 @@
 
       // Intercept Shopify's cart-drawer open via custom events
       document.addEventListener('cart:toggle', function(e) { e.stopImmediatePropagation(); CCD.openDrawer(); }, true);
+
+      // UNIVERSAL FALLBACK: MutationObserver catches theme drawers opened by unknown JS
+      // If any theme element becomes visible that looks like a cart drawer, suppress it and open ours
+      var _themeDrawerSelectors = '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer, .drawer--cart';
+      var _themeEls = document.querySelectorAll(_themeDrawerSelectors);
+      if (_themeEls.length) {
+        var _drawerObserver = new MutationObserver(function(mutations) {
+          mutations.forEach(function(m) {
+            if (m.type !== 'attributes') return;
+            var el = m.target;
+            // Skip our own drawer
+            if (el.id === 'CCD-Drawer' || el.closest('#CCD-Drawer')) return;
+            // Check if theme drawer became visible (class or style change)
+            var isVisible = el.classList.contains('is-open') || el.classList.contains('drawer--is-open') ||
+              el.classList.contains('active') || el.classList.contains('is-active') ||
+              (el.style.display !== 'none' && el.style.visibility !== 'hidden' && el.hasAttribute('open'));
+            if (isVisible) {
+              // Suppress theme drawer immediately
+              el.style.setProperty('display', 'none', 'important');
+              el.classList.remove('is-open', 'drawer--is-open', 'active', 'is-active');
+              el.removeAttribute('open');
+              // Open ours instead
+              if (!CCD._isOpen) CCD.openDrawer();
+            }
+          });
+        });
+        _themeEls.forEach(function(el) {
+          _drawerObserver.observe(el, { attributes: true, attributeFilter: ['class', 'style', 'open', 'aria-hidden'] });
+        });
+      }
     },
 
     // Update all cart count indicators on the page (theme header bubble, etc.)
@@ -514,6 +753,17 @@
           el.textContent = rc;
         });
       });
+      // UNIVERSAL FALLBACK: find number-only elements inside any cart link
+      // Works on ANY theme — every theme has <a href="/cart"> with a count element inside
+      document.querySelectorAll('a[href="/cart"], a[href^="/cart?"], a[href="/cart/"]').forEach(function(a) {
+        if (a.closest('#CCD-Drawer')) return;
+        a.querySelectorAll('*').forEach(function(el) {
+          // Only target leaf elements containing just a number (1-3 digits)
+          if (el.children.length === 0 && /^\s*\d{1,3}\s*$/.test(el.textContent)) {
+            el.textContent = rc;
+          }
+        });
+      });
       // Toggle bubble visibility
       var bubbles = document.querySelectorAll('.cart-link__bubble, .cart-count-bubble, #cart-icon-bubble');
       bubbles.forEach(function(b) {
@@ -526,6 +776,8 @@
     },
 
     init: function() {
+      // Set free price color from config
+      document.documentElement.style.setProperty('--ccd-free-color', FREE_PRICE_COLOR);
       // VERSION STAMP
       console.log('%c[CCD v15.9] Theme-independent cart drawer loaded', 'background:#6b21a8;color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold');
       window.__ccd_version = '15.0';
@@ -537,12 +789,33 @@
       this.bindEvents();
       this.interceptAddToCart();
       this.interceptCartOpens();
+      // Neutralize theme drawer toggle functions so they cannot open theme drawer or redirect
+      if (window.theme && window.theme.cart) {
+        window.theme.cart.open = function() { CCD.openDrawer(); };
+        window.theme.cart.toggle = function() { CCD.openDrawer(); };
+      }
+      // Impulse/Archetype: override CartDrawer open methods
+      var _cd = document.getElementById("CartDrawer");
+      if (_cd && _cd.open) { _cd.open = function() { CCD.openDrawer(); }; }
+      // Override any js-drawer-open-cart click handlers by re-binding
+      document.querySelectorAll(".js-drawer-open-cart").forEach(function(el) {
+        el.addEventListener("click", function(e) {
+          e.preventDefault(); e.stopImmediatePropagation();
+          CCD.openDrawer();
+        }, true);
+      });
       this.setupScrollIndicator();
       this.buildProgressBar();
       this.updateProgress();
       this.checkOverflow();
       // Pre-fetch experiment config on page load so cart opens instantly
       this.loadExperiment(function(c2) { if (c2) CCD._mergeTiersFromConfig(c2); }, true);
+      // If user clicked cart before our script loaded, open drawer now
+      if (window.__ccd_early_open) {
+        window.__ccd_early_open = false;
+        var self = this;
+        setTimeout(function() { self.openDrawer(); }, 50);
+      }
       // Remove instant class only on first user interaction with the toggle
       var tglInput = document.getElementById("ccd-shipping-toggle");
       if (tglInput) {
@@ -579,7 +852,12 @@
       }
       WATCH_GOAL = GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].goal : (CFG.giftGoal || 3);
       GIFT_DISCOUNT_CODES = config.cartConfig.giftDiscountCodes || [];
-      console.log('[CCD] Loaded tiers from backend:', REWARD_TIERS.length, 'tiers, GIFT_HANDLES=', JSON.stringify(GIFT_HANDLES), 'GIFT_CODES=', GIFT_DISCOUNT_CODES.length);
+      // Load gift URL map — duplicate handle → original product URL
+      GIFT_URL_MAP = {};
+      (config.cartConfig.giftMappings || []).forEach(function(m) {
+        if (m.duplicateHandle && m.originalUrl) GIFT_URL_MAP[m.duplicateHandle] = m.originalUrl;
+      });
+      console.log('[CCD] Loaded tiers from backend:', REWARD_TIERS.length, 'tiers, GIFT_HANDLES=', JSON.stringify(GIFT_HANDLES), 'GIFT_CODES=', GIFT_DISCOUNT_CODES.length, 'GIFT_URL_MAP=', JSON.stringify(GIFT_URL_MAP));
     },
 
     _isExcludedHandle: function(handle) {
@@ -659,17 +937,29 @@
         }
       });
 
-      // Checkout button — apply gift discount code if case is in cart
+      // Checkout button — apply gift discount code if gift is in cart
       document.addEventListener('click', function(e) {
         var checkoutBtn = e.target.closest('.ccd-checkout-btn');
         if (checkoutBtn && !checkoutBtn.classList.contains('ccd-checkout-btn--loading')) {
           checkoutBtn.classList.add('ccd-checkout-btn--loading');
-          // If gift case is in cart, redirect through /discount/FREECASE to auto-apply code
-          // All gift discounts are automatic BXGY — no codes needed.
-          // Just go straight to checkout.
           e.preventDefault();
           e.stopPropagation();
-          window.location.href = '/checkout';
+
+          // Check if any gift product is in the cart
+          var hasGiftInCart = false;
+          if (CCD._lastCart && CCD._lastCart.items) {
+            CCD._lastCart.items.forEach(function(item) {
+              if (GIFT_HANDLES[item.handle] || item.handle === WATCH_CASE_HANDLE) hasGiftInCart = true;
+            });
+          }
+
+          // If gift in cart AND we have discount codes, chain them via /discount/CODE
+          if (hasGiftInCart && GIFT_DISCOUNT_CODES.length > 0) {
+            var codes = GIFT_DISCOUNT_CODES.join(',');
+            window.location.href = '/discount/' + codes + '?redirect=/checkout';
+          } else {
+            window.location.href = '/checkout';
+          }
         }
       });
 
@@ -878,11 +1168,15 @@
             // after removes — /cart/change.js can return stale allocations.
             // Delayed /cart.js + full server HTML re-render ensures correct prices.
             window.__ccd_block_rebuild = false;
+            var _rmGen = ++_refreshGen; // claim a generation for this refresh
             setTimeout(function() {
-              fetch("/cart.js").then(function(r) { return r.json(); }).then(function(freshCart) {
-                CCD.refresh(freshCart);
+              var _oF = CCD._origFetch || fetch;
+              _oF("/cart.js").then(function(r) { return r.json(); }).then(function(freshCart) {
+                CCD.refresh(freshCart, _rmGen);
+              }).catch(function(err) {
+                console.warn("[CCD] post-remove /cart.js fetch failed:", err);
               });
-            }, 350);
+            }, 150);
           }
         } else {
           CCD.refresh(cart);
@@ -1131,7 +1425,7 @@
           } catch(caseEx) {}
 
           // Hide empty-state immediately so theme can't flash it during add
-          var _es = document.querySelector('#CCD-Drawer .ccd-cart-empty');
+          var _es = document.querySelector('#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty');
           if (_es) _es.classList.remove('ccd-show');
           return origFetch.call(this, url, opts).then(function(resp) {
             var clone = resp.clone();
@@ -1139,6 +1433,7 @@
               // Wait for any pending separate protection add (form-encoded path) before fetching cart
               (CCD._pendingProtAdd || Promise.resolve()).then(function() {
                 CCD._pendingProtAdd = null;
+                var _interceptGen = ++_refreshGen;
                 origFetch('/cart.js').then(function(r) { return r.json(); }).then(function(cart) {
                   // After add completes: if protection missing and should be on, add it now
                   var _hasProt = cart.items.some(function(i) { return i.handle === PROT; });
@@ -1154,8 +1449,8 @@
                       body: JSON.stringify({ updates: _updObj })
                     })
                     .then(function(r2) { return r2.json(); })
-                    .then(function(fullCart) { CCD.refresh(fullCart); })
-                    .catch(function() { CCD.refresh(cart); });
+                    .then(function(fullCart) { CCD.refresh(fullCart, _interceptGen); })
+                    .catch(function() { CCD.refresh(cart, _interceptGen); });
                   } else {
                     if (_hasProt) CCD.setToggleNoTransition(true);
                     var _protQtyItem = cart.items.find(function(i) { return i.handle === PROT; });
@@ -1168,10 +1463,10 @@
                         body: JSON.stringify({ updates: _fixObj })
                       })
                       .then(function(r3) { return r3.json(); })
-                      .then(function(fixedCart) { CCD.refresh(fixedCart); })
-                      .catch(function() { CCD.refresh(cart); });
+                      .then(function(fixedCart) { CCD.refresh(fixedCart, _interceptGen); })
+                      .catch(function() { CCD.refresh(cart, _interceptGen); });
                     } else {
-                      CCD.refresh(cart);
+                      CCD.refresh(cart, _interceptGen);
                     }
                   }
                   CCD.openDrawer();
@@ -1182,6 +1477,28 @@
           });
         }
         return origFetch.apply(this, arguments);
+      };
+
+      // Also intercept XMLHttpRequest for themes that use XHR instead of fetch
+      var origXHROpen = XMLHttpRequest.prototype.open;
+      var origXHRSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function(method, url) {
+        this._ccdUrl = url;
+        this._ccdMethod = method;
+        return origXHROpen.apply(this, arguments);
+      };
+      XMLHttpRequest.prototype.send = function(body) {
+        if (this._ccdUrl && this._ccdUrl.indexOf && this._ccdUrl.indexOf('/cart/add') !== -1 && this._ccdMethod && this._ccdMethod.toUpperCase() === 'POST') {
+          var self = this;
+          this.addEventListener('load', function() {
+            var _oF = CCD._origFetch || fetch;
+            _oF('/cart.js').then(function(r) { return r.json(); }).then(function(cart) {
+              CCD.refresh(cart);
+              CCD.openDrawer();
+            });
+          });
+        }
+        return origXHRSend.apply(this, arguments);
       };
 
     // Also intercept XMLHttpRequest for /cart/add
@@ -1246,11 +1563,14 @@
     },
 
     rebuildDiscountRow: function(cart) {
-      var dr = document.querySelector('[data-ccd-discounts]');
-      if (!dr) return;
+      var allDrs = document.querySelectorAll('[data-ccd-discounts]');
+      if (!allDrs.length) return;
+      var dr = allDrs[0];
+
+      // Hide ALL discount rows first (Liquid may render duplicates)
+      allDrs.forEach(function(el) { el.style.setProperty('display', 'none', 'important'); });
 
       if (!cart || cart.total_discount <= 0) {
-        dr.style.display = 'none';
         return;
       }
 
@@ -1294,7 +1614,7 @@
       if (visibleDiscount < 0) visibleDiscount = 0;
 
       if (discounts.length > 0 && visibleDiscount > 0) {
-        dr.style.display = 'flex';
+        dr.style.setProperty('display', 'flex', 'important');
         var badgesHtml = discounts.map(function(title) {
           return '<span class="ccd-discount-row__promo-name">' + TAG_SVG + ' ' + title + '</span>';
         }).join(' ');
@@ -1304,7 +1624,7 @@
           '</div>' +
           '<span class="ccd-discount-row__amount">-' + CCD.fmt(visibleDiscount) + '</span>';
       } else {
-        dr.style.display = 'none';
+        dr.style.setProperty('display', 'none', 'important');
       }
     },
 
@@ -1364,7 +1684,8 @@
       });
       if (fixKey) {
         watchCaseBusy = true;
-        fetch('/cart/change.js', {
+        var _oF = CCD._origFetch || fetch;
+        _oF('/cart/change.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: fixKey, quantity: 1 })
@@ -1406,7 +1727,8 @@
       // Helper: add one gift using form-encoded (JSON items array fails for some variants)
       function _addOneGift(item) {
         var body = 'id=' + item.id + '&quantity=1&properties%5B_eliminai_gift%5D=true';
-        return fetch('/cart/add.js', {
+        var _oF = CCD._origFetch || fetch;
+        return _oF('/cart/add.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: body
@@ -1429,10 +1751,11 @@
         watchCaseBusy = true;
         // Instantly hide from DOM
         document.querySelectorAll('#CCD-Drawer .ccd-item[data-gift="1"]').forEach(function(el) { el.remove(); });
+        var _oF2 = CCD._origFetch || fetch;
         var removeChain = Promise.resolve();
         toRemove.forEach(function(key) {
           removeChain = removeChain.then(function() {
-            return fetch('/cart/change.js', {
+            return _oF2('/cart/change.js', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ id: key, quantity: 0 })
@@ -1446,9 +1769,9 @@
           });
           return addChain;
         })
-        .then(function() { return fetch('/cart.js'); })
+        .then(function() { var _oF3 = CCD._origFetch || fetch; return _oF3('/cart.js'); })
         .then(function(r) { return r.json(); })
-        .then(function(c) { watchCaseBusy = false; CCD.refresh(c); })
+        .then(function(c) { watchCaseBusy = false; ++_refreshGen; CCD.refresh(c); })
         .catch(function(err) { console.error('[CCD GIFT] remove+add catch:', err); watchCaseBusy = false; });
       } else if (toAdd.length > 0) {
         watchCaseBusy = true;
@@ -1458,9 +1781,9 @@
           addChain = addChain.then(function() { return _addOneGift(item); });
         });
         addChain
-        .then(function() { return fetch('/cart.js'); })
+        .then(function() { var _oF4 = CCD._origFetch || fetch; return _oF4('/cart.js'); })
         .then(function(r) { return r.json(); })
-        .then(function(c) { watchCaseBusy = false; CCD.refresh(c); })
+        .then(function(c) { watchCaseBusy = false; ++_refreshGen; CCD.refresh(c); })
         .catch(function(err) { console.error('[CCD GIFT] add catch:', err); watchCaseBusy = false; });
       }
 
@@ -1652,14 +1975,21 @@
           var rmBtn = el.querySelector('.ccd-item__remove');
           if (rmBtn && rmBtn.dataset.key === giftKey) giftEl = el;
         });
-        if (!giftEl) return;
+        // If gift was filtered by renderCartItems, create it now
+        if (!giftEl) {
+          var tmp = document.createElement("div");
+          tmp.innerHTML = CCD.renderItemHTML(giftCartItem);
+          giftEl = tmp.firstElementChild;
+          if (!giftEl) return;
+          container.appendChild(giftEl);
+        }
 
         // 1. Move to bottom
         if (giftEl.nextElementSibling) container.appendChild(giftEl);
 
         // 2. Hide qty buttons
         var qtyWrap = giftEl.querySelector('.ccd-qty');
-        if (qtyWrap) qtyWrap.style.display = 'none';
+        if (qtyWrap) qtyWrap.style.setProperty('display', 'none', 'important');
         var priceColEl = giftEl.querySelector('.ccd-item__price-col');
         if (priceColEl) priceColEl.style.marginLeft = 'auto';
 
@@ -1712,7 +2042,8 @@
       var protItem = cart.items.find(function(i) { return i.handle === PROT; });
       CCD._protKey = protItem ? protItem.key : null;
       if (protItem && protItem.quantity > 1) {
-        fetch('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: protItem.key, quantity: 1 }) });
+        var _oFP = CCD._origFetch || fetch;
+        _oFP('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: protItem.key, quantity: 1 }) });
       }
       // Silent tier swap in refreshLight
       if (protItem && PROT_TIERS.length > 1) {
@@ -1750,7 +2081,7 @@
       CCD.applyScarcity(cart);
       CCD.lockScarcityQty();
       var rc = CCD.getRealCount(cart); CCD._lastRealCount = rc;
-      var es = document.querySelector('#CCD-Drawer .ccd-cart-empty');
+      var es = document.querySelector('#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty');
       var id = document.querySelector('#CCD-Drawer [data-ccd-inner]');
       var pb = document.querySelector('[data-ccd-progress]');
       var ft = document.querySelector('[data-ccd-footer]');
@@ -1771,8 +2102,13 @@
         if (ft) ft.style.display = '';
       }
     },
-    refresh: function(cart) {
-      console.log("[CCD] refresh() called");
+    refresh: function(cart, _gen) {
+      // Generation guard: if a newer refresh was requested, skip this stale one
+      if (_gen !== undefined && _gen < _refreshGen) {
+        console.log("[CCD] refresh() skipped — stale gen " + _gen + " < " + _refreshGen);
+        return;
+      }
+      console.log("[CCD] refresh() called gen=" + (_gen || 'direct'));
       CCD.updateCartBubble(cart);
 
       // Pre-set toggle to ON before morphDOM can flash it off
@@ -1802,7 +2138,8 @@
       var protItem = cart.items.find(function(i) { return i.handle === PROT; });
       CCD._protKey = protItem ? protItem.key : null;
       if (protItem && protItem.quantity > 1) {
-        fetch('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: protItem.key, quantity: 1 }) });
+        var _oFP = CCD._origFetch || fetch;
+        _oFP('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: protItem.key, quantity: 1 }) });
       }
       // Silent tier swap — if cart value changed, swap to correct tier
       if (protItem && PROT_TIERS.length > 1) {
@@ -1814,7 +2151,7 @@
           .then(function() { return _oSwap('/cart/add.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: [{ id: correctTier.vid, quantity: 1 }] }) }); })
           .then(function() { return _oSwap('/cart.js'); })
           .then(function(r) { return r.json(); })
-          .then(function(swappedCart) { CCD.refresh(swappedCart); });
+          .then(function(swappedCart) { ++_refreshGen; CCD.refresh(swappedCart); });
           return; // Skip rest of refresh — will re-enter with correct cart
         }
       }
@@ -1850,7 +2187,7 @@
       CCD.lockScarcityQty();
 
       var rc = CCD.getRealCount(cart); CCD._lastRealCount = rc;
-      var es = document.querySelector('#CCD-Drawer .ccd-cart-empty');
+      var es = document.querySelector('#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty');
       var id = document.querySelector('#CCD-Drawer [data-ccd-inner]');
       var pb = document.querySelector('[data-ccd-progress]');
       var ft = document.querySelector('[data-ccd-footer]');
@@ -2575,4 +2912,5 @@
   // Protection is handled inside refreshOnOpen's loadExperiment callback
 
   window.CustomCartDrawer = CCD;
+  window.CCD = CCD;
 })();
