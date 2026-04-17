@@ -178,73 +178,7 @@ async function deleteCodeDiscount(shopDomain: string, token: string, discountId:
   `, { id: discountId });
 }
 
-// Fetch all active product GIDs for the "customerBuys" section
-async function getAllActiveProductGids(shopDomain: string, token: string): Promise<string[]> {
-  const gids: string[] = [];
-  let cursor: string | null = null;
-  for (let page = 0; page < 10; page++) {
-    const afterClause = cursor ? `, after: "${cursor}"` : '';
-    const result = await shopifyGraphQL(shopDomain, token, `{
-      products(first: 50, query: "status:active"${afterClause}) {
-        pageInfo { hasNextPage endCursor }
-        nodes { id }
-      }
-    }`);
-    const nodes = result?.data?.products?.nodes ?? [];
-    gids.push(...nodes.map((n: any) => n.id));
-    if (!result?.data?.products?.pageInfo?.hasNextPage) break;
-    cursor = result.data.products.pageInfo.endCursor;
-  }
-  return gids;
-}
 
-// Create ONE automatic BXGY discount for ALL gift products.
-// CRITICAL: Shopify BXGY discounts "consume" items — separate discounts per gift
-// will block each other at checkout. ONE discount with all gifts in customerGets
-// and quantity = number of gifts is the ONLY pattern that works.
-// Matches Eleganto's working "1+2 FREE" pattern.
-async function createSingleGiftDiscount(
-  shopDomain: string, token: string,
-  giftProductGids: string[], allProductGids: string[],
-) {
-  const result = await shopifyGraphQL(shopDomain, token, `
-    mutation discountAutomaticBxgyCreate($automaticBxgyDiscount: DiscountAutomaticBxgyInput!) {
-      discountAutomaticBxgyCreate(automaticBxgyDiscount: $automaticBxgyDiscount) {
-        automaticDiscountNode {
-          id
-          automaticDiscount { ... on DiscountAutomaticBxgy { title status } }
-        }
-        userErrors { field message }
-      }
-    }
-  `, {
-    automaticBxgyDiscount: {
-      title: 'Free Gifts',
-      startsAt: new Date().toISOString(),
-      // Buy ANY 1 item — cart drawer controls when gifts appear based on item count
-      customerBuys: {
-        items: { products: { productsToAdd: allProductGids } },
-        value: { quantity: "1" },
-      },
-      // ALL gift products in one discount, quantity = number of gifts
-      customerGets: {
-        items: { products: { productsToAdd: giftProductGids } },
-        value: { discountOnQuantity: { quantity: String(giftProductGids.length), effect: { percentage: 1.0 } } },
-      },
-      combinesWith: { productDiscounts: true, orderDiscounts: true, shippingDiscounts: true },
-      // No usesPerOrderLimit — must be null for multi-gift to work
-    },
-  });
-
-  if (result?.errors?.length > 0) {
-    return { error: result.errors.map((e: any) => e.message).join('; ') };
-  }
-  const errors = result?.data?.discountAutomaticBxgyCreate?.userErrors;
-  if (errors?.length > 0) {
-    return { error: errors };
-  }
-  return result?.data?.discountAutomaticBxgyCreate?.automaticDiscountNode;
-}
 
 // Generate a unique discount code
 function generateGiftCode(tierNumber: number): string {
@@ -388,39 +322,28 @@ export async function POST(
     const deletedCount = existingAuto.length + existingCodes.length;
     console.log(`[gift-discounts] Cleaned ${deletedCount} old discounts (${existingAuto.length} auto + ${existingCodes.length} code)`);
 
-    // 4. Recreate with correct types
-    let allProductGids: string[] | null = null;
-    const ensureAllProductGids = async () => {
-      if (!allProductGids) {
-        allProductGids = await getAllActiveProductGids(store.shopDomain, token);
-      }
-      return allProductGids;
-    };
-
-    const results: { tier: number; handle: string; title: string; gid: string; discountId: string; type: 'automatic' }[] = [];
+    // 4. Recreate as CODE discounts (one per gift product).
+    // IMPORTANT: Cannot use automatic BXGY because stores already have their own
+    // automatic BXGY discounts (e.g. "1+2 FREE") and Shopify can't stack them.
+    // Code discounts are applied via /discount/CODE1,CODE2?redirect=/checkout.
+    const results: { tier: number; handle: string; title: string; gid: string; discountId: string; type: 'code'; code: string }[] = [];
     const giftCodes: string[] = [];
     const errors: any[] = [];
 
-    if (desired.length > 0) {
-      // Create ONE single BXGY discount for ALL gift products.
-      // Shopify BXGY discounts consume items — separate discounts per gift
-      // block each other at checkout. This is the only working pattern.
-      const gids = await ensureAllProductGids();
-      const giftProductGids = desired.map(w => w.productGid);
-
-      const createResult = await createSingleGiftDiscount(
-        store.shopDomain, token, giftProductGids, gids,
+    for (const want of desired) {
+      const codeResult = await createCodeDiscount(
+        store.shopDomain, token, want.productGid, want.tierGoal, want.tierNumber, [],
       );
 
-      if (createResult?.error) {
-        errors.push({ error: createResult.error });
-      } else if (createResult?.id) {
-        for (const want of desired) {
-          results.push({
-            tier: want.tierGoal, handle: want.handle, title: want.title,
-            gid: want.productGid, discountId: createResult.id, type: 'automatic',
-          });
-        }
+      if (codeResult?.error) {
+        errors.push({ handle: want.handle, error: codeResult.error });
+      } else if (codeResult?.id) {
+        const discountCode = (codeResult as any).code;
+        giftCodes.push(discountCode);
+        results.push({
+          tier: want.tierGoal, handle: want.handle, title: want.title,
+          gid: want.productGid, discountId: codeResult.id as string, type: 'code', code: discountCode,
+        });
       }
     }
 
