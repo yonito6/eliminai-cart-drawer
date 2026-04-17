@@ -6,11 +6,6 @@ import { prisma } from '@/lib/prisma';
  *
  * CRITICAL RULE: Shopify only allows ONE automatic discount per cart.
  * - Tier 1 (first gift) → DiscountAutomaticBxgy (auto-applies at checkout)
-          ... on DiscountCodeBasic {
-            title
-            status
-            codes(first: 1) { nodes { code } }
-          }
  * - Tier 2+ (subsequent gifts) → DiscountCodeBxgy (code-based, applied via /discount/CODE redirect)
  *
  * POST — Clean-sync gift discounts: deletes old, recreates with correct types.
@@ -201,14 +196,8 @@ function generateGiftCode(tierNumber: number): string {
   return `GIFT-T${tierNumber}-${rand}`;
 }
 
-// Create CODE-based BASIC discount (100% off specific product) — for tier 2+ gifts.
-          ... on DiscountCodeBasic {
-            title
-            status
-            codes(first: 1) { nodes { code } }
-          }
-// Uses DiscountCodeBasic instead of DiscountCodeBxgy to avoid BXGY stacking conflicts
-// with the tier 1 automatic BXGY discount.
+// Create CODE-based BASIC discount (100% off specific product).
+// Uses DiscountCodeBasic to avoid BXGY stacking conflicts with store promotions.
 // Cart drawer redirects checkout through /discount/CODE?redirect=/checkout
 async function createCodeDiscount(
   shopDomain: string, token: string,
@@ -249,6 +238,40 @@ async function createCodeDiscount(
   }
   const node = result?.data?.discountCodeBasicCreate?.codeDiscountNode;
   return { id: node?.id, code };
+}
+
+// --- Gift product tag management ---
+// Tag gift products so stores can exclude them from their own BXGY promotions.
+// The tag is invisible to customers (underscore prefix) and auto-managed by this API.
+const GIFT_TAG = '_eliminai-gift';
+
+async function addGiftTag(shopDomain: string, token: string, productGid: string) {
+  await shopifyGraphQL(shopDomain, token, `
+    mutation tagsAdd($id: ID!, $tags: [String!]!) {
+      tagsAdd(id: $id, tags: $tags) {
+        userErrors { field message }
+      }
+    }
+  `, { id: productGid, tags: [GIFT_TAG] });
+}
+
+async function removeGiftTag(shopDomain: string, token: string, productGid: string) {
+  await shopifyGraphQL(shopDomain, token, `
+    mutation tagsRemove($id: ID!, $tags: [String!]!) {
+      tagsRemove(id: $id, tags: $tags) {
+        userErrors { field message }
+      }
+    }
+  `, { id: productGid, tags: [GIFT_TAG] });
+}
+
+async function findProductsWithGiftTag(shopDomain: string, token: string): Promise<string[]> {
+  const result = await shopifyGraphQL(shopDomain, token, `{
+    products(first: 50, query: "tag:${GIFT_TAG}") {
+      nodes { id }
+    }
+  }`);
+  return (result?.data?.products?.nodes ?? []).map((n: any) => n.id);
 }
 
 // Look up product GID from handle
@@ -367,7 +390,26 @@ export async function POST(
       }
     }
 
-    // 5. Store gift discount codes in config so cart drawer can use them at checkout
+    // 5. Manage gift tags — add to current gifts, remove from products no longer gifts
+    const currentGiftGids = desired.map(d => d.productGid);
+    const previouslyTagged = await findProductsWithGiftTag(store.shopDomain, token);
+
+    // Add tag to new gift products
+    for (const gid of currentGiftGids) {
+      if (!previouslyTagged.includes(gid)) {
+        await addGiftTag(store.shopDomain, token, gid);
+        console.log(`[gift-discounts] Added ${GIFT_TAG} tag to ${gid}`);
+      }
+    }
+    // Remove tag from products no longer gifts
+    for (const gid of previouslyTagged) {
+      if (!currentGiftGids.includes(gid)) {
+        await removeGiftTag(store.shopDomain, token, gid);
+        console.log(`[gift-discounts] Removed ${GIFT_TAG} tag from ${gid}`);
+      }
+    }
+
+    // 6. Store gift discount codes in config so cart drawer can use them at checkout
     const url = new URL(req.url);
     const target = url.searchParams.get('target');
     const configField = target === 'demo' ? 'demoConfig' : 'config';
@@ -459,6 +501,13 @@ export async function DELETE(
     }
     for (const node of existingCodes) {
       await deleteCodeDiscount(store.shopDomain, token, node.id);
+    }
+
+    // Remove gift tags from all previously tagged products
+    const taggedProducts = await findProductsWithGiftTag(store.shopDomain, token);
+    for (const gid of taggedProducts) {
+      await removeGiftTag(store.shopDomain, token, gid);
+      console.log(`[gift-discounts] Removed ${GIFT_TAG} tag from ${gid}`);
     }
 
     // Clear codes from config
