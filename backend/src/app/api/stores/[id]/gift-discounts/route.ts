@@ -334,13 +334,24 @@ async function createCodeDiscount(
 
 // Look up product GID + title from handle
 async function getProductByHandle(shopDomain: string, token: string, handle: string): Promise<{ id: string; title: string } | null> {
-  const result = await shopifyGraphQL(shopDomain, token, `
-    query productByIdentifier($identifier: ProductIdentifierInput!) {
-      productByIdentifier(identifier: $identifier) { id title }
+  // Use products query with handle filter — universally supported across API versions
+  const result = await shopifyGraphQL(shopDomain, token, `{
+    products(first: 1, query: "handle:${handle}") {
+      nodes { id title handle status }
     }
-  `, { identifier: { handle } });
-  const p = result?.data?.productByIdentifier;
-  return p ? { id: p.id, title: p.title } : null;
+  }`);
+  const nodes = result?.data?.products?.nodes ?? [];
+  // Find exact match (query is fuzzy, so verify handle)
+  const exact = nodes.find((n: any) => n.handle === handle && n.status === 'ACTIVE');
+  if (exact) return { id: exact.id, title: exact.title };
+  // Fallback: any handle match regardless of status
+  const anyMatch = nodes.find((n: any) => n.handle === handle);
+  if (anyMatch) {
+    console.log(`[gift-discounts] Product "${handle}" found but status=${anyMatch.status}`);
+    return { id: anyMatch.id, title: anyMatch.title };
+  }
+  console.warn(`[gift-discounts] Product not found for handle "${handle}". API returned:`, JSON.stringify(nodes.map((n: any) => ({ handle: n.handle, title: n.title }))));
+  return null;
 }
 
 /**
