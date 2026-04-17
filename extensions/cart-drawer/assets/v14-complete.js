@@ -272,6 +272,11 @@
   }
   // Build a set of all gift handles across tiers
   var GIFT_HANDLES = {};
+  var GIFT_VIDS = {}; // variant_id → true for ALL gift variants
+  GIFT_TIERS.forEach(function(t) {
+    tierGifts(t).forEach(function(g) { if (g.variantId) GIFT_VIDS[String(g.variantId)] = true; });
+  });
+  if (WATCH_CASE_VID) GIFT_VIDS[String(WATCH_CASE_VID)] = true;
   var GIFT_DISCOUNT_CODES = [];
   var GIFT_URL_MAP = {}; // duplicate handle → original product URL
   var GIFT_TIERS = []; // tiers that have a gift product
@@ -852,6 +857,11 @@
       }
       WATCH_GOAL = GIFT_TIERS.length > 0 ? GIFT_TIERS[GIFT_TIERS.length - 1].goal : (CFG.giftGoal || 3);
       GIFT_DISCOUNT_CODES = config.cartConfig.giftDiscountCodes || [];
+      GIFT_VIDS = {};
+      GIFT_TIERS.forEach(function(t) {
+        tierGifts(t).forEach(function(g) { if (g.variantId) GIFT_VIDS[String(g.variantId)] = true; });
+      });
+      if (WATCH_CASE_VID) GIFT_VIDS[String(WATCH_CASE_VID)] = true;
       // Load gift URL map — duplicate handle → original product URL
       GIFT_URL_MAP = {};
       (config.cartConfig.giftMappings || []).forEach(function(m) {
@@ -1357,6 +1367,19 @@
         }
       }, true); // useCapture=true to fire BEFORE theme handlers
 
+      // GUARD: Block form-based adds of gift variants
+      document.addEventListener("submit", function(e) {
+        var form = e.target;
+        if (!form || !form.action || form.action.indexOf("/cart/add") === -1) return;
+        var vidInput = form.querySelector("input[name=id], select[name=id]");
+        var formVid = vidInput ? String(vidInput.value) : null;
+        if (formVid && GIFT_VIDS[formVid]) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          CCD.showScarcityToast("This gift is automatically added when you qualify ✨");
+        }
+      }, true);
+
       var origFetch = window.fetch;
       CCD._origFetch = origFetch;
       window.fetch = function(url, opts) {
@@ -1457,6 +1480,32 @@
             }
           } catch(caseEx) {}
 
+          // GUARD: Block external adds of gift variants — gifts are auto-added when qualified
+          try {
+            var _giftBody = JSON.parse(opts.body);
+            var _giftList = _giftBody.items || [_giftBody];
+            var _isOurGiftAdd = _giftList.some(function(ai) { return ai.properties && ai.properties._eliminai_gift === 'true'; });
+            if (!_isOurGiftAdd) {
+              var _hasGiftVariant = _giftList.some(function(ai) { return GIFT_VIDS[String(ai.id)]; });
+              if (_hasGiftVariant) {
+                CCD.showScarcityToast('This gift is automatically added when you qualify ✨');
+                return Promise.resolve(new Response(JSON.stringify({items:[]}), {status: 200}));
+              }
+            }
+          } catch(_giftEx) {}
+          // Also check form-encoded body for gift variant
+          try {
+            if (typeof opts.body === 'string' && opts.body.indexOf('{') === -1) {
+              var _giftParams = new URLSearchParams(opts.body);
+              var _giftFormId = _giftParams.get('id');
+              var _giftFormIsOurs = opts.body.indexOf('_eliminai_gift') !== -1;
+              if (_giftFormId && GIFT_VIDS[String(_giftFormId)] && !_giftFormIsOurs) {
+                CCD.showScarcityToast('This gift is automatically added when you qualify ✨');
+                return Promise.resolve(new Response(JSON.stringify({items:[]}), {status: 200}));
+              }
+            }
+          } catch(_giftFormEx) {}
+
           // Hide empty-state immediately so theme can't flash it during add
           var _es = document.querySelector('#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty');
           if (_es) _es.classList.remove('ccd-show');
@@ -1522,6 +1571,27 @@
       };
       XMLHttpRequest.prototype.send = function(body) {
         if (this._ccdUrl && this._ccdUrl.indexOf && this._ccdUrl.indexOf('/cart/add') !== -1 && this._ccdMethod && this._ccdMethod.toUpperCase() === 'POST') {
+          // GUARD: Block external adds of gift variants via XHR
+          try {
+            var _xhrBody = typeof body === 'string' ? body : '';
+            var _xhrIsOurs = _xhrBody.indexOf('_eliminai_gift') !== -1;
+            if (!_xhrIsOurs) {
+              try {
+                var _xb = JSON.parse(_xhrBody);
+                var _xl = _xb.items || [_xb];
+                if (_xl.some(function(ai) { return GIFT_VIDS[String(ai.id)]; })) {
+                  CCD.showScarcityToast('This gift is automatically added when you qualify ✨');
+                  return;
+                }
+              } catch(_xje) {
+                var _xp = new URLSearchParams(_xhrBody);
+                if (GIFT_VIDS[String(_xp.get('id'))]) {
+                  CCD.showScarcityToast('This gift is automatically added when you qualify ✨');
+                  return;
+                }
+              }
+            }
+          } catch(_xgEx) {}
           var self = this;
           this.addEventListener('load', function() {
             var _oF = CCD._origFetch || fetch;
