@@ -2,16 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 /**
- * Manages Shopify discounts for gift products in reward tiers.
+ * Manages gift products via PRODUCT DUPLICATION approach.
  *
- * CRITICAL RULE: Shopify only allows ONE automatic discount per cart.
- * - Tier 1 (first gift) → DiscountAutomaticBxgy (auto-applies at checkout)
- * - Tier 2+ (subsequent gifts) → DiscountCodeBxgy (code-based, applied via /discount/CODE redirect)
+ * Instead of using the store's original products (which interfere with
+ * store BXGY promotions), we DUPLICATE gift products with exact settings
+ * and use the duplicates in the cart. This ensures:
+ * - Store's BXGY never consumes gift items (duplicates aren't in their collections)
+ * - Gift items get their own discount codes (100% off)
+ * - Cart links point to the ORIGINAL product URL
+ * - Cleanup deletes only OUR duplicates
  *
- * POST — Clean-sync gift discounts: deletes old, recreates with correct types.
- * GET — Check which gift discounts already exist.
- * DELETE — Remove all gift discounts for this store.
+ * POST — Clean-sync: delete old duplicates + discounts, create new ones.
+ * GET — Check existing gift discounts.
+ * DELETE — Remove all gift duplicates + discounts.
  */
+
+const GIFT_TAG = '_eliminai-gift';
 
 async function shopifyGraphQL(shopDomain: string, token: string, query: string, variables?: any) {
   const res = await fetch(`https://${shopDomain}/admin/api/2025-10/graphql.json`, {
@@ -28,6 +34,96 @@ async function shopifyGraphQL(shopDomain: string, token: string, query: string, 
   }
   return res.json();
 }
+
+// --- Product Duplication ---
+
+// Duplicate a product with ALL settings (images, variants, fulfillment, weight, etc.)
+async function duplicateProduct(
+  shopDomain: string, token: string, originalProductGid: string, originalTitle: string,
+): Promise<{ duplicateGid: string; duplicateVariantId: string; duplicateHandle: string } | { error: string }> {
+  const newTitle = `[Gift] ${originalTitle}`;
+
+  const result = await shopifyGraphQL(shopDomain, token, `
+    mutation productDuplicate($productId: ID!, $newTitle: String!, $includeImages: Boolean!, $newStatus: ProductStatus) {
+      productDuplicate(productId: $productId, newTitle: $newTitle, includeImages: $includeImages, newStatus: $newStatus) {
+        newProduct {
+          id
+          handle
+          title
+          variants(first: 1) { nodes { id } }
+        }
+        userErrors { field message }
+      }
+    }
+  `, {
+    productId: originalProductGid,
+    newTitle,
+    includeImages: true,
+    newStatus: 'ACTIVE',
+  });
+
+  const errors = result?.data?.productDuplicate?.userErrors;
+  if (errors?.length > 0) {
+    return { error: errors.map((e: any) => e.message).join('; ') };
+  }
+
+  const newProduct = result?.data?.productDuplicate?.newProduct;
+  if (!newProduct) {
+    return { error: 'productDuplicate returned no product: ' + JSON.stringify(result) };
+  }
+
+  const duplicateVariantGid = newProduct.variants?.nodes?.[0]?.id;
+  if (!duplicateVariantGid) {
+    return { error: 'Duplicate product has no variants' };
+  }
+
+  // Extract numeric variant ID for cart/add.js
+  const duplicateVariantId = duplicateVariantGid.replace('gid://shopify/ProductVariant/', '');
+
+  // Tag the duplicate so we can find/cleanup our products
+  await shopifyGraphQL(shopDomain, token, `
+    mutation tagsAdd($id: ID!, $tags: [String!]!) {
+      tagsAdd(id: $id, tags: $tags) {
+        userErrors { field message }
+      }
+    }
+  `, { id: newProduct.id, tags: [GIFT_TAG] });
+
+  console.log(`[gift-discounts] Duplicated "${originalTitle}" → "${newTitle}" (${newProduct.id}, variant ${duplicateVariantId})`);
+
+  return {
+    duplicateGid: newProduct.id,
+    duplicateVariantId,
+    duplicateHandle: newProduct.handle,
+  };
+}
+
+// Delete a product (our duplicate)
+async function deleteProduct(shopDomain: string, token: string, productGid: string) {
+  const result = await shopifyGraphQL(shopDomain, token, `
+    mutation productDelete($input: ProductDeleteInput!) {
+      productDelete(input: $input) {
+        userErrors { field message }
+      }
+    }
+  `, { input: { id: productGid } });
+  const errors = result?.data?.productDelete?.userErrors;
+  if (errors?.length > 0) {
+    console.warn(`[gift-discounts] Failed to delete product ${productGid}:`, errors);
+  }
+}
+
+// Find all our duplicate gift products (tagged _eliminai-gift)
+async function findGiftDuplicates(shopDomain: string, token: string): Promise<{ id: string; title: string; handle: string }[]> {
+  const result = await shopifyGraphQL(shopDomain, token, `{
+    products(first: 50, query: "tag:${GIFT_TAG}") {
+      nodes { id title handle }
+    }
+  }`);
+  return (result?.data?.products?.nodes ?? []);
+}
+
+// --- Discount Management ---
 
 interface ExistingDiscount {
   id: string;
@@ -90,7 +186,7 @@ async function findExistingGiftDiscounts(shopDomain: string, token: string): Pro
   });
 }
 
-// Find existing CODE-based gift discounts (both Basic and Bxgy types)
+// Find existing CODE-based gift discounts
 async function findExistingCodeDiscounts(shopDomain: string, token: string): Promise<{ id: string; title: string; code: string }[]> {
   const result = await shopifyGraphQL(shopDomain, token, `{
     codeDiscountNodes(first: 50, query: "title:Gift*") {
@@ -112,7 +208,7 @@ async function findExistingCodeDiscounts(shopDomain: string, token: string): Pro
     }
   }`);
   const nodes = result?.data?.codeDiscountNodes?.nodes ?? [];
-  // SAFETY: Only include discounts whose title starts with "Gift" — never touch store's other codes
+  // SAFETY: Only include discounts whose title starts with "Gift"
   return nodes
     .filter((n: any) => n.codeDiscount?.title?.startsWith('Gift'))
     .map((n: any) => ({
@@ -188,20 +284,16 @@ async function deleteCodeDiscount(shopDomain: string, token: string, discountId:
   `, { id: discountId });
 }
 
-
-
 // Generate a unique discount code
 function generateGiftCode(tierNumber: number): string {
   const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
   return `GIFT-T${tierNumber}-${rand}`;
 }
 
-// Create CODE-based BASIC discount (100% off specific product).
-// Uses DiscountCodeBasic to avoid BXGY stacking conflicts with store promotions.
-// Cart drawer redirects checkout through /discount/CODE?redirect=/checkout
+// Create CODE-based BASIC discount (100% off specific DUPLICATE product)
 async function createCodeDiscount(
   shopDomain: string, token: string,
-  productGid: string, tierGoal: number, tierNumber: number, allProductGids: string[],
+  duplicateProductGid: string, tierGoal: number, tierNumber: number,
 ) {
   const code = generateGiftCode(tierNumber);
   const result = await shopifyGraphQL(shopDomain, token, `
@@ -222,7 +314,7 @@ async function createCodeDiscount(
       code,
       customerSelection: { all: true },
       customerGets: {
-        items: { products: { productsToAdd: [productGid] } },
+        items: { products: { productsToAdd: [duplicateProductGid] } },
         value: { percentage: 1.0 },
       },
       combinesWith: { productDiscounts: true, orderDiscounts: true, shippingDiscounts: true },
@@ -240,55 +332,28 @@ async function createCodeDiscount(
   return { id: node?.id, code };
 }
 
-// --- Gift product tag management ---
-// Tag gift products so stores can exclude them from their own BXGY promotions.
-// The tag is invisible to customers (underscore prefix) and auto-managed by this API.
-const GIFT_TAG = '_eliminai-gift';
-
-async function addGiftTag(shopDomain: string, token: string, productGid: string) {
-  await shopifyGraphQL(shopDomain, token, `
-    mutation tagsAdd($id: ID!, $tags: [String!]!) {
-      tagsAdd(id: $id, tags: $tags) {
-        userErrors { field message }
-      }
-    }
-  `, { id: productGid, tags: [GIFT_TAG] });
-}
-
-async function removeGiftTag(shopDomain: string, token: string, productGid: string) {
-  await shopifyGraphQL(shopDomain, token, `
-    mutation tagsRemove($id: ID!, $tags: [String!]!) {
-      tagsRemove(id: $id, tags: $tags) {
-        userErrors { field message }
-      }
-    }
-  `, { id: productGid, tags: [GIFT_TAG] });
-}
-
-async function findProductsWithGiftTag(shopDomain: string, token: string): Promise<string[]> {
-  const result = await shopifyGraphQL(shopDomain, token, `{
-    products(first: 50, query: "tag:${GIFT_TAG}") {
-      nodes { id }
-    }
-  }`);
-  return (result?.data?.products?.nodes ?? []).map((n: any) => n.id);
-}
-
-// Look up product GID from handle
-async function getProductGidByHandle(shopDomain: string, token: string, handle: string): Promise<string | null> {
+// Look up product GID + title from handle
+async function getProductByHandle(shopDomain: string, token: string, handle: string): Promise<{ id: string; title: string } | null> {
   const result = await shopifyGraphQL(shopDomain, token, `
     query productByIdentifier($identifier: ProductIdentifierInput!) {
-      productByIdentifier(identifier: $identifier) { id }
+      productByIdentifier(identifier: $identifier) { id title }
     }
   `, { identifier: { handle } });
-  return result?.data?.productByIdentifier?.id ?? null;
+  const p = result?.data?.productByIdentifier;
+  return p ? { id: p.id, title: p.title } : null;
 }
 
 /**
- * POST — Clean sync gift discounts.
- * Deletes all existing gift discounts, then recreates:
- * - First gift tier → automatic BXGY (auto-applies)
- * - Subsequent gift tiers → code BXGY (cart drawer applies via /discount/CODE redirect)
+ * POST — Clean sync gift discounts with product duplication.
+ *
+ * Flow:
+ * 1. Delete old gift discounts (auto + code)
+ * 2. Delete old gift product duplicates (tagged _eliminai-gift)
+ * 3. For each gift product in tiers:
+ *    a. Duplicate the original product (exact copy with images, fulfillment, etc.)
+ *    b. Tag duplicate with _eliminai-gift
+ *    c. Create discount code for the DUPLICATE (100% off)
+ * 4. Store mapping in config: duplicate handles, variant IDs, original URLs
  */
 export async function POST(
   req: NextRequest,
@@ -325,12 +390,26 @@ export async function POST(
     // 0. Ensure existing store discounts allow combining
     await ensureExistingDiscountsCombine(store.shopDomain, token);
 
-    // 1. Find all existing gift discounts (both automatic and code-based)
+    // 1. Delete ALL existing gift discounts (clean slate)
     const existingAuto = await findExistingGiftDiscounts(store.shopDomain, token);
     const existingCodes = await findExistingCodeDiscounts(store.shopDomain, token);
+    for (const disc of existingAuto) {
+      await deleteDiscount(store.shopDomain, token, disc.id);
+    }
+    for (const disc of existingCodes) {
+      await deleteCodeDiscount(store.shopDomain, token, disc.id);
+    }
+    const deletedDiscounts = existingAuto.length + existingCodes.length;
 
-    // 2. Build desired state
-    const desired: { handle: string; title: string; productGid: string; tierGoal: number; tierNumber: number }[] = [];
+    // 2. Delete ALL existing gift duplicate products
+    const existingDuplicates = await findGiftDuplicates(store.shopDomain, token);
+    for (const dup of existingDuplicates) {
+      await deleteProduct(store.shopDomain, token, dup.id);
+      console.log(`[gift-discounts] Deleted old duplicate: ${dup.title} (${dup.id})`);
+    }
+
+    // 3. Build desired state from tiers
+    const desired: { handle: string; title: string; originalGid: string; tierGoal: number; tierNumber: number }[] = [];
     const notFound: string[] = [];
 
     let tierNumber = 0;
@@ -339,77 +418,70 @@ export async function POST(
       const giftProducts = tier.giftProducts ?? (tier.giftProduct ? [tier.giftProduct] : []);
       for (const gift of giftProducts) {
         if (!gift.handle) continue;
-        const productGid = await getProductGidByHandle(store.shopDomain, token, gift.handle);
-        if (!productGid) {
+        const product = await getProductByHandle(store.shopDomain, token, gift.handle);
+        if (!product) {
           console.warn(`[gift-discounts] Product not found: ${gift.handle}`);
           notFound.push(gift.handle);
           continue;
         }
         desired.push({
           handle: gift.handle,
-          title: gift.title || gift.handle,
-          productGid,
+          title: product.title,
+          originalGid: product.id,
           tierGoal: tier.goal,
           tierNumber,
         });
       }
     }
 
-    // 3. Delete ALL existing gift discounts (clean slate — avoids type mismatch from legacy)
-    for (const disc of existingAuto) {
-      await deleteDiscount(store.shopDomain, token, disc.id);
-    }
-    for (const disc of existingCodes) {
-      await deleteCodeDiscount(store.shopDomain, token, disc.id);
-    }
-    const deletedCount = existingAuto.length + existingCodes.length;
-    console.log(`[gift-discounts] Cleaned ${deletedCount} old discounts (${existingAuto.length} auto + ${existingCodes.length} code)`);
-
-    // 4. Recreate as CODE discounts (one per gift product).
-    // IMPORTANT: Cannot use automatic BXGY because stores already have their own
-    // automatic BXGY discounts (e.g. "1+2 FREE") and Shopify can't stack them.
-    // Code discounts are applied via /discount/CODE1,CODE2?redirect=/checkout.
-    const results: { tier: number; handle: string; title: string; gid: string; discountId: string; type: 'code'; code: string }[] = [];
+    // 4. Duplicate each gift product and create discount codes
+    const results: any[] = [];
     const giftCodes: string[] = [];
+    const giftMappings: { originalHandle: string; originalUrl: string; duplicateHandle: string; duplicateVariantId: string; duplicateGid: string }[] = [];
     const errors: any[] = [];
 
     for (const want of desired) {
+      // 4a. Duplicate the product
+      const dupResult = await duplicateProduct(store.shopDomain, token, want.originalGid, want.title);
+      if ('error' in dupResult) {
+        errors.push({ handle: want.handle, error: dupResult.error });
+        continue;
+      }
+
+      // 4b. Create discount code for the DUPLICATE
       const codeResult = await createCodeDiscount(
-        store.shopDomain, token, want.productGid, want.tierGoal, want.tierNumber, [],
+        store.shopDomain, token, dupResult.duplicateGid, want.tierGoal, want.tierNumber,
       );
 
       if (codeResult?.error) {
         errors.push({ handle: want.handle, error: codeResult.error });
+        // Still keep the duplicate — discount can be retried
       } else if (codeResult?.id) {
-        const discountCode = (codeResult as any).code;
-        giftCodes.push(discountCode);
-        results.push({
-          tier: want.tierGoal, handle: want.handle, title: want.title,
-          gid: want.productGid, discountId: codeResult.id as string, type: 'code', code: discountCode,
-        });
+        giftCodes.push((codeResult as any).code);
       }
+
+      // 4c. Store the mapping
+      giftMappings.push({
+        originalHandle: want.handle,
+        originalUrl: `/products/${want.handle}`,
+        duplicateHandle: dupResult.duplicateHandle,
+        duplicateVariantId: dupResult.duplicateVariantId,
+        duplicateGid: dupResult.duplicateGid,
+      });
+
+      results.push({
+        tier: want.tierGoal,
+        originalHandle: want.handle,
+        originalTitle: want.title,
+        duplicateHandle: dupResult.duplicateHandle,
+        duplicateVariantId: dupResult.duplicateVariantId,
+        duplicateGid: dupResult.duplicateGid,
+        discountCode: giftCodes[giftCodes.length - 1] || null,
+      });
     }
 
-    // 5. Manage gift tags — add to current gifts, remove from products no longer gifts
-    const currentGiftGids = desired.map(d => d.productGid);
-    const previouslyTagged = await findProductsWithGiftTag(store.shopDomain, token);
-
-    // Add tag to new gift products
-    for (const gid of currentGiftGids) {
-      if (!previouslyTagged.includes(gid)) {
-        await addGiftTag(store.shopDomain, token, gid);
-        console.log(`[gift-discounts] Added ${GIFT_TAG} tag to ${gid}`);
-      }
-    }
-    // Remove tag from products no longer gifts
-    for (const gid of previouslyTagged) {
-      if (!currentGiftGids.includes(gid)) {
-        await removeGiftTag(store.shopDomain, token, gid);
-        console.log(`[gift-discounts] Removed ${GIFT_TAG} tag from ${gid}`);
-      }
-    }
-
-    // 6. Store gift discount codes in config so cart drawer can use them at checkout
+    // 5. Update config with gift mappings + discount codes
+    // The cart drawer needs: duplicate handles, duplicate variant IDs, original URLs, discount codes
     const url = new URL(req.url);
     const target = url.searchParams.get('target');
     const configField = target === 'demo' ? 'demoConfig' : 'config';
@@ -418,24 +490,52 @@ export async function POST(
     if (currentStore) {
       const cfg = (currentStore[configField] as any) ?? {};
       const otherCfg = (currentStore[otherField] as any) ?? {};
-      if (giftCodes.length > 0) {
-        cfg.giftDiscountCodes = giftCodes;
-        otherCfg.giftDiscountCodes = giftCodes;
-      } else {
-        delete cfg.giftDiscountCodes;
-        delete otherCfg.giftDiscountCodes;
+
+      // Update gift data in BOTH configs
+      for (const c of [cfg, otherCfg]) {
+        if (giftCodes.length > 0) {
+          c.giftDiscountCodes = giftCodes;
+        } else {
+          delete c.giftDiscountCodes;
+        }
+        if (giftMappings.length > 0) {
+          c.giftMappings = giftMappings;
+        } else {
+          delete c.giftMappings;
+        }
+
+        // Update tier giftProducts to use DUPLICATE handles + variant IDs
+        const addons = c.addons ?? {};
+        const rewardConfig = addons.freeShippingBar?.config ?? {};
+        const cfgTiers = rewardConfig.tiers ?? [];
+        for (const tier of cfgTiers) {
+          const giftProducts = tier.giftProducts ?? (tier.giftProduct ? [tier.giftProduct] : []);
+          for (const gp of giftProducts) {
+            const mapping = giftMappings.find(m => m.originalHandle === gp.handle);
+            if (mapping) {
+              // Store original info for reference
+              gp.originalHandle = gp.handle;
+              gp.originalUrl = mapping.originalUrl;
+              // Switch to duplicate for cart operations
+              gp.handle = mapping.duplicateHandle;
+              gp.variantId = parseInt(mapping.duplicateVariantId) || gp.variantId;
+            }
+          }
+        }
       }
+
       await prisma.store.update({ where: { id }, data: { [configField]: cfg, [otherField]: otherCfg } });
     }
 
-    console.log(`[gift-discounts] Sync complete: ${results.length} created, ${deletedCount} deleted`);
+    console.log(`[gift-discounts] Sync complete: ${results.length} duplicated+discounted, ${deletedDiscounts} discounts deleted, ${existingDuplicates.length} old duplicates deleted`);
 
     return NextResponse.json({
       success: true,
       discounts: results,
+      giftMappings,
       errors: errors.length > 0 ? errors : null,
       notFound,
-      deleted: deletedCount,
+      deleted: { discounts: deletedDiscounts, duplicates: existingDuplicates.length },
       created: results.length,
       giftCodes,
     });
@@ -465,11 +565,13 @@ export async function GET(
 
     const existing = await findExistingGiftDiscounts(store.shopDomain, store.accessToken);
     const existingCodes = await findExistingCodeDiscounts(store.shopDomain, store.accessToken);
+    const duplicates = await findGiftDuplicates(store.shopDomain, store.accessToken);
     return NextResponse.json({
       exists: existing.length > 0 || existingCodes.length > 0,
       count: existing.length + existingCodes.length,
       automatic: existing.map(e => ({ id: e.id, title: e.title, giftProductGid: e.giftProductGid })),
       codes: existingCodes.map(e => ({ id: e.id, title: e.title, code: e.code })),
+      duplicates: duplicates.map(d => ({ id: d.id, title: d.title, handle: d.handle })),
     });
   } catch (err: any) {
     console.error('[gift-discounts] GET error:', err.message);
@@ -477,6 +579,9 @@ export async function GET(
   }
 }
 
+/**
+ * DELETE — Remove all gift duplicates + discounts for this store.
+ */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -493,9 +598,10 @@ export async function DELETE(
     }
 
     const token = store.accessToken;
+
+    // Delete discounts
     const existingAuto = await findExistingGiftDiscounts(store.shopDomain, token);
     const existingCodes = await findExistingCodeDiscounts(store.shopDomain, token);
-
     for (const node of existingAuto) {
       await deleteDiscount(store.shopDomain, token, node.id);
     }
@@ -503,24 +609,46 @@ export async function DELETE(
       await deleteCodeDiscount(store.shopDomain, token, node.id);
     }
 
-    // Remove gift tags from all previously tagged products
-    const taggedProducts = await findProductsWithGiftTag(store.shopDomain, token);
-    for (const gid of taggedProducts) {
-      await removeGiftTag(store.shopDomain, token, gid);
-      console.log(`[gift-discounts] Removed ${GIFT_TAG} tag from ${gid}`);
+    // Delete duplicate products
+    const duplicates = await findGiftDuplicates(store.shopDomain, token);
+    for (const dup of duplicates) {
+      await deleteProduct(store.shopDomain, token, dup.id);
+      console.log(`[gift-discounts] Deleted duplicate: ${dup.title} (${dup.id})`);
     }
 
-    // Clear codes from config
+    // Clear config
     const currentStore = await prisma.store.findUnique({ where: { id }, select: { config: true, demoConfig: true } });
     if (currentStore) {
       const cfg = (currentStore.config as any) ?? {};
       const demo = (currentStore.demoConfig as any) ?? {};
-      delete cfg.giftDiscountCodes;
-      delete demo.giftDiscountCodes;
+      for (const c of [cfg, demo]) {
+        delete c.giftDiscountCodes;
+        delete c.giftMappings;
+        // Restore original handles in tiers
+        const addons = c.addons ?? {};
+        const rewardConfig = addons.freeShippingBar?.config ?? {};
+        const tiers = rewardConfig.tiers ?? [];
+        for (const tier of tiers) {
+          const giftProducts = tier.giftProducts ?? (tier.giftProduct ? [tier.giftProduct] : []);
+          for (const gp of giftProducts) {
+            if (gp.originalHandle) {
+              gp.handle = gp.originalHandle;
+              delete gp.originalHandle;
+              delete gp.originalUrl;
+            }
+          }
+        }
+      }
       await prisma.store.update({ where: { id }, data: { config: cfg, demoConfig: demo } });
     }
 
-    return NextResponse.json({ success: true, deleted: existingAuto.length + existingCodes.length });
+    return NextResponse.json({
+      success: true,
+      deleted: {
+        discounts: existingAuto.length + existingCodes.length,
+        duplicates: duplicates.length,
+      },
+    });
   } catch (err: any) {
     console.error('[gift-discounts] Delete error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
