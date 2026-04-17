@@ -935,7 +935,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
               Add Gift Product
             </div>
             <div style={{ fontSize: 13, color: '#d1d5db', lineHeight: 1.6, marginBottom: 16 }}>
-              {"We'll duplicate this product at /usr/bin/bash so it's "}
+              {"We'll duplicate this product at $0 so it's "}
               <strong style={{ color: '#34d399' }}>100% free</strong>
               {" in the cart:"}
             </div>
@@ -956,7 +956,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
               <span style={{ fontSize: 14, fontWeight: 700, color: '#34d399' }}>FREE</span>
             </div>
             <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 16, lineHeight: 1.5 }}>
-              <div style={{ marginBottom: 4 }}><strong style={{ color: '#d1d5db' }}>How it works:</strong> Product is duplicated with price set to /usr/bin/bash</div>
+              <div style={{ marginBottom: 4 }}><strong style={{ color: '#d1d5db' }}>How it works:</strong> Product is duplicated with price set to $0</div>
               <div style={{ marginBottom: 4 }}><strong style={{ color: '#d1d5db' }}>Storefront:</strong> Hidden from store (customers can't browse to it)</div>
               <div><strong style={{ color: '#d1d5db' }}>Cart link:</strong> Points to the original product page</div>
             </div>
