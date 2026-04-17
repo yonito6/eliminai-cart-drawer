@@ -1086,7 +1086,7 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
     });
 
     if (hasGifts && storeId) {
-      setDiscountStatus('Syncing gift discounts...');
+      setDiscountStatus('Setting up gift products...');
       try {
         const res = await fetch(`/api/stores/${storeId}/gift-discounts${configTarget ? '?target=' + configTarget : ''}`, {
           method: 'POST',
@@ -1095,13 +1095,13 @@ export function RewardsTierEditorWithSave({ savedConfig, onSave, onPreviewChange
         });
         const data = await res.json();
         if (data.success) {
-          const count = data.discounts?.filter((d: any) => !d.error).length ?? 0;
-          setDiscountStatus(`${count} gift discount${count !== 1 ? 's' : ''} synced`);
+          const count = data.created ?? data.duplicates?.length ?? 0;
+          setDiscountStatus(`${count} gift product${count !== 1 ? 's' : ''} synced`);
         } else {
-          setDiscountStatus('Discount sync failed: ' + (data.error || 'unknown'));
+          setDiscountStatus('Gift setup failed: ' + (data.error || 'unknown'));
         }
       } catch (e) {
-        setDiscountStatus('Discount sync failed');
+        setDiscountStatus('Gift setup failed');
       }
       setTimeout(() => setDiscountStatus(null), 3000);
     }
