@@ -128,6 +128,33 @@ async function duplicateAndZeroPrice(
     console.log(`[gift-discounts] Unpublished "${newTitle}" from Online Store`);
   }
 
+  // 5. Remove duplicate from ALL collections — Shopify copies collection memberships
+  //    from the original. If gift duplicates stay in collections used by BXGY discounts
+  //    (e.g. "All items"), Shopify wastes free slots on $0 gifts instead of real products.
+  const collResult = await shopifyGraphQL(shopDomain, token, `{
+    product(id: "${newProduct.id}") {
+      collections(first: 50) {
+        nodes { id title }
+      }
+    }
+  }`);
+  const collections = collResult?.data?.product?.collections?.nodes ?? [];
+  if (collections.length > 0) {
+    for (const coll of collections) {
+      await shopifyGraphQL(shopDomain, token, `
+        mutation collectionRemoveProducts($id: ID!, $productIds: [ID!]!) {
+          collectionRemoveProducts(id: $id, productIds: $productIds) {
+            userErrors { field message }
+          }
+        }
+      `, {
+        id: coll.id,
+        productIds: [newProduct.id],
+      });
+    }
+    console.log(`[gift-discounts] Removed "${newTitle}" from ${collections.length} collections: ${collections.map((c: any) => c.title).join(', ')}`);
+  }
+
   const duplicateVariantGid = variants[0].id;
   const duplicateVariantId = duplicateVariantGid.replace('gid://shopify/ProductVariant/', '');
 
