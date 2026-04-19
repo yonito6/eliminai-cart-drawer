@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PROTECTION_ICONS } from '@/lib/protection-icons';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -17,6 +17,7 @@ interface ProtectionConfig {
   description?: string;
   pricingMode?: 'single' | 'tiered';
   singlePrice?: number;
+  price?: number;
   tiers?: PricingTier[];
   defaultOn?: boolean;
 }
@@ -24,7 +25,10 @@ interface ProtectionConfig {
 export interface ProtectionEditorProps {
   storeId: string;
   config: ProtectionConfig;
-  onConfigChange: (patch: Record<string, any>) => void;
+  /** Called on every field change — for instant preview (no persistence) */
+  onPreviewChange: (patch: Record<string, any>) => void;
+  /** Called when user clicks Save — persists to DB */
+  onSave: (fullConfig: Record<string, any>) => void;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -49,9 +53,11 @@ function defaultTiers(): PricingTier[] {
 export default function ProtectionEditor({
   storeId,
   config,
-  onConfigChange,
+  onPreviewChange,
+  onSave,
 }: ProtectionEditorProps) {
-  // Local state
+  // Local state — initialize from config (price field = dollars)
+  const initPrice = config.price ?? config.singlePrice ?? 4.99;
   const [iconId, setIconId] = useState(config.iconId ?? 'shield-check');
   const [customIconUrl, setCustomIconUrl] = useState(config.customIconUrl ?? '');
   const [productName, setProductName] = useState(config.productName ?? 'Shipping Protection');
@@ -61,7 +67,7 @@ export default function ProtectionEditor({
   const [pricingMode, setPricingMode] = useState<'single' | 'tiered'>(
     config.pricingMode ?? 'single',
   );
-  const [singlePrice, setSinglePrice] = useState(config.singlePrice ?? 2.99);
+  const [singlePrice, setSinglePrice] = useState(initPrice);
   const [tiers, setTiers] = useState<PricingTier[]>(config.tiers ?? defaultTiers());
   const [defaultOn, setDefaultOn] = useState(config.defaultOn ?? true);
 
@@ -71,14 +77,14 @@ export default function ProtectionEditor({
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusWarning, setStatusWarning] = useState<string | null>(null);
 
-  // Modal state
+  // Modal + save state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // Track whether config has changed from what's on Shopify
-  const initialConfigRef = useRef<string | null>(null);
-  const [configDirty, setConfigDirty] = useState(false);
+  // Dirty tracking
+  const savedConfigRef = useRef<string>(JSON.stringify(config));
+  const [isDirty, setIsDirty] = useState(false);
 
   // ── Fetch product status on mount ──
   useEffect(() => {
@@ -90,60 +96,75 @@ export default function ProtectionEditor({
         setProductExists(!!data.exists);
         setProductTitle(data.title ?? null);
         setStatusWarning(data.warning ?? null);
-        if (data.exists) {
-          initialConfigRef.current = JSON.stringify(buildPayload());
-        }
       })
       .catch(() => setStatusWarning('Failed to check product status'))
       .finally(() => setStatusLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
-  // ── Build payload ──
-  const buildPayload = useCallback(() => {
-    const sorted = [...tiers].sort(
+  // ── Build payload from current state (with optional overrides) ──
+  function buildPayload(overrides: Record<string, any> = {}) {
+    const curIconId = overrides.iconId ?? iconId;
+    const curCustomIconUrl = overrides.customIconUrl ?? customIconUrl;
+    const curProductName = overrides.productName ?? productName;
+    const curDescription = overrides.description ?? description;
+    const curPricingMode = overrides.pricingMode ?? pricingMode;
+    const curSinglePrice = overrides.singlePrice ?? singlePrice;
+    const curTiers = overrides.tiers ?? tiers;
+    const curDefaultOn = overrides.defaultOn ?? defaultOn;
+
+    const sorted = [...curTiers].sort(
       (a, b) => (a.maxCartValue ?? Infinity) - (b.maxCartValue ?? Infinity),
     );
+    const displayPrice = curPricingMode === 'single' ? curSinglePrice : (sorted[0]?.price ?? curSinglePrice);
     return {
-      iconId,
-      customIconUrl: customIconUrl || undefined,
-      productName,
-      description,
-      pricingMode,
-      singlePrice: pricingMode === 'single' ? singlePrice : undefined,
-      tiers: pricingMode === 'tiered' ? sorted : undefined,
-      defaultOn,
+      iconId: curIconId,
+      customIconUrl: curCustomIconUrl || undefined,
+      productName: curProductName,
+      description: curDescription,
+      pricingMode: curPricingMode,
+      singlePrice: curPricingMode === 'single' ? curSinglePrice : undefined,
+      tiers: curPricingMode === 'tiered' ? sorted : undefined,
+      defaultOn: curDefaultOn,
+      price: displayPrice,
     };
-  }, [iconId, customIconUrl, productName, description, pricingMode, singlePrice, tiers, defaultOn]);
+  }
 
-  // ── Push changes to parent on every edit ──
+  // ── Push preview change (called from every event handler) ──
+  function pushPreview(overrides: Record<string, any> = {}) {
+    const payload = buildPayload(overrides);
+    onPreviewChange(payload);
+    setIsDirty(JSON.stringify(payload) !== savedConfigRef.current);
+  }
+
+  // ── Send initial config to parent once on mount ──
+  const didMount = useRef(false);
   useEffect(() => {
-    const payload = buildPayload();
-    onConfigChange(payload);
+    if (didMount.current) return;
+    didMount.current = true;
+    onPreviewChange(buildPayload());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    // Check if dirty
-    if (initialConfigRef.current !== null) {
-      setConfigDirty(JSON.stringify(payload) !== initialConfigRef.current);
-    }
-  }, [buildPayload, onConfigChange]);
-
-  // ── Create product ──
+  // ── Create Shopify product ──
   const handleCreate = async () => {
     setCreating(true);
     try {
+      const payload = buildPayload();
       const res = await fetch(`/api/stores/${storeId}/protection/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayload()),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setProductExists(true);
       setProductTitle(data.title ?? productName);
       setStatusWarning(null);
-      initialConfigRef.current = JSON.stringify(buildPayload());
-      setConfigDirty(false);
       setShowCreateModal(false);
+      // Now save the config to DB
+      onSave(payload);
+      savedConfigRef.current = JSON.stringify(payload);
+      setIsDirty(false);
     } catch (err: any) {
       alert(`Failed to create product: ${err.message}`);
     } finally {
@@ -151,23 +172,50 @@ export default function ProtectionEditor({
     }
   };
 
-  // ── Sync / Update ──
-  const handleSync = async () => {
-    setSyncing(true);
+  // ── Save handler (called from Save button) ──
+  const handleSave = async () => {
+    const payload = buildPayload();
+    if (!productExists && !statusLoading) {
+      // No Shopify product yet — show confirmation modal first
+      setShowCreateModal(true);
+      return;
+    }
+    // Product exists — silently update Shopify product + save config
+    setSaving(true);
     try {
+      // Update the Shopify product
       const res = await fetch(`/api/stores/${storeId}/protection/update`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayload()),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error(await res.text());
-      initialConfigRef.current = JSON.stringify(buildPayload());
-      setConfigDirty(false);
-    } catch (err: any) {
-      alert(`Failed to sync: ${err.message}`);
-    } finally {
-      setSyncing(false);
+      if (!res.ok) {
+        const text = await res.text();
+        console.error('Protection update failed:', text);
+      }
+    } catch (err) {
+      console.error('Failed to sync protection product:', err);
     }
+    // Save config to DB regardless
+    onSave(payload);
+    savedConfigRef.current = JSON.stringify(payload);
+    setIsDirty(false);
+    setSaving(false);
+  };
+
+  // ── Discard changes ──
+  const handleDiscard = () => {
+    const saved = JSON.parse(savedConfigRef.current) as ProtectionConfig;
+    setIconId(saved.iconId ?? 'shield-check');
+    setCustomIconUrl(saved.customIconUrl ?? '');
+    setProductName(saved.productName ?? 'Shipping Protection');
+    setDescription(saved.description ?? 'Covers lost, stolen, or damaged packages');
+    setPricingMode(saved.pricingMode ?? 'single');
+    setSinglePrice(saved.price ?? saved.singlePrice ?? 4.99);
+    setTiers(saved.tiers ?? defaultTiers());
+    setDefaultOn(saved.defaultOn ?? true);
+    setIsDirty(false);
+    onPreviewChange(saved);
   };
 
   // ── Tier helpers ──
@@ -176,23 +224,23 @@ export default function ProtectionEditor({
     const sorted = [...tiers].sort(
       (a, b) => (a.maxCartValue ?? Infinity) - (b.maxCartValue ?? Infinity),
     );
-    // Insert before the last tier
     const lastTier = sorted[sorted.length - 1];
     const prevMax = sorted.length >= 2 ? (sorted[sorted.length - 2].maxCartValue ?? 0) : 0;
     const newMax = prevMax + 100;
     const newTier: PricingTier = { price: lastTier.price, maxCartValue: newMax };
     sorted.splice(sorted.length - 1, 0, newTier);
     setTiers(sorted);
+    pushPreview({ tiers: sorted });
   };
 
   const removeTier = (idx: number) => {
     const sorted = [...tiers].sort(
       (a, b) => (a.maxCartValue ?? Infinity) - (b.maxCartValue ?? Infinity),
     );
-    // Can't remove the last tier (unlimited ceiling)
     if (sorted[idx].maxCartValue === null) return;
     sorted.splice(idx, 1);
     setTiers(sorted);
+    pushPreview({ tiers: sorted });
   };
 
   const updateTier = (idx: number, field: 'price' | 'maxCartValue', value: number) => {
@@ -201,7 +249,9 @@ export default function ProtectionEditor({
     );
     if (field === 'price') sorted[idx].price = value;
     else sorted[idx].maxCartValue = value;
-    setTiers([...sorted]);
+    const updated = [...sorted];
+    setTiers(updated);
+    pushPreview({ tiers: updated });
   };
 
   const sortedTiers = [...tiers].sort(
@@ -235,7 +285,11 @@ export default function ProtectionEditor({
           {PROTECTION_ICONS.map((icon) => (
             <button
               key={icon.id}
-              onClick={() => { setIconId(icon.id); setCustomIconUrl(''); }}
+              onClick={() => {
+                setIconId(icon.id);
+                setCustomIconUrl('');
+                pushPreview({ iconId: icon.id, customIconUrl: '' });
+              }}
               title={icon.label}
               style={{
                 width: 52,
@@ -263,7 +317,7 @@ export default function ProtectionEditor({
             </button>
           ))}
 
-          {/* Custom upload card (placeholder) */}
+          {/* Custom upload card */}
           <label
             title="Upload custom icon"
             style={{
@@ -299,10 +353,10 @@ export default function ProtectionEditor({
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                // Use local preview for now (upload route can be added later)
                 const url = URL.createObjectURL(file);
                 setCustomIconUrl(url);
                 setIconId('custom');
+                pushPreview({ customIconUrl: url, iconId: 'custom' });
               }}
             />
           </label>
@@ -317,7 +371,10 @@ export default function ProtectionEditor({
         <input
           type="text"
           value={productName}
-          onChange={(e) => setProductName(e.target.value)}
+          onChange={(e) => {
+            setProductName(e.target.value);
+            pushPreview({ productName: e.target.value });
+          }}
           placeholder="Shipping Protection"
           style={{
             width: '100%',
@@ -343,7 +400,10 @@ export default function ProtectionEditor({
         <input
           type="text"
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => {
+            setDescription(e.target.value);
+            pushPreview({ description: e.target.value });
+          }}
           placeholder="Covers lost, stolen, or damaged packages"
           style={{
             width: '100%',
@@ -373,6 +433,7 @@ export default function ProtectionEditor({
               onClick={() => {
                 setPricingMode(mode);
                 if (mode === 'tiered' && tiers.length === 0) setTiers(defaultTiers());
+                pushPreview({ pricingMode: mode });
               }}
               style={{
                 padding: '6px 16px',
@@ -404,7 +465,11 @@ export default function ProtectionEditor({
               min={0}
               step={0.01}
               value={singlePrice}
-              onChange={(e) => setSinglePrice(Math.max(0, parseFloat(e.target.value) || 0))}
+              onChange={(e) => {
+                const val = Math.max(0, parseFloat(e.target.value) || 0);
+                setSinglePrice(val);
+                pushPreview({ singlePrice: val });
+              }}
               style={{
                 width: 90,
                 padding: '6px 8px',
@@ -561,7 +626,11 @@ export default function ProtectionEditor({
           fontWeight: 500,
           color: GRAY_TEXT,
         }}
-        onClick={() => setDefaultOn(!defaultOn)}
+        onClick={() => {
+          const newVal = !defaultOn;
+          setDefaultOn(newVal);
+          pushPreview({ defaultOn: newVal });
+        }}
       >
         <div
           style={{
@@ -622,59 +691,57 @@ export default function ProtectionEditor({
               }}
             />
             <span style={{ fontSize: 11, color: GRAY_SEC }}>
-              Not on Shopify yet{statusWarning ? ` (${statusWarning})` : ''}
+              Not on Shopify yet — will be created on first save
             </span>
           </>
         )}
       </div>
 
-      {/* ── Action Buttons ── */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        {!productExists && !statusLoading && (
+      {/* ── Save / Discard Buttons ── */}
+      {isDirty && (
+        <div style={{ display: 'flex', gap: 8 }}>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={handleSave}
+            disabled={saving}
             style={{
-              padding: '8px 18px',
+              padding: '8px 20px',
               fontSize: 12,
               fontWeight: 600,
               borderRadius: 8,
               border: 'none',
-              background: PURPLE,
+              background: saving ? '#a78bfa' : PURPLE,
               color: '#fff',
-              cursor: 'pointer',
+              cursor: saving ? 'default' : 'pointer',
               transition,
               boxShadow: `0 2px 8px ${PURPLE}40`,
+              opacity: saving ? 0.7 : 1,
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.02)')}
+            onMouseEnter={(e) => !saving && (e.currentTarget.style.transform = 'scale(1.02)')}
             onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
           >
-            Create Protection Product
+            {saving ? 'Saving...' : 'Save'}
           </button>
-        )}
-
-        {productExists && configDirty && (
           <button
-            onClick={handleSync}
-            disabled={syncing}
+            onClick={handleDiscard}
+            disabled={saving}
             style={{
-              padding: '8px 18px',
+              padding: '8px 16px',
               fontSize: 12,
-              fontWeight: 600,
+              fontWeight: 500,
               borderRadius: 8,
-              border: 'none',
-              background: syncing ? '#a78bfa' : PURPLE,
-              color: '#fff',
-              cursor: syncing ? 'default' : 'pointer',
+              border: '1px solid #e5e7eb',
+              background: '#fff',
+              color: GRAY_TEXT,
+              cursor: saving ? 'default' : 'pointer',
               transition,
-              opacity: syncing ? 0.7 : 1,
             }}
           >
-            {syncing ? 'Syncing...' : 'Sync to Shopify'}
+            Discard
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* ── Confirmation Modal ── */}
+      {/* ── Confirmation Modal (create Shopify product) ── */}
       {showCreateModal && (
         <div
           style={{
@@ -705,7 +772,7 @@ export default function ProtectionEditor({
               Create Shipping Protection Product
             </h3>
             <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 14px', lineHeight: 1.5 }}>
-              This will create a hidden product on your Shopify store:
+              To add shipping protection to the cart, we need to create a hidden product on your Shopify store:
             </p>
             <ul style={{ margin: '0 0 18px', paddingLeft: 18, fontSize: 12, color: '#d1d5db', lineHeight: 1.8 }}>
               <li>
@@ -753,7 +820,7 @@ export default function ProtectionEditor({
                   opacity: creating ? 0.7 : 1,
                 }}
               >
-                {creating ? 'Creating...' : 'Create Product'}
+                {creating ? 'Creating...' : 'Create & Save'}
               </button>
             </div>
           </div>

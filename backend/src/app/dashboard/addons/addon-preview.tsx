@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { REAL_CART_CSS, CONTROL_HTML } from '../cart-constants';
 import { REWARD_ICONS, RewardTier } from '@/lib/addon-definitions';
+import { getProtectionIconSvg } from '@/lib/protection-icons';
 
 const FOCUS_AREAS: Record<string, { scrollTo: string; height: number }> = {
   trustBadges: { scrollTo: 'ccd-trust-badges', height: 220 },
@@ -264,12 +265,27 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     }
   }
 
-  // ── Shipping Protection: dynamic price, description ─────────
+  // ── Shipping Protection: dynamic price, description, icon ─────────
   if (addonKey === 'shippingProtection') {
     const price = addonConfig.price ?? 4.99;
     const desc = addonConfig.description || 'Covers lost, stolen, or damaged packages';
+    const title = addonConfig.productName || 'Shipping Protection';
     const defaultOn = addonConfig.defaultOn !== false;
 
+    // Update icon to match selected icon
+    const iconId = addonConfig.iconId || 'shield-check';
+    const iconSvg = addonConfig.customIconUrl
+      ? `<img src="${addonConfig.customIconUrl}" style="width:24px;height:24px" alt="" />`
+      : getProtectionIconSvg(iconId);
+    cartHtml = cartHtml.replace(
+      /(<div class="ccd-shipping-protection__icon">)[\s\S]*?(<\/div>\s*<div class="ccd-shipping-protection__info">)/,
+      '$1' + iconSvg + '$2'
+    );
+    // Update title
+    cartHtml = cartHtml.replace(
+      /(<div class="ccd-shipping-protection__title">)[^<]*(<\/div>)/,
+      '$1' + title + '$2'
+    );
     // Update price display
     cartHtml = cartHtml.replace(
       /(<span class="ccd-shipping-protection__price">)\$[\d.]+(<\/span>)/,

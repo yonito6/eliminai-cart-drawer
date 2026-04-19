@@ -386,6 +386,7 @@ function AddonsPage() {
   const [themeSettings, setThemeSettings] = useState<Record<string, any> | null>(null);
   const [startingTest, setStartingTest] = useState<Record<string, boolean>>({});
   const [desktopWidth, setDesktopWidth] = useState<number>(480);
+  const [mobileWidth, setMobileWidth] = useState<number>(85);
 
   // ── Autopilot state ──────────────────────────────────────────────────────
   const [autopilot, setAutopilot] = useState<{
@@ -577,6 +578,7 @@ function AddonsPage() {
       if (res.ok) {
         const json = await res.json();
         setDesktopWidth(json.desktopWidth ?? 480);
+        setMobileWidth(json.mobileWidth ?? 85);
       }
     } catch (e) { /* ignore */ }
   }, [STORE_ID]);
@@ -589,6 +591,19 @@ function AddonsPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ desktopWidth: w }),
+      });
+      showSaveToast();
+    } catch (e) { console.error('Failed to save layout', e); }
+  }
+
+  async function saveMobileWidth(w: number) {
+    if (!STORE_ID) return;
+    setMobileWidth(w);
+    try {
+      await fetch(API + '/api/stores/' + STORE_ID + '/layout', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobileWidth: w }),
       });
       showSaveToast();
     } catch (e) { console.error('Failed to save layout', e); }
@@ -1656,6 +1671,47 @@ function AddonsPage() {
           </div>
         </div>
 
+        {/* ── Mobile Width ────────────────────────────────────────── */}
+        <div style={{
+          border: '1px solid #e5e7eb',
+          borderRadius: 12,
+          padding: '16px 20px',
+          marginBottom: 16,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          flexWrap: 'wrap' as const,
+        }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>Mobile Cart Width</div>
+            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>Width of the cart drawer on mobile screens (%)</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="range"
+              min={70}
+              max={100}
+              step={1}
+              value={mobileWidth}
+              onChange={(e) => setMobileWidth(parseInt(e.target.value))}
+              onMouseUp={(e) => saveMobileWidth(parseInt((e.target as HTMLInputElement).value))}
+              onTouchEnd={(e) => saveMobileWidth(parseInt((e.target as HTMLInputElement).value))}
+              style={{ width: 140, accentColor: '#7c3aed' }}
+            />
+            <span style={{
+              display: 'inline-block',
+              width: 50,
+              textAlign: 'center',
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#7c3aed',
+              background: '#f3f0ff',
+              borderRadius: 6,
+              padding: '4px 0',
+            }}>{mobileWidth}%</span>
+          </div>
+        </div>
+
         {/* ── Addon Cards ──────────────────────────────────────────── */}
         <div
           style={{
@@ -1878,8 +1934,18 @@ function AddonsPage() {
                         <ProtectionEditor
                           storeId={STORE_ID}
                           config={addon.config ?? {}}
-                          onConfigChange={(patch) => {
-                            updateAddonConfig(def.key, patch);
+                          onPreviewChange={(patch) => {
+                            // Preview-only — update local state without persisting
+                            draftAddonKeyRef.current = def.key;
+                            setAddons(prev => {
+                              const current = prev[def.key];
+                              if (!current) return prev;
+                              return { ...prev, [def.key]: { ...current, config: { ...current.config, ...patch } } };
+                            });
+                          }}
+                          onSave={(fullConfig) => {
+                            draftAddonKeyRef.current = null;
+                            updateAddonConfig(def.key, fullConfig);
                           }}
                         />
                       )}
