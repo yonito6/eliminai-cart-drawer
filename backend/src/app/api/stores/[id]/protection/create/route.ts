@@ -128,38 +128,36 @@ export async function POST(
     // Wait for Shopify to fully register the product+variant before updating
     await new Promise(r => setTimeout(r, 2000));
 
-    // 2. Update default variant with correct price and title
-    // Price comes from editor in DOLLARS (e.g. 4.99), not cents
+    // 2. Update default variant price via REST API (more reliable than GraphQL for newly-created products)
     const firstPriceDollars = Number(effectiveTiers[0].price).toFixed(2);
-    console.log('[protection/create] PRICE DEBUG: singlePrice=', singlePrice, 'tierPrice=', effectiveTiers[0].price, 'dollars=', firstPriceDollars, 'pricingMode=', pricingMode, 'body keys=', Object.keys(body));
+    console.log('[protection/create] PRICE DEBUG: singlePrice=', singlePrice, 'tierPrice=', effectiveTiers[0].price, 'dollars=', firstPriceDollars, 'pricingMode=', pricingMode);
     const firstTierTitle = buildTierTitle(effectiveTiers[0].maxCartValue, 0, effectiveTiers.length);
 
-    const updateResult = await shopifyGraphQL(shopDomain, token, `
-      mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-        productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-          productVariants {
-            id
-            title
-            price
-          }
-          userErrors { field message }
-        }
-      }
-    `, {
-      productId: productGid,
-      variants: [{
-        id: defaultVariantId,
-        price: firstPriceDollars,
-        title: firstTierTitle,
-      }],
-    });
+    // Extract numeric variant ID for REST API
+    const variantNumericId = defaultVariantId.replace(/\D/g, '');
+    const variantRestRes = await fetch(
+      `https://${shopDomain}/admin/api/2025-01/variants/${variantNumericId}.json`,
+      {
+        method: 'PUT',
+        headers: {
+          'X-Shopify-Access-Token': token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          variant: {
+            id: Number(variantNumericId),
+            price: firstPriceDollars,
+            title: firstTierTitle,
+          },
+        }),
+      },
+    );
+    const variantRestData = await variantRestRes.json();
+    console.log('[protection/create] REST variant update:', variantRestRes.status, 'price=', variantRestData?.variant?.price);
 
-    console.log('[protection/create] Variant update result:', JSON.stringify(updateResult?.data?.productVariantsBulkUpdate));
-    const variantUpdateErrors = updateResult?.data?.productVariantsBulkUpdate?.userErrors;
-    if (variantUpdateErrors?.length > 0) {
-      console.error('[protection/create] Variant update ERRORS:', JSON.stringify(variantUpdateErrors));
-    }
-    const allVariants = updateResult?.data?.productVariantsBulkUpdate?.productVariants ?? [product.variants.nodes[0]];
+    const allVariants = variantRestData?.variant
+      ? [{ id: defaultVariantId, title: variantRestData.variant.title, price: variantRestData.variant.price }]
+      : [product.variants.nodes[0]];
 
     // 2b. Create additional variants for tiers 2+
     if (effectiveTiers.length > 1) {
