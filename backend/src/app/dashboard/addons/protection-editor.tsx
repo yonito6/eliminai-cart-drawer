@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PROTECTION_ICONS } from '@/lib/protection-icons';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -20,6 +20,7 @@ interface ProtectionConfig {
   price?: number;
   tiers?: PricingTier[];
   defaultOn?: boolean;
+  iconColor?: string;
 }
 
 export interface ProtectionEditorProps {
@@ -58,8 +59,9 @@ export default function ProtectionEditor({
 }: ProtectionEditorProps) {
   // Local state — initialize from config (price field = dollars)
   const initPrice = config.price ?? config.singlePrice ?? 4.99;
-  const [iconId, setIconId] = useState(config.iconId ?? 'shield-check');
+  const [iconId, setIconId] = useState(config.iconId ?? 'shield-filled');
   const [customIconUrl, setCustomIconUrl] = useState(config.customIconUrl ?? '');
+  const [iconColor, setIconColor] = useState(config.iconColor ?? '#555555');
   const [productName, setProductName] = useState(config.productName ?? 'Shipping Protection');
   const [description, setDescription] = useState(
     config.description ?? 'Covers lost, stolen, or damaged packages',
@@ -111,6 +113,7 @@ export default function ProtectionEditor({
     const curSinglePrice = overrides.singlePrice ?? singlePrice;
     const curTiers = overrides.tiers ?? tiers;
     const curDefaultOn = overrides.defaultOn ?? defaultOn;
+    const curIconColor = overrides.iconColor ?? iconColor;
 
     const sorted = [...curTiers].sort(
       (a, b) => (a.maxCartValue ?? Infinity) - (b.maxCartValue ?? Infinity),
@@ -119,6 +122,7 @@ export default function ProtectionEditor({
     return {
       iconId: curIconId,
       customIconUrl: curCustomIconUrl || undefined,
+      iconColor: curIconColor,
       productName: curProductName,
       description: curDescription,
       pricingMode: curPricingMode,
@@ -144,6 +148,17 @@ export default function ProtectionEditor({
     onPreviewChange(buildPayload());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+
+  // ── Debounced preview for text inputs (prevents cursor jumping) ──
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function pushPreviewDebounced(overrides: Record<string, any>) {
+    setIsDirty(true); // mark dirty immediately
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = setTimeout(() => {
+      pushPreview(overrides);
+    }, 200);
+  }
 
   // ── Create Shopify product ──
   const handleCreate = async () => {
@@ -206,7 +221,7 @@ export default function ProtectionEditor({
   // ── Discard changes ──
   const handleDiscard = () => {
     const saved = JSON.parse(savedConfigRef.current) as ProtectionConfig;
-    setIconId(saved.iconId ?? 'shield-check');
+    setIconId(saved.iconId ?? 'shield-filled');
     setCustomIconUrl(saved.customIconUrl ?? '');
     setProductName(saved.productName ?? 'Shipping Protection');
     setDescription(saved.description ?? 'Covers lost, stolen, or damaged packages');
@@ -298,8 +313,8 @@ export default function ProtectionEditor({
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: 10,
-                border: `2px solid ${iconId === icon.id && !customIconUrl ? PURPLE : '#e5e7eb'}`,
-                background: iconId === icon.id && !customIconUrl ? `${PURPLE}10` : '#fff',
+                border: `2px solid ${iconId === icon.id && !customIconUrl ? iconColor : '#e5e7eb'}`,
+                background: iconId === icon.id && !customIconUrl ? `${iconColor}15` : '#fff',
                 cursor: 'pointer',
                 padding: 8,
                 transition,
@@ -310,7 +325,7 @@ export default function ProtectionEditor({
                 style={{
                   width: 28,
                   height: 28,
-                  color: iconId === icon.id && !customIconUrl ? PURPLE : GRAY_SEC,
+                  color: iconId === icon.id && !customIconUrl ? iconColor : GRAY_SEC,
                   transition,
                 }}
               />
@@ -361,6 +376,79 @@ export default function ProtectionEditor({
             />
           </label>
         </div>
+
+        {/* ── Icon Color ── */}
+        <div style={{ marginTop: 10 }}>
+          <label style={{ fontSize: 12, fontWeight: 500, color: '#6b7280', display: 'block', marginBottom: 6 }}>
+            Icon Color
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <input
+              type="color"
+              value={iconColor}
+              onChange={(e) => {
+                setIconColor(e.target.value);
+                pushPreview({ iconColor: e.target.value });
+              }}
+              style={{
+                width: 40,
+                height: 40,
+                border: '2px solid #e5e7eb',
+                borderRadius: 10,
+                cursor: 'pointer',
+                padding: 2,
+                background: '#fff',
+              }}
+            />
+            <input
+              type="text"
+              value={iconColor}
+              onChange={(e) => {
+                const v = e.target.value;
+                setIconColor(v);
+                // Only push preview if it looks like a valid color
+                if (/^#[0-9a-fA-F]{6}$/.test(v) || /^rgb/.test(v)) {
+                  pushPreviewDebounced({ iconColor: v });
+                }
+              }}
+              onBlur={() => pushPreview({ iconColor })}
+              placeholder="#555555"
+              style={{
+                width: 120,
+                padding: '8px 10px',
+                borderRadius: 8,
+                border: '1px solid #e5e7eb',
+                fontSize: 13,
+                color: '#374151',
+                fontFamily: 'monospace',
+                outline: 'none',
+                transition: 'border-color 0.15s',
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = '#8b5cf6')}
+            />
+            {/* Quick preset colors */}
+            {['#555555', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#000000'].map((c) => (
+              <button
+                key={c}
+                onClick={() => {
+                  setIconColor(c);
+                  pushPreview({ iconColor: c });
+                }}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  background: c,
+                  border: iconColor === c ? '2px solid #374151' : '2px solid #e5e7eb',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'border-color 0.15s, transform 0.15s',
+                  transform: iconColor === c ? 'scale(1.15)' : 'scale(1)',
+                }}
+              />
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* ── Product Name ── */}
@@ -373,8 +461,9 @@ export default function ProtectionEditor({
           value={productName}
           onChange={(e) => {
             setProductName(e.target.value);
-            pushPreview({ productName: e.target.value });
+            setIsDirty(true);
           }}
+          onBlur={() => pushPreview({ productName })}
           placeholder="Shipping Protection"
           style={{
             width: '100%',
@@ -388,7 +477,6 @@ export default function ProtectionEditor({
             boxSizing: 'border-box',
           }}
           onFocus={(e) => (e.currentTarget.style.borderColor = PURPLE)}
-          onBlur={(e) => (e.currentTarget.style.borderColor = '#e5e7eb')}
         />
       </div>
 
@@ -402,8 +490,9 @@ export default function ProtectionEditor({
           value={description}
           onChange={(e) => {
             setDescription(e.target.value);
-            pushPreview({ description: e.target.value });
+            setIsDirty(true);
           }}
+          onBlur={() => pushPreview({ description })}
           placeholder="Covers lost, stolen, or damaged packages"
           style={{
             width: '100%',
@@ -417,7 +506,6 @@ export default function ProtectionEditor({
             boxSizing: 'border-box',
           }}
           onFocus={(e) => (e.currentTarget.style.borderColor = PURPLE)}
-          onBlur={(e) => (e.currentTarget.style.borderColor = '#e5e7eb')}
         />
       </div>
 
@@ -697,30 +785,30 @@ export default function ProtectionEditor({
         )}
       </div>
 
-      {/* ── Save / Discard Buttons ── */}
-      {isDirty && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              padding: '8px 20px',
-              fontSize: 12,
-              fontWeight: 600,
-              borderRadius: 8,
-              border: 'none',
-              background: saving ? '#a78bfa' : PURPLE,
-              color: '#fff',
-              cursor: saving ? 'default' : 'pointer',
-              transition,
-              boxShadow: `0 2px 8px ${PURPLE}40`,
-              opacity: saving ? 0.7 : 1,
-            }}
-            onMouseEnter={(e) => !saving && (e.currentTarget.style.transform = 'scale(1.02)')}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
+      {/* ── Save / Discard Buttons (always visible) ── */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={handleSave}
+          disabled={saving || (!isDirty && productExists)}
+          style={{
+            padding: '8px 20px',
+            fontSize: 12,
+            fontWeight: 600,
+            borderRadius: 8,
+            border: 'none',
+            background: saving ? '#a78bfa' : (!isDirty && productExists) ? '#d1d5db' : PURPLE,
+            color: '#fff',
+            cursor: (saving || (!isDirty && productExists)) ? 'default' : 'pointer',
+            transition,
+            boxShadow: (!isDirty && productExists) ? 'none' : `0 2px 8px ${PURPLE}40`,
+            opacity: saving ? 0.7 : 1,
+          }}
+          onMouseEnter={(e) => !saving && (e.currentTarget.style.transform = 'scale(1.02)')}
+          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+        >
+          {saving ? 'Saving...' : !productExists ? 'Save & Create Product' : 'Save'}
+        </button>
+        {isDirty && (
           <button
             onClick={handleDiscard}
             disabled={saving}
@@ -738,8 +826,8 @@ export default function ProtectionEditor({
           >
             Discard
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ── Confirmation Modal (create Shopify product) ── */}
       {showCreateModal && (
