@@ -80,6 +80,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  try {
   const store = await prisma.store.findUnique({ where: { id: params.id } });
   if (!store) {
     return NextResponse.json({ error: "Store not found" }, { status: 404 });
@@ -194,12 +195,22 @@ export async function PATCH(
 
   // Save back to the correct field (demo or live)
   const updatedCfg = { ...cfg, addons };
+  // Mirror addon changes to the OTHER config too (keeps demo/live addons in sync)
+  const otherField = field === 'demoConfig' ? 'config' : 'demoConfig';
+  const otherCfg = parseTargetConfig(store, otherField);
+  const otherAddons = otherCfg.addons || {};
+  otherAddons[addonKey] = { ...addon };
+  const updatedOtherCfg = { ...otherCfg, addons: otherAddons };
   await prisma.store.update({
     where: { id: params.id },
-    data: { [field]: updatedCfg },
+    data: { [field]: updatedCfg, [otherField]: updatedOtherCfg },
   });
 
   const optimizeQueue = buildOptimizeQueue(addons);
 
   return NextResponse.json({ addons, optimizeQueue, changeRisk, target: field === 'demoConfig' ? 'demo' : 'live' });
+  } catch (err: any) {
+    console.error('PATCH /addons error:', err);
+    return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });
+  }
 }

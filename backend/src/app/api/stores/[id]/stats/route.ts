@@ -58,15 +58,16 @@ export async function GET(
     try {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const apiVersion = '2025-01';
-      const countUrl = `https://${store.shopDomain}/admin/api/${apiVersion}/orders/count.json?created_at_min=${thirtyDaysAgo.toISOString()}&status=any`;
 
-      const shopRes = await fetch(countUrl, {
-        headers: { 'X-Shopify-Access-Token': store.accessToken },
+      const shopRes = await fetch(`https://${store.shopDomain}/admin/api/2025-10/graphql.json`, {
+        method: 'POST',
+        headers: { 'X-Shopify-Access-Token': store.accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: `{ ordersCount(query: "created_at:>='${thirtyDaysAgo.toISOString()}'") { count } }` }),
       });
 
       if (shopRes.ok) {
-        const { count } = await shopRes.json();
+        const gql = await shopRes.json();
+        const count = gql?.data?.ordersCount?.count ?? 0;
         const dailyOrders = Math.round(count / 30);
         // Cart openers are high-intent — ~8-12% convert to orders
         // Using 0.10 to avoid overestimating cart opens

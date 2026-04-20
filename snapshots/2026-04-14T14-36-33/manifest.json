@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-04-14T14-36-33",
+  "description": "Working state: discount fix (Basic no-min), form-encoded add, gift tiers",
+  "live_theme": "158577557755",
+  "demo_theme": "158622155003",
+  "files": [
+    "live-v14-complete.js",
+    "demo-v14-complete.js",
+    "discounts.json",
+    "store-config.json"
+  ]
+}

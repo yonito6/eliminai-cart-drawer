@@ -240,27 +240,41 @@ async function run() {
   console.log(String.fromCharCode(10) + "--- Cart State Bugs ---");
 
   // BUG-019: 2026-04-18 $0 total when adding second item (openDrawer pre-populate overwrites fresh total)
+  // Updated BUG-020 FIX: _renderAndOpen sets _lastCart + renders + opens in one atomic step
   test("BUG-019: Fetch intercept updates _lastCart BEFORE openDrawer", function() {
-    assertContains(code, "BUG-019 FIX", "Must have BUG-019 fix marker");
-    // _lastCart and _lastRealCount must be set from fresh cart BEFORE openDrawer
-    var interceptSection = code.indexOf("BUG-019 FIX");
-    var openDrawerAfter = code.indexOf("CCD.openDrawer()", interceptSection);
-    var lastCartBefore = code.indexOf("CCD._lastCart = cart", interceptSection);
-    assert(lastCartBefore > 0 && lastCartBefore < openDrawerAfter, "Must set _lastCart before openDrawer in fetch intercept");
+    assertContains(code, "BUG-020 FIX", "Must have BUG-020 fix marker (_renderAndOpen)");
+    // _renderAndOpen must set _lastCart before openDrawer
+    var renderAndOpenIdx = code.indexOf("function _renderAndOpen(finalCart)");
+    assert(renderAndOpenIdx > 0, "_renderAndOpen helper must be defined");
+    var renderBlock = code.substring(renderAndOpenIdx, renderAndOpenIdx + 2200);
+    var lastCartPos = renderBlock.indexOf("_lastCart");
+    var openDrawerPos = renderBlock.indexOf("CCD.openDrawer()");
+    assert(lastCartPos > 0 && lastCartPos < openDrawerPos, "Must set _lastCart before openDrawer in _renderAndOpen");
+  });
+
+  // BUG-021: 2026-04-19 Milestones disappeared after _renderAndOpen bypassed loadExperiment
+  test("BUG-021: _renderAndOpen must load experiment config for milestones", function() {
+    var renderIdx = code.indexOf("function _renderAndOpen(finalCart)");
+    assert(renderIdx > -1, "_renderAndOpen helper must exist");
+    var renderBlock = code.substring(renderIdx, renderIdx + 2500);
+    assertContains(renderBlock, "loadExperiment", "_renderAndOpen must call loadExperiment (milestones need tier config)");
+    assertContains(renderBlock, "applyExperimentFeatures", "_renderAndOpen must apply experiment features before rendering");
+    assertContains(renderBlock, "_mergeTiersFromConfig", "_renderAndOpen must merge tiers from config");
   });
 
   // BUG-020: 2026-04-18 Stale total after removing item (stale /cart/change.js discount allocations)
   test("BUG-020: Remove path does NOT update total from stale /cart/change.js", function() {
-    assertContains(code, "BUG-020 FIX", "Must have BUG-020 fix marker");
     // The remove path should NOT set ccd-checkout-total from /cart/change.js response
-    // It should only update bubble count and show loading
+    // It should only update bubble count, show loading, then fetch fresh /cart.js
     var removeIdx = code.indexOf("_isRemoving");
+    assert(removeIdx > -1, "Must have _isRemoving flag in change handler");
     var cartJsAfter = code.indexOf("/cart.js", removeIdx);
     var removeSection = code.substring(removeIdx, cartJsAfter + 10);
     assert(removeSection, "Remove path must exist and fetch /cart.js");
-    var section = removeSection[0];
-    var hasStaleTotal = section.indexOf("ccd-checkout-total") !== -1;
-    assert(!hasStaleTotal, "Remove path must NOT set ccd-checkout-total from stale /cart/change.js — wait for fresh /cart.js");
+    // The section between _isRemoving and /cart.js should NOT touch ccd-checkout-total
+    assert(!removeSection.includes("ccd-checkout-total"), "Remove path must NOT set ccd-checkout-total from stale /cart/change.js — wait for fresh /cart.js");
+    // Must show loading during remove
+    assert(removeSection.includes("showLoading"), "Remove path must show loading while fetching fresh cart");
   });
 
   // BUG-021: 2026-04-18 Items not displaying on reopen (CCD._isOpen never set + display inconsistency)
@@ -272,7 +286,134 @@ async function run() {
     assert(isOpenGuards >= 5, "Must reference CCD._isOpen in at least 5 guards (found " + isOpenGuards + ")");
   });
 
-      // ================================================================
+  console.log(String.fromCharCode(10) + "--- Empty Cart & Theme Compatibility ---");
+
+  // BUG-023: 2026-04-18 "Your cart is empty" text invisible (white on white background)
+  test("BUG-023: Empty cart text uses dark color (not white)", function() {
+    // Empty cart must use dark text, not white-on-white
+    assert(!code.includes("ccd-cart-empty, #CCD-Drawer .ccd-empty { color: #fff"), "Empty cart text color must NOT be #fff (white)");
+    assert(!code.includes("ccd-cart-empty, #CCD-Drawer .ccd-empty { color: #ffffff"), "Empty cart text color must NOT be #ffffff");
+    assertContains(code, "ccd-cart-empty, #CCD-Drawer .ccd-empty { color: #111", "Empty cart must use dark color (#111)");
+  });
+
+  // BUG-024: 2026-04-18 Duplicate trust badges (Liquid + JS both render)
+  test("BUG-024: CSS hides Liquid-rendered duplicates inside #CartDrawer", function() {
+    assertContains(code, "#CartDrawer .ccd-trust", "Must hide Liquid ccd-trust inside #CartDrawer");
+    assertContains(code, "#CartDrawer .ccd-progress", "Must hide Liquid ccd-progress inside #CartDrawer");
+    assertContains(code, "#CartDrawer .drawer__cart-empty", "Must hide Liquid drawer__cart-empty inside #CartDrawer");
+  });
+
+  // BUG-025: 2026-04-18 Milestones flash on empty cart open
+  test("BUG-025: Liquid appear-animation suppressed inside #CartDrawer", function() {
+    assertContains(code, "#CartDrawer .appear-animation", "Must hide Liquid appear-animation inside #CartDrawer");
+  });
+
+    console.log(String.fromCharCode(10) + "--- Syntax Validation ---");
+
+  // BUG-022: 2026-04-18 Cart won't open — real newline inside JS string literal breaks parser.
+  // CSS string had a literal LF (0x0a) instead of \n escape sequence.
+  test("BUG-022: No real newlines inside JS string literals (syntax valid)", function() {
+    // Check for lines that START with ' + (closing quote of a string that spans lines)
+    var lines = code.split('\n');
+    var brokenStrings = [];
+    for (var i = 1; i < lines.length; i++) {
+      var trimmed = lines[i].trimStart();
+      // A line starting with ' + or '; means the previous line had an unclosed string
+      if (/^'\s*[+;]/.test(trimmed)) {
+        // Check if previous line has an opening ' without a closing '
+        var prev = lines[i - 1];
+        var singleQuotes = (prev.match(/'/g) || []).length;
+        // Odd number of quotes = unclosed string
+        if (singleQuotes % 2 === 1) {
+          brokenStrings.push("Line " + i + ": string spans lines (prev: " + prev.substring(0, 80) + "...)");
+        }
+      }
+    }
+    assert(brokenStrings.length === 0, "Found string literals with real newlines:\\n    " + brokenStrings.join("\\n    "));
+
+    // Also run node -c equivalent: check the file parses as valid JS
+    var vm = require('vm');
+    try {
+      new vm.Script(code, { filename: 'v14-complete.js' });
+    } catch (e) {
+      assert(false, "JavaScript syntax error: " + e.message);
+    }
+  });
+
+  // ================================================================
+  // BUG-022: Checkout button loading delay — spinner must appear instantly
+  // Reported: 2026-04-19 — "small delay when clicking till it shows the loading animation"
+  // Root cause: (1) transition:all 0.15s animates --loading opacity, (2) browser batches
+  //   classList.add + location.href without painting the spinner in between
+  // Fix: transition:none on --loading + forced repaint (offsetHeight) + requestAnimationFrame
+  //   so browser paints spinner BEFORE starting gift check + redirect
+  // ================================================================
+  test('BUG-022: Checkout --loading disables transition for instant spinner', () => {
+    const loadingIdx = code.indexOf('.ccd-checkout-btn--loading');
+    assert(loadingIdx !== -1, '--loading CSS rule must exist');
+    const ruleEnd = code.indexOf('}', loadingIdx);
+    const rule = code.substring(loadingIdx, ruleEnd);
+    assert(rule.includes('transition: none'), '--loading must override transition to none');
+    assert(rule.includes('opacity: 0.6') || rule.includes('opacity:0.6'), '--loading must set reduced opacity');
+  });
+
+  test('BUG-022: Checkout click forces repaint before redirect', () => {
+    // The checkout handler must force a browser repaint (offsetHeight) and use requestAnimationFrame
+    // so the spinner is visually rendered before the gift-check + redirect runs
+    const checkoutHandler = code.indexOf('Checkout button');
+    assert(checkoutHandler !== -1, 'Checkout button handler comment must exist');
+    const handlerBlock = code.substring(checkoutHandler, checkoutHandler + 3000);
+    assert(handlerBlock.includes('offsetHeight'), 'Must force layout reflow (offsetHeight) after adding --loading class');
+    assert(handlerBlock.includes('requestAnimationFrame'), 'Must use requestAnimationFrame to ensure spinner paints before redirect');
+    // The class add must come BEFORE the repaint force
+    const classAddPos = handlerBlock.indexOf('ccd-checkout-btn--loading');
+    const reflowPos = handlerBlock.indexOf('offsetHeight');
+    const rafPos = handlerBlock.indexOf('requestAnimationFrame');
+    assert(classAddPos < reflowPos, 'classList.add must come before offsetHeight reflow');
+    assert(reflowPos < rafPos, 'offsetHeight must come before requestAnimationFrame');
+  });
+
+  // ================================================================
+  // BUG-024: Gift compare price — must look up original price from tier config
+  // Reported: 2026-04-19 — "I dont see a comparing price for the gift added"
+  // Root cause: Gift products are $0 duplicates, so cart item's price/original_price are both 0.
+  //   Code tried to use giftCartItem.price which was 0, never showed compare price.
+  // Fix: Look up gift.price from REWARD_TIERS config (stored as "49.99" string from dashboard)
+  // ================================================================
+  test('BUG-024: Gift compare price looks up original price from tier config', () => {
+    const enforceIdx = code.indexOf('enforceGiftItem: function(cart)');
+    assert(enforceIdx !== -1, 'enforceGiftItem function must exist');
+    const enforceBlock = code.substring(enforceIdx, enforceIdx + 3500);
+    // Must search REWARD_TIERS for the gift handle's price
+    assert(enforceBlock.includes('REWARD_TIERS.length'), 'Must iterate REWARD_TIERS to find gift price');
+    assert(enforceBlock.includes('tierGifts'), 'Must use tierGifts() to get gift products from each tier');
+    assert(enforceBlock.includes('parseFloat'), 'Must parseFloat the price string from config');
+    // Must multiply by 100 to convert dollars to cents for fmt()
+    assert(enforceBlock.includes('* 100'), 'Must convert dollars to cents (* 100) for fmt()');
+    // Must still show "Free" as the current price
+    assert(enforceBlock.includes("'Free'"), 'Must set price text to Free');
+  });
+
+  // ================================================================
+  // BUG-023: Item ordering — morphDOM must reorder DOM to match Shopify order
+  // Reported: 2026-04-19 — "blue luxe was added last, swapped to middle after refresh"
+  // Root cause: morphDOM updated existing items in place but never reordered DOM children.
+  //   New items were appended at end instead of inserted at correct position.
+  //   When gift add triggered a cart refresh, existing items stayed in old positions.
+  // Fix: After update loop, reorder all DOM children to match newList order using insertBefore
+  // ================================================================
+  test('BUG-023: morphDOM reorders DOM children to match cart order', () => {
+    const morphIdx = code.indexOf('morphDOM: function(container, newCartItems)');
+    assert(morphIdx !== -1, 'morphDOM function must exist');
+    const morphBlock = code.substring(morphIdx, morphIdx + 6500);
+    assert(morphBlock.includes('BUG-023 FIX'), 'BUG-023 reorder fix marker must be present');
+    assert(morphBlock.includes('_domEl'), 'Must track _domEl for each item for reordering');
+    // The reorder loop must iterate newList and insertBefore to enforce order
+    assert(morphBlock.includes('_ri < newList.length'), 'Must have reorder loop over newList');
+    assert(morphBlock.includes('insertBefore'), 'Must use insertBefore to reorder items');
+  });
+
+  // ================================================================
   // RESULTS
   // ================================================================
   console.log('\n' + '='.repeat(60));

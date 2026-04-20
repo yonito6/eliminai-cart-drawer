@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Chart Options Mockup</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f9fafb; padding: 20px; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 20px; border: 1px solid #e5e7eb; max-width: 560px; margin-left: auto; margin-right: auto; }
+  .card h3 { font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 4px; }
+  .card .desc { font-size: 11px; color: #9ca3af; margin-bottom: 12px; }
+  .legend { display: flex; gap: 12px; justify-content: center; margin-top: 8px; font-size: 10px; color: #6b7280; }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .metric-toggle { display: flex; gap: 4px; margin-bottom: 8px; }
+  .metric-toggle button { font-size: 10px; padding: 3px 8px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+  .metric-toggle .active { background: #7c3aed; color: #fff; }
+  .metric-toggle .inactive { background: #e5e7eb; color: #6b7280; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .title { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+
+<!-- Sample data: 7 days, 2 variants -->
+<!-- Variant A (purple): cart opens [45, 52, 38, 61, 55, 49, 58], orders [3, 4, 2, 5, 4, 3, 5] -->
+<!-- Variant B (amber):  cart opens [42, 48, 41, 57, 50, 53, 54], orders [4, 5, 4, 6, 5, 5, 6] -->
+
+<div style="max-width: 560px; margin: 0 auto;">
+  <h2 style="font-size: 16px; color: #111; margin-bottom: 16px; text-align: center;">Daily Performance Chart — 3 Options</h2>
+</div>
+
+<!-- OPTION A: Stacked/Grouped Mini Bars -->
+<div class="card">
+  <h3>Option A: Side-by-Side Mini Bars</h3>
+  <div class="desc">Each day = 2 bars. Taller bar = better. Instantly shows daily winner.</div>
+
+  <div class="header">
+    <div class="title">Daily Performance</div>
+    <div class="metric-toggle">
+      <button class="active">Purchase Rate</button>
+      <button class="inactive">Cart Opens</button>
+      <button class="inactive">Orders</button>
+    </div>
+  </div>
+
+  <svg viewBox="0 0 500 120" style="width: 100%; display: block;">
+    <!-- Y axis labels -->
+    <text x="28" y="18" text-anchor="end" font-size="8" fill="#9ca3af">10%</text>
+    <text x="28" y="48" text-anchor="end" font-size="8" fill="#9ca3af">7%</text>
+    <text x="28" y="78" text-anchor="end" font-size="8" fill="#9ca3af">3%</text>
+    <text x="28" y="103" text-anchor="end" font-size="8" fill="#9ca3af">0%</text>
+
+    <!-- Grid lines -->
+    <line x1="32" y1="15" x2="490" y2="15" stroke="#f3f4f6" stroke-width="0.5"/>
+    <line x1="32" y1="45" x2="490" y2="45" stroke="#f3f4f6" stroke-width="0.5"/>
+    <line x1="32" y1="75" x2="490" y2="75" stroke="#f3f4f6" stroke-width="0.5"/>
+    <line x1="32" y1="100" x2="490" y2="100" stroke="#e5e7eb" stroke-width="0.5"/>
+
+    <!-- Day 1: A=6.7%, B=9.5% -->
+    <rect x="48" y="43" width="22" height="57" rx="3" fill="#7c3aed" opacity="0.85"/>
+    <rect x="72" y="19" width="22" height="81" rx="3" fill="#f59e0b" opacity="0.85"/>
+    <text x="71" y="113" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 8</text>
+
+    <!-- Day 2: A=7.7%, B=10.4% -->
+    <rect x="110" y="35" width="22" height="65" rx="3" fill="#7c3aed" opacity="0.85"/>
+    <rect x="134" y="12" width="22" height="88" rx="3" fill="#f59e0b" opacity="0.85"/>
+    <text x="133" y="113" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 9</text>
+
+    <!-- Day 3: A=5.3%, B=9.8% -->
+    <rect x="172" y="55" width="22" height="45" rx="3" fill="#7c3aed" opacity="0.85"/>
+    <rect x="196" y="16" width="22" height="84" rx="3" fill="#f59e0b" opacity="0.85"/>
+    <text x="195" y="113" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 10</text>
+
+    <!-- Day 4: A=8.2%, B=10.5% -->
+    <rect x="234" y="30" width="22" height="70" rx="3" fill="#7c3aed" opacity="0.85"/>
+    <rect x="258" y="11" width="22" height="89" rx="3" fill="#f59e0b" opacity="0.85"/>
+    <text x="257" y="113" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 11</text>
+
+    <!-- Day 5: A=7.3%, B=10.0% -->
+    <rect x="296" y="38" width="22" height="62" rx="3" fill="#7c3aed" opacity="0.85"/>
+    <rect x="320" y="15" width="22" height="85" rx="3" fill="#f59e0b" opacity="0.85"/>
+    <text x="319" y="113" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 12</text>
+
+    <!-- Day 6: A=6.1%, B=9.4% -->
+    <rect x="358" y="48" width="22" height="52" rx="3" fill="#7c3aed" opacity="0.85"/>
+    <rect x="382" y="20" width="22" height="80" rx="3" fill="#f59e0b" opacity="0.85"/>
+    <text x="381" y="113" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 13</text>
+
+    <!-- Day 7: A=8.6%, B=11.1% -->
+    <rect x="420" y="27" width="22" height="73" rx="3" fill="#7c3aed" opacity="0.85"/>
+    <rect x="444" y="6" width="22" height="94" rx="3" fill="#f59e0b" opacity="0.85"/>
+    <text x="443" y="113" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 14</text>
+  </svg>
+
+  <div class="legend">
+    <span><div class="dot" style="background:#7c3aed"></div> Current (control)</span>
+    <span><div class="dot" style="background:#f59e0b"></div> Variant B ★</span>
+  </div>
+</div>
+
+<!-- OPTION B: Sparkline Rows -->
+<div class="card">
+  <h3>Option B: Sparkline Rows</h3>
+  <div class="desc">One mini sparkline per variant. Scan vertically to compare. Ultra compact.</div>
+
+  <div class="header">
+    <div class="title">Daily Performance</div>
+    <div class="metric-toggle">
+      <button class="active">Purchase Rate</button>
+      <button class="inactive">Cart Opens</button>
+      <button class="inactive">Orders</button>
+    </div>
+  </div>
+
+  <!-- Variant A sparkline -->
+  <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f3f4f6;">
+    <div style="width: 80px; font-size: 10px; color: #7c3aed; font-weight: 600;">Current</div>
+    <svg viewBox="0 0 300 30" style="flex: 1; height: 28px;">
+      <!-- Area fill -->
+      <path d="M0,18 L50,12 L100,22 L150,8 L200,13 L250,20 L300,6 L300,30 L0,30 Z" fill="#7c3aed" opacity="0.08"/>
+      <!-- Line -->
+      <polyline points="0,18 50,12 100,22 150,8 200,13 250,20 300,6" fill="none" stroke="#7c3aed" stroke-width="1.5"/>
+      <!-- Dots -->
+      <circle cx="0" cy="18" r="2" fill="#7c3aed"/>
+      <circle cx="50" cy="12" r="2" fill="#7c3aed"/>
+      <circle cx="100" cy="22" r="2" fill="#7c3aed"/>
+      <circle cx="150" cy="8" r="2" fill="#7c3aed"/>
+      <circle cx="200" cy="13" r="2" fill="#7c3aed"/>
+      <circle cx="250" cy="20" r="2" fill="#7c3aed"/>
+      <circle cx="300" cy="6" r="2.5" fill="#7c3aed" stroke="#fff" stroke-width="1"/>
+    </svg>
+    <div style="width: 40px; text-align: right; font-size: 12px; font-weight: 700; color: #7c3aed;">8.6%</div>
+  </div>
+
+  <!-- Variant B sparkline -->
+  <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;">
+    <div style="width: 80px; font-size: 10px; color: #f59e0b; font-weight: 600;">Variant B ★</div>
+    <svg viewBox="0 0 300 30" style="flex: 1; height: 28px;">
+      <!-- Area fill -->
+      <path d="M0,12 L50,6 L100,9 L150,4 L200,7 L250,5 L300,2 L300,30 L0,30 Z" fill="#f59e0b" opacity="0.08"/>
+      <!-- Line -->
+      <polyline points="0,12 50,6 100,9 150,4 200,7 250,5 300,2" fill="none" stroke="#f59e0b" stroke-width="1.5"/>
+      <!-- Dots -->
+      <circle cx="0" cy="12" r="2" fill="#f59e0b"/>
+      <circle cx="50" cy="6" r="2" fill="#f59e0b"/>
+      <circle cx="100" cy="9" r="2" fill="#f59e0b"/>
+      <circle cx="150" cy="4" r="2" fill="#f59e0b"/>
+      <circle cx="200" cy="7" r="2" fill="#f59e0b"/>
+      <circle cx="250" cy="5" r="2" fill="#f59e0b"/>
+      <circle cx="300" cy="2" r="2.5" fill="#f59e0b" stroke="#fff" stroke-width="1"/>
+    </svg>
+    <div style="width: 40px; text-align: right; font-size: 12px; font-weight: 700; color: #f59e0b;">11.1%</div>
+  </div>
+
+  <!-- Date labels -->
+  <div style="display: flex; justify-content: space-between; padding-left: 88px; padding-right: 48px; margin-top: 2px;">
+    <span style="font-size: 7px; color: #d1d5db;">Apr 8</span>
+    <span style="font-size: 7px; color: #d1d5db;">Apr 10</span>
+    <span style="font-size: 7px; color: #d1d5db;">Apr 12</span>
+    <span style="font-size: 7px; color: #d1d5db;">Apr 14</span>
+  </div>
+</div>
+
+<!-- OPTION C: Difference/Delta Bar Chart -->
+<div class="card">
+  <h3>Option C: Delta Bars (Difference Chart)</h3>
+  <div class="desc">Shows the GAP between variants each day. Green = B wins, red = A wins. Pure focus on "who's better by how much".</div>
+
+  <div class="header">
+    <div class="title">Daily Performance</div>
+    <div class="metric-toggle">
+      <button class="active">Purchase Rate</button>
+      <button class="inactive">Cart Opens</button>
+      <button class="inactive">Orders</button>
+    </div>
+  </div>
+
+  <svg viewBox="0 0 500 90" style="width: 100%; display: block;">
+    <!-- Center line (zero) -->
+    <line x1="32" y1="45" x2="490" y2="45" stroke="#d1d5db" stroke-width="1"/>
+    <text x="28" y="48" text-anchor="end" font-size="7" fill="#9ca3af">0</text>
+    <text x="28" y="18" text-anchor="end" font-size="7" fill="#10b981">+5%</text>
+    <text x="28" y="78" text-anchor="end" font-size="7" fill="#ef4444">-5%</text>
+
+    <!-- "B wins" label -->
+    <text x="495" y="18" font-size="7" fill="#10b981" font-weight="600">B better</text>
+    <text x="495" y="78" font-size="7" fill="#ef4444" font-weight="600">A better</text>
+
+    <!-- Day 1: B wins by +2.8% -->
+    <rect x="52" y="22" width="40" height="23" rx="4" fill="#10b981" opacity="0.75"/>
+    <text x="72" y="17" text-anchor="middle" font-size="8" fill="#10b981" font-weight="600">+2.8%</text>
+    <text x="72" y="85" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 8</text>
+
+    <!-- Day 2: B wins by +2.7% -->
+    <rect x="112" y="23" width="40" height="22" rx="4" fill="#10b981" opacity="0.75"/>
+    <text x="132" y="17" text-anchor="middle" font-size="8" fill="#10b981" font-weight="600">+2.7%</text>
+    <text x="132" y="85" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 9</text>
+
+    <!-- Day 3: B wins by +4.5% -->
+    <rect x="172" y="14" width="40" height="31" rx="4" fill="#10b981" opacity="0.85"/>
+    <text x="192" y="9" text-anchor="middle" font-size="8" fill="#10b981" font-weight="700">+4.5%</text>
+    <text x="192" y="85" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 10</text>
+
+    <!-- Day 4: B wins by +2.3% -->
+    <rect x="232" y="24" width="40" height="21" rx="4" fill="#10b981" opacity="0.7"/>
+    <text x="252" y="18" text-anchor="middle" font-size="8" fill="#10b981" font-weight="600">+2.3%</text>
+    <text x="252" y="85" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 11</text>
+
+    <!-- Day 5: B wins by +2.7% -->
+    <rect x="292" y="23" width="40" height="22" rx="4" fill="#10b981" opacity="0.75"/>
+    <text x="312" y="17" text-anchor="middle" font-size="8" fill="#10b981" font-weight="600">+2.7%</text>
+    <text x="312" y="85" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 12</text>
+
+    <!-- Day 6: B wins by +3.3% -->
+    <rect x="352" y="19" width="40" height="26" rx="4" fill="#10b981" opacity="0.8"/>
+    <text x="372" y="13" text-anchor="middle" font-size="8" fill="#10b981" font-weight="600">+3.3%</text>
+    <text x="372" y="85" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 13</text>
+
+    <!-- Day 7: B wins by +2.5% -->
+    <rect x="412" y="23" width="40" height="22" rx="4" fill="#10b981" opacity="0.75"/>
+    <text x="432" y="17" text-anchor="middle" font-size="8" fill="#10b981" font-weight="600">+2.5%</text>
+    <text x="432" y="85" text-anchor="middle" font-size="7" fill="#9ca3af">Apr 14</text>
+  </svg>
+
+  <div style="text-align: center; margin-top: 4px; font-size: 10px; color: #6b7280;">
+    <span style="color: #f59e0b; font-weight: 700;">Variant B</span> won <span style="font-weight: 700; color: #10b981;">7/7 days</span> — consistent advantage
+  </div>
+</div>
+
+</body>
+</html>

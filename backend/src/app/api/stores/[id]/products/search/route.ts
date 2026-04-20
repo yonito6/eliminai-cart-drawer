@@ -8,10 +8,6 @@ export async function GET(
   const { id } = await params;
   const q = req.nextUrl.searchParams.get('q') ?? '';
 
-  if (!q.trim()) {
-    return NextResponse.json({ products: [] });
-  }
-
   const store = await prisma.store.findUnique({
     where: { id },
     select: { shopDomain: true, accessToken: true },
@@ -24,14 +20,15 @@ export async function GET(
   try {
     // Use GraphQL for partial title matching (REST title= does exact match only)
     const graphqlUrl = `https://${store.shopDomain}/admin/api/2025-10/graphql.json`;
+    // Empty query → browse mode (show first 10 active products)
+    const searchFilter = q.trim() ? `title:*${q.replace(/"/g, '\\"')}* status:active` : 'status:active';
     const query = `{
-      products(first: 10, query: "title:*${q.replace(/"/g, '\\"')}* status:active") {
+      products(first: 10, query: "${searchFilter}") {
         edges {
           node {
             id
             title
             handle
-            publishedOnCurrentPublication
             featuredImage { url }
             images(first: 1) { edges { node { url } } }
             variants(first: 5) {

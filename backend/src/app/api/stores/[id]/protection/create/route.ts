@@ -127,6 +127,7 @@ export async function POST(
     // 2. Update default variant with correct price and title
     // Price comes from editor in DOLLARS (e.g. 4.99), not cents
     const firstPriceDollars = Number(effectiveTiers[0].price).toFixed(2);
+    console.log('[protection/create] PRICE DEBUG: singlePrice=', singlePrice, 'tierPrice=', effectiveTiers[0].price, 'dollars=', firstPriceDollars, 'pricingMode=', pricingMode, 'body keys=', Object.keys(body));
     const firstTierTitle = buildTierTitle(effectiveTiers[0].maxCartValue, 0, effectiveTiers.length);
 
     const updateResult = await shopifyGraphQL(shopDomain, token, `

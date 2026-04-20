@@ -1,0 +1,66 @@
+{
+  "automaticDiscountNodes": {
+    "nodes": [
+      {
+        "id": "gid://shopify/DiscountAutomaticNode/1445180309755",
+        "automaticDiscount": {
+          "title": "sun and moon",
+          "status": "ACTIVE",
+          "combinesWith": {
+            "productDiscounts": true,
+            "orderDiscounts": true,
+            "shippingDiscounts": true
+          }
+        }
+      },
+      {
+        "id": "gid://shopify/DiscountAutomaticNode/1588433027323",
+        "automaticDiscount": {
+          "title": "1+2 FREE",
+          "status": "ACTIVE",
+          "combinesWith": {
+            "productDiscounts": true,
+            "orderDiscounts": true,
+            "shippingDiscounts": true
+          }
+        }
+      },
+      {
+        "id": "gid://shopify/DiscountAutomaticNode/1622934880507",
+        "automaticDiscount": {
+          "title": "1+1 FREE",
+          "status": "ACTIVE",
+          "combinesWith": {
+            "productDiscounts": true,
+            "orderDiscounts": true,
+            "shippingDiscounts": true
+          }
+        }
+      },
+      {
+        "id": "gid://shopify/DiscountAutomaticNode/1632976961787",
+        "automaticDiscount": {
+          "title": "Watch Oganizer",
+          "status": "ACTIVE",
+          "combinesWith": {
+            "productDiscounts": true,
+            "orderDiscounts": true,
+            "shippingDiscounts": true
+          }
+        }
+      },
+      {
+        "id": "gid://shopify/DiscountAutomaticNode/1787502002427",
+        "automaticDiscount": {
+          "title": "Eliminai Gift — Eleganto Case",
+          "status": "ACTIVE",
+          "combinesWith": {
+            "productDiscounts": true,
+            "orderDiscounts": true,
+            "shippingDiscounts": true
+          }
+        }
+      }
+    ]
+  }
+}

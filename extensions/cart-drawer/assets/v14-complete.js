@@ -4,17 +4,55 @@
    scroll overflow indicator, trust icon, gift item
    ============================================ */
 (function() {
+  // === MOBILE DEBUG LOG BUFFER — captures all CCD console output ===
+  var _ccdLogs = [];
+  var _origConsoleLog = console.log;
+  var _origConsoleWarn = console.warn;
+  var _origConsoleError = console.error;
+  console.log = function() {
+    _origConsoleLog.apply(console, arguments);
+    var msg = Array.prototype.slice.call(arguments).join(' ');
+    if (msg.indexOf('[CCD') !== -1 || msg.indexOf('changeQty') !== -1 || msg.indexOf('cart/change') !== -1 || msg.indexOf('_doRefresh') !== -1) { _ccdLogs.push('[LOG] ' + new Date().toISOString().slice(11,23) + ' ' + msg); if (_ccdLogs.length > 200) _ccdLogs.shift(); }
+  };
+  console.warn = function() {
+    _origConsoleWarn.apply(console, arguments);
+    var msg = Array.prototype.slice.call(arguments).join(' ');
+    if (msg.indexOf('[CCD') !== -1 || msg.indexOf('changeQty') !== -1 || msg.indexOf('cart') !== -1) { _ccdLogs.push('[WARN] ' + new Date().toISOString().slice(11,23) + ' ' + msg); if (_ccdLogs.length > 200) _ccdLogs.shift(); }
+  };
+  console.error = function() {
+    _origConsoleError.apply(console, arguments);
+    var msg = Array.prototype.slice.call(arguments).join(' ');
+    if (msg.indexOf('[CCD') !== -1 || msg.indexOf('changeQty') !== -1 || msg.indexOf('cart') !== -1) { _ccdLogs.push('[ERR] ' + new Date().toISOString().slice(11,23) + ' ' + msg); if (_ccdLogs.length > 200) _ccdLogs.shift(); }
+  };
+  window._ccdLogs = _ccdLogs;
+  window._ccdShowDebug = function() {
+    var el = document.getElementById('ccd-debug-overlay');
+    if (el) { el.remove(); return; }
+    el = document.createElement('div');
+    el.id = 'ccd-debug-overlay';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);color:#0f0;font:11px/1.4 monospace;z-index:99999;overflow:auto;padding:10px;white-space:pre-wrap;word-break:break-all;';
+    var _cartInfo = '';
+    try {
+      var _lc = typeof CCD !== 'undefined' ? CCD._lastCart || {} : {};
+      _cartInfo = '\n=== CART STATE ===\ntotal: ' + ((_lc.total_price||0)/100) + ' | items: ' + ((_lc.items||[]).length) + ' | _lastAddedVid: ' + ((typeof CCD !== 'undefined' && CCD._lastAddedVid)||'none') + '\n';
+      (_lc.items||[]).forEach(function(it,i){ _cartInfo += i + ': vid=' + it.variant_id + ' key=' + (it.key||'?').substring(0,20) + '.. qty=' + it.quantity + ' $' + (it.final_line_price/100) + ' ' + it.title + '\n'; });
+      _cartInfo += '================\n';
+    } catch(e) { _cartInfo = '\n[cart state error]\n'; }
+    el.innerHTML = '<div style="position:sticky;top:0;background:#000;padding:5px;display:flex;gap:10px;flex-wrap:wrap"><b>CCD Debug (' + _ccdLogs.length + ')</b><button onclick="this.parentElement.parentElement.remove()" style="margin-left:auto;color:#fff;background:#c00;border:none;padding:4px 12px;cursor:pointer">CLOSE</button><button onclick="navigator.clipboard.writeText(window._ccdLogs.join(\'\\n\'))" style="color:#fff;background:#06c;border:none;padding:4px 12px;cursor:pointer">COPY ALL</button></div>\n' + _cartInfo + _ccdLogs.join('\n');
+    document.body.appendChild(el);
+  };
+
   // === INJECT EMBEDDED CSS (standalone — no external stylesheet needed) ===
   (function() {
     if (document.getElementById('ccd-embedded-css')) return;
     var s = document.createElement('style');
     s.id = 'ccd-embedded-css';
-    s.textContent = '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer { display: none !important; visibility: hidden !important; }' +
+    s.textContent = '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer, .drawer--cart, .drawer[data-drawer=cart-drawer], .side-cart, #side-cart, .mini-cart-drawer, .ajax-cart__drawer { display: none !important; visibility: hidden !important; pointer-events: none !important; }' +
       '/* Cart Drawer v15 — Theme-Independent. Standalone embedded CSS. */\n' +
       '#CCD-Drawer, #CCD-Drawer *, #CCD-Drawer *::before, #CCD-Drawer *::after { box-sizing: border-box !important; }\n' +
       '#CCD-Drawer .drawer__nav, #CCD-Drawer .drawer__cart-items-wrapper, #CCD-Drawer .cart__footer:not(.ccd-sticky-footer), #CCD-Drawer .cart__item-row, #CCD-Drawer .cart__item-sub, #CCD-Drawer .cart__discounts, #CCD-Drawer .cart__items:not(.ccd-items), #CCD-Drawer .drawer__footer, #CCD-Drawer .drawer__header:not(.ccd-header), #CCD-Drawer .drawer__scrollable:not(.ccd-scrollable), #CCD-Drawer .drawer__inner:not(.ccd-inner), #CCD-Drawer .drawer__fixed-header:not(.ccd-fixed-header), #CCD-Drawer .drawer__contents:not(.ccd-contents), #CCD-Drawer .drawer__cart-empty:not(.ccd-empty), #CCD-Drawer cart-drawer-items, #CCD-Drawer cart-items, #CCD-Drawer .cart-drawer__overlay { display: none !important; }\n' +
       '#CCD-Drawer .appear-animation { opacity: 1 !important; transform: none !important; animation: none !important; transition: none !important; }\n' +
-      '#CCD-Drawer { position: fixed !important; top: 0 !important; right: 0 !important; bottom: 0 !important; background: var(--ccd-bg, #fff) !important; color: #111 !important; max-width: 380px !important; width: 100% !important; z-index: 9999 !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important; height: 100vh !important; height: 100dvh !important; max-height: 100vh !important; max-height: 100dvh !important; transform: translateX(100%) !important; transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1) !important; will-change: transform !important; overflow: hidden !important; }\n' +
+      '#CCD-Drawer { position: fixed !important; top: 0 !important; right: 0 !important; bottom: 0 !important; background: var(--ccd-bg, #fff) !important; color: #111 !important; max-width: 380px !important; width: 100% !important; z-index: 9999 !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important; height: 100vh !important; height: 100dvh !important; max-height: 100vh !important; max-height: 100dvh !important; transform: translateX(100%) !important; transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1) !important; will-change: transform !important; overflow: hidden !important; display: flex !important; flex-direction: column !important; }\n' +
       '#CCD-Drawer.ccd-open { display: flex !important; flex-direction: column !important; transform: translateX(0) !important; box-shadow: -12px 0 45px rgba(0,0,0,0.25) !important; }\n' +
       '#CCD-Drawer .ccd-fixed-header { background: var(--ccd-bg, #fff) !important; padding: 0 !important; flex-shrink: 0 !important; position: relative !important; z-index: 2 !important; height: auto !important; max-height: none !important; min-height: 0 !important; overflow: visible !important; border-bottom: none !important; }\n' +
       '#CCD-Drawer .ccd-fixed-header::after { display: none !important; }\n' +
@@ -28,7 +66,7 @@
       '.ccd-progress__message { text-align: center !important; font-size: 15px !important; margin-bottom: 10px !important; line-height: 1.4 !important; }\n' +
       '.ccd-progress__message strong { font-weight: 700 !important; }\n' +
       '.ccd-progress__bar-wrap { display: flex !important; align-items: flex-start !important; gap: 0 !important; position: relative !important; }\n' +
-      '.ccd-progress__line { flex: 1 !important; height: 3px !important; background: var(--ccd-progress-bg, #ddd) !important; margin-top: 21px !important; border-radius: 0 !important; transition: background 0.4s !important; margin-left: -3px !important; margin-right: -3px !important; position: relative !important; z-index: 0 !important; }\n' +
+      '.ccd-progress__line { display: block !important; flex: 1 !important; height: 3px !important; background: var(--ccd-progress-bg, #ddd) !important; margin-top: 21px !important; border-radius: 0 !important; transition: background 0.4s !important; margin-left: -3px !important; margin-right: -3px !important; position: relative !important; z-index: 0 !important; }\n' +
       '.ccd-progress__line--filled { background: #ddd !important; }\n' +
       '.ccd-progress__line::after { content: "" !important; position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; background: var(--ccd-primary, #111) !important; border-radius: 0 !important; transform: scaleX(0) !important; transform-origin: left !important; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1) !important; }\n' +
       '.ccd-progress__line--filled::after { transform: scaleX(1) !important; }\n' +
@@ -41,21 +79,23 @@
       '.ccd-progress__icon--reached { background: #111 !important; }\n' +
       '.ccd-progress__icon svg { width: 22px !important; height: 22px !important; fill: #999 !important; transition: fill 0.4s !important; }\n' +
       '.ccd-progress__icon--reached svg { fill: #fff !important; }\n' +
-      '.ccd-progress__label { font-size: 11px !important; color: #888 !important; text-align: center !important; white-space: nowrap !important; letter-spacing: 0.3px !important; line-height: 1.3 !important; font-weight: 500 !important; }\n' +
+      '.ccd-progress__label { font-size: 14px !important; color: #888 !important; text-align: center !important; letter-spacing: 0.3px !important; line-height: 1.3 !important; font-weight: 500 !important; max-width: 80px !important; word-wrap: break-word !important; }\n' +
       '.ccd-progress__milestone--reached .ccd-progress__label { color: #111 !important; font-weight: 600 !important; }\n' +
       '@keyframes ccdMilestonePulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); box-shadow: 0 0 0 6px rgba(17,17,17,0.08); } }\n' +
       '@keyframes ccdMilestoneBounce { 0%, 100% { transform: translateY(0) scale(1); } 30% { transform: translateY(-5px) scale(1.05); } 50% { transform: translateY(-2px) scale(1.02); } 70% { transform: translateY(-4px) scale(1.04); } }\n' +
       '@keyframes ccdMilestoneHeartbeat { 0%, 100% { transform: scale(1); } 14% { transform: scale(1.15); } 28% { transform: scale(1); } 42% { transform: scale(1.1); } 56% { transform: scale(1); } }\n' +
       '@keyframes ccdMilestoneShake { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(-10deg); } 30% { transform: rotate(10deg); } 45% { transform: rotate(-6deg); } 60% { transform: rotate(6deg); } 75% { transform: rotate(-2deg); } }\n' +
       '.ccd-progress__icon--reached { animation: ccdMilestonePulse 1.8s ease-in-out infinite; }\n' +
-      '#CCD-Drawer .ccd-contents { display: flex !important; flex-direction: column !important; height: 100% !important; background: #fff !important; overflow: hidden !important; }\n' +
+      '#CCD-Drawer .ccd-contents, #CCD-Drawer .ccd-drawer-contents { display: flex !important; flex-direction: column !important; flex: 1 1 0% !important; min-height: 0 !important; background: #fff !important; overflow: hidden !important; }\n' +
       '#CCD-Drawer .ccd-inner { background: var(--ccd-bg, #fff) !important; display: flex !important; flex-direction: column !important; flex: 1 1 0% !important; min-height: 0 !important; overflow: hidden !important; position: relative !important; }\n' +
       '#CCD-Drawer .ccd-scrollable { flex: 1 1 0% !important; overflow-y: auto !important; padding: 0 20px !important; -webkit-overflow-scrolling: touch !important; min-height: 0 !important; }\n' +
       '#CCD-Drawer .ccd-scrollable::-webkit-scrollbar { width: 6px; }\n' +
       '#CCD-Drawer .ccd-scrollable::-webkit-scrollbar-track { background: #f0f0f0; border-radius: 6px; }\n' +
       '#CCD-Drawer .ccd-scrollable::-webkit-scrollbar-thumb { background: #bbb; border-radius: 6px; }\n' +
       '#CCD-Drawer .ccd-scrollable::-webkit-scrollbar-thumb:hover { background: #999; }\n' +
-      '#CCD-Drawer .ccd-inner::after { content: "" !important; position: absolute !important; bottom: 0 !important; left: 0 !important; right: 0 !important; height: 50px !important; background: linear-gradient(transparent 0%, rgba(255,255,255,0.6) 35%, rgba(255,255,255,0.95) 100%) !important; pointer-events: none !important; z-index: 3 !important; transition: opacity 0.3s !important; }\n' +
+      '@media (max-width: 768px) { #CCD-Drawer .ccd-scrollable { scrollbar-width: thin !important; scrollbar-color: #ccc transparent !important; } #CCD-Drawer .ccd-scrollable::-webkit-scrollbar { width: 4px !important; -webkit-appearance: none !important; display: block !important; } #CCD-Drawer .ccd-scrollable::-webkit-scrollbar-thumb { background: #ccc !important; border-radius: 4px !important; min-height: 30px !important; } #CCD-Drawer .ccd-scrollable::-webkit-scrollbar-track { background: transparent !important; } }\n' +
+      '#CCD-Drawer .ccd-inner::after { content: "" !important; position: absolute !important; bottom: 0 !important; left: 0 !important; right: 0 !important; height: 32px !important; background: linear-gradient(to top, rgba(0,0,0,0.18), transparent) !important; pointer-events: none !important; z-index: 3 !important; transition: opacity 0.3s !important; opacity: 0 !important; }\n' +
+      '#CCD-Drawer .ccd-inner.has-overflow::after { opacity: 1 !important; }\n' +
       '#CCD-Drawer .ccd-inner.scrolled-bottom::after { opacity: 0 !important; }\n' +
       '#CCD-Drawer .ccd-items { margin: 0 !important; padding: 0 !important; list-style: none !important; }\n' +
       '#CCD-Drawer a { color: var(--ccd-primary, #111) !important; }\n' +
@@ -71,7 +111,7 @@
       '.ccd-item__title-row { display: flex !important; justify-content: space-between !important; align-items: flex-start !important; gap: 8px !important; }\n' +
       '.ccd-item__name { font-size: 14px !important; font-weight: 700 !important; color: #111 !important; text-transform: uppercase !important; letter-spacing: 0.5px !important; text-decoration: none !important; line-height: 1.3 !important; }\n' +
       '.ccd-item__name:hover { color: #555 !important; text-decoration: none !important; }\n' +
-      '.ccd-item__remove { background: none !important; border: none !important; color: #bbb !important; cursor: pointer !important; padding: 2px !important; flex-shrink: 0 !important; transition: color 0.2s !important; line-height: 0 !important; }\n' +
+      '.ccd-item__remove { background: none !important; border: none !important; color: #999 !important; cursor: pointer !important; padding: 2px !important; flex-shrink: 0 !important; transition: color 0.2s !important; line-height: 0 !important; }\n' +
       '.ccd-item__remove:hover { color: #333 !important; }\n' +
       '.ccd-item__remove svg { width: 18px !important; height: 18px !important; }\n' +
       '.ccd-item__variant-row { display: inline-flex !important; flex-wrap: wrap !important; align-items: center !important; gap: 4px 8px !important; margin-top: 2px !important; }\n' +
@@ -102,7 +142,7 @@
       '.ccd-scarcity-badge svg { width: 14px !important; height: 14px !important; fill: var(--ccd-scarcity-color, #d32f2f) !important; flex-shrink: 0 !important; }\n' +
       '@keyframes ccdScarcityPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }\n' +
       '.ccd-gift-item--entering { opacity: 0 !important; max-height: 0 !important; overflow: hidden !important; }\n' +
-      ''.ccd-gift-item { border-top: 1px dashed #ddd !important; margin-top: 8px !important; padding-top: 8px !important; transition: opacity 0.3s ease, max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), padding 0.35s cubic-bezier(0.4, 0, 0.2, 1), margin 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important; }\n' +
+      '.ccd-gift-item { border-top: 1px dashed #ddd !important; margin-top: 8px !important; padding-top: 8px !important; transition: opacity 0.3s ease, max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), padding 0.35s cubic-bezier(0.4, 0, 0.2, 1), margin 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important; }\n' +
       '.ccd-gift-label { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 6px !important; font-size: 12px !important; font-weight: 700 !important; color: #1a7a1a !important; background: color-mix(in srgb, var(--ccd-success, #1a7a1a) 10%, white) !important; padding: 4px 12px !important; border-radius: 20px !important; margin-bottom: 8px !important; letter-spacing: 0.3px !important; }\n' +
       '.ccd-gift-label svg { width: 16px !important; height: 16px !important; fill: var(--ccd-success, #1a7a1a) !important; }\n' +
       '.ccd-gift-item__body { display: flex !important; gap: 12px !important; align-items: center !important; }\n' +
@@ -119,10 +159,10 @@
       '.ccd-shipping-protection__icon { width: 32px !important; height: 32px !important; flex-shrink: 0 !important; display: flex !important; align-items: center !important; justify-content: center !important; }\n' +
       '.ccd-shipping-protection__icon svg { width: 24px !important; height: 24px !important; fill: #555 !important; }\n' +
       '.ccd-shipping-protection__info { flex: 1 !important; min-width: 0 !important; }\n' +
-      '.ccd-shipping-protection__title { font-size: 13px !important; font-weight: 600 !important; color: #111 !important; }\n' +
-      '.ccd-shipping-protection__desc { font-size: 10px !important; color: #888 !important; margin-top: 1px !important; }\n' +
+      '.ccd-shipping-protection__title { font-size: 16px !important; font-weight: 600 !important; color: #111 !important; }\n' +
+      '.ccd-shipping-protection__desc { font-size: 14px !important; color: #666 !important; margin-top: 2px !important; }\n' +
       '.ccd-shipping-protection__right { display: flex !important; flex-direction: column !important; align-items: flex-end !important; gap: 4px !important; flex-shrink: 0 !important; }\n' +
-      '.ccd-shipping-protection__price { font-size: 13px !important; font-weight: 600 !important; color: #111 !important; }\n' +
+      '.ccd-shipping-protection__price { font-size: 16px !important; font-weight: 600 !important; color: #111 !important; }\n' +
       '.ccd-toggle { position: relative !important; width: 40px !important; height: 22px !important; display: inline-block !important; }\n' +
       '.ccd-toggle input { opacity: 0 !important; width: 0 !important; height: 0 !important; position: absolute !important; }\n' +
       '.ccd-toggle__slider { position: absolute !important; cursor: pointer !important; inset: 0 !important; background: #ccc !important; transition: 0.3s !important; border-radius: 22px !important; }\n' +
@@ -134,7 +174,7 @@
       '.ccd-discount-row { display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 2px 0 !important; }\n' +
       '.ccd-discount-row__left { display: flex !important; align-items: center !important; gap: 8px !important; flex-wrap: wrap !important; }\n' +
       '.ccd-discount-row__label { font-size: 13px !important; color: #111 !important; }\n' +
-      '.ccd-discount-row__amount { font-size: 13px !important; font-weight: 600 !important; color: #111 !important; }\n' +
+      '.ccd-discount-row__amount { font-size: 15px !important; font-weight: 600 !important; color: #111 !important; }\n' +
       '.ccd-discount-row__promo-name { display: inline-flex !important; align-items: center !important; gap: 4px !important; font-size: 12px !important; font-weight: 600 !important; color: #111 !important; }\n' +
       '.ccd-discount-row__promo-name svg { width: 14px !important; height: 14px !important; fill: #111 !important; flex-shrink: 0 !important; }\n' +
       '.ccd-checkout-btn { display: flex !important; align-items: center !important; justify-content: center !important; gap: 8px !important; width: 100% !important; padding: 14px 24px !important; background: #111 !important; color: #fff !important; border: 1px solid #222 !important; border-radius: 8px !important; font-size: 15px !important; font-weight: 700 !important; letter-spacing: 1px !important; text-transform: uppercase !important; cursor: pointer !important; transition: all 0.15s !important; margin-top: 6px !important; }\n' +
@@ -144,20 +184,24 @@
       '.ccd-trust { display: flex !important; align-items: center !important; justify-content: center !important; gap: 8px !important; padding: 4px 0 2px !important; font-size: 14px !important; color: #777 !important; }\n' +
       '.ccd-trust svg { width: 18px !important; height: 18px !important; fill: #6BA4E8 !important; }\n' +
       '.ccd-trust strong { color: #111 !important; font-weight: 700 !important; }\n' +
-      '#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty { color: #fff !important; text-align: center !important; flex: 1 !important; display: none !important; align-items: center !important; justify-content: flex-start !important; padding-top: 80px !important; }\n' +
+      '.ccd-trust__line { display: flex !important; align-items: center !important; gap: 4px !important; }\n' +
+      '.ccd-trust__icon { width: 16px !important; height: 16px !important; flex-shrink: 0 !important; }\n' +
+      '.ccd-trust__badges { display: none !important; }\n' +
+      '#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty { color: #111 !important; text-align: center !important; flex: 1 !important; display: none !important; align-items: center !important; justify-content: flex-start !important; padding-top: 80px !important; }\n' +
       '#CCD-Drawer .ccd-cart-empty.ccd-show, #CCD-Drawer .ccd-empty.ccd-show { display: flex !important; flex-direction: column !important; gap: 16px !important; padding: 20px 20px 60px !important; }\n' +
       '.ccd-continue-btn { background: #111 !important; color: #fff !important; border: none !important; padding: 12px 24px !important; border-radius: 6px !important; cursor: pointer !important; font-size: 14px !important; font-weight: 600 !important; }\n' +
       '@media (min-width: 769px) { #CCD-Drawer { max-width: var(--ccd-desktop-width, 480px) !important; } }\n' +
-      '@media (max-width: 768px) { #CCD-Drawer { max-width: var(--ccd-mobile-width, 78%) !important; } #CCD-Drawer.ccd-open { transform: translateX(0) !important; } #CCD-Drawer .ccd-close { display: flex !important; position: static !important; flex-shrink: 0 !important; margin: 0 !important; padding: 0 !important; width: auto !important; } #CCD-Drawer .ccd-close-btn { position: static !important; right: auto !important; left: auto !important; margin: 0 !important; padding: 12px !important; display: flex !important; height: auto !important; } .ccd-item__image { width: 100px !important; min-width: 100px !important; } .ccd-item { padding: 14px 0 !important; gap: 12px !important; } .ccd-progress { padding: 6px 16px 10px !important; } .ccd-progress__icon { width: 36px !important; height: 36px !important; } .ccd-progress__icon svg { width: 18px !important; height: 18px !important; } .ccd-progress__milestone { width: 36px !important; } .ccd-progress__line { margin-top: 18px !important; } .ccd-progress__message { font-size: 14px !important; margin-bottom: 8px !important; } .ccd-progress__label { font-size: 10px !important; } #CCD-Drawer .ccd-header { padding: 16px 16px 6px 16px !important; } .ccd-sticky-footer { padding: 0 16px 8px !important; } .ccd-checkout-btn { padding: 13px 20px !important; font-size: 14px !important; } .ccd-gift-item__body .ccd-item__image { width: 60px !important; min-width: 60px !important; } }\n' +
+      '@media (max-width: 768px) { #CCD-Drawer { max-width: var(--ccd-mobile-width, 85%) !important; height: 100vh !important; height: 100dvh !important; } #CCD-Drawer.ccd-open { transform: translateX(0) !important; } #CCD-Drawer .ccd-close { display: flex !important; position: static !important; flex-shrink: 0 !important; margin: 0 !important; padding: 0 !important; width: auto !important; } #CCD-Drawer .ccd-close-btn { position: static !important; right: auto !important; left: auto !important; margin: 0 !important; padding: 12px !important; display: flex !important; height: auto !important; } .ccd-item__image { width: 100px !important; min-width: 100px !important; } .ccd-item { padding: 14px 0 !important; gap: 12px !important; } .ccd-progress { padding: 6px 16px 10px !important; } .ccd-progress__icon { width: 36px !important; height: 36px !important; } .ccd-progress__icon svg { width: 18px !important; height: 18px !important; } .ccd-progress__milestone { width: 36px !important; } .ccd-progress__line { margin-top: 18px !important; } .ccd-progress__message { font-size: 14px !important; margin-bottom: 8px !important; } .ccd-progress__label { font-size: 12px !important; } #CCD-Drawer .ccd-header { padding: 16px 16px 6px 16px !important; } .ccd-sticky-footer { padding: 0 16px 8px !important; } .ccd-checkout-btn { padding: 13px 20px !important; font-size: 14px !important; } .ccd-gift-item__body .ccd-item__image { width: 60px !important; min-width: 60px !important; } }\n' +
       '@keyframes ccdSpin { to { transform: rotate(360deg); } }\n' +
       '.ccd-spinner { display: inline-block !important; width: 16px !important; height: 16px !important; border: 2px solid rgba(255,255,255,0.3) !important; border-top-color: #fff !important; border-radius: 50% !important; animation: ccdSpin 0.6s linear infinite !important; }\n' +
       '.ccd-item--loading { opacity: 0.5 !important; pointer-events: none !important; }\n' +
       '.ccd-qty__btn--loading svg { display: none !important; }\n' +
       '.ccd-qty__btn--loading::after { content: "" !important; display: block !important; width: 12px !important; height: 12px !important; border: 1.5px solid rgba(0,0,0,0.15) !important; border-top-color: #333 !important; border-radius: 50% !important; animation: ccdSpin 0.6s linear infinite !important; }\n' +
-      '.ccd-checkout-btn--loading { pointer-events: none !important; }\n' +
+      '.ccd-checkout-btn--loading { pointer-events: none !important; opacity: 0.6 !important; cursor: not-allowed !important; transition: none !important; }\n' +
       '.ccd-checkout-btn--loading > svg { display: none !important; }\n' +
-      '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer, .drawer--cart { display: none !important; visibility: hidden !important; }
-' +
+      '.ccd-checkout-total { transition: opacity 0.2s ease !important; }\n' +
+      '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer, .drawer--cart { display: none !important; visibility: hidden !important; }\n' +
+      '#CartDrawer .ccd-trust, #CartDrawer .drawer__cart-empty, #CartDrawer .ccd-progress, #CartDrawer .appear-animation { display: none !important; }\n' +
       '.ccd-checkout-btn--loading::before { content: "" !important; display: inline-block !important; width: 16px !important; height: 16px !important; border: 2px solid rgba(255,255,255,0.3) !important; border-top-color: #fff !important; border-radius: 50% !important; animation: ccdSpin 0.7s linear infinite !important; vertical-align: middle !important; flex-shrink: 0 !important; }\n' +
       '.ccd-gift-badge { width: fit-content !important; display: inline-flex !important; white-space: nowrap !important; align-self: flex-end !important; align-items: center !important; gap: 4px !important; font-size: 11px !important; font-weight: 600 !important; color: #1a7a1a !important; background: #edf7ed !important; border-radius: 4px !important; padding: 2px 8px !important; margin-top: 4px !important; line-height: 1.4 !important; }\n' +
       '.ccd-gift-badge svg { width: 14px !important; height: 14px !important; flex-shrink: 0 !important; }\n' +
@@ -165,8 +209,17 @@
       '.ccd-trust-icons { display: flex !important; align-items: center !important; justify-content: center !important; gap: 6px !important; margin-bottom: 4px !important; }\n' +
       '.ccd-trust-label { font-size: 9px !important; color: var(--ccd-text-muted, #999) !important; margin-right: 4px !important; }\n' +
       '.ccd-trust-text { font-size: 11px !important; color: var(--ccd-text-muted, #999) !important; letter-spacing: 0.02em !important; }\n' +
-      '.ccd-overlay { position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; background: rgba(0,0,0,0.4) !important; z-index: 9998 !important; opacity: 0 !important; transition: opacity 0.35s !important; pointer-events: none !important; }\n' +
-      '.ccd-overlay--visible { opacity: 1 !important; pointer-events: auto !important; }';
+      '.ccd-overlay { display: block !important; position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; background: rgba(0,0,0,0.4) !important; z-index: 9998 !important; opacity: 0 !important; transition: opacity 0.35s !important; pointer-events: none !important; }\n' +
+      '.ccd-overlay--visible { opacity: 1 !important; pointer-events: auto !important; }\n' +
+      // ── BUG-3 FIX: Loading overlay for smooth background refresh ──
+      '.ccd-loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 0.15s ease; }\n' +
+      '.ccd-loading-overlay--visible { opacity: 1; pointer-events: auto; }\n' +
+      '.ccd-loading-shimmer { display: none; }\n' +
+      '.ccd-items-crossfade { transition: opacity 0.15s ease; }\n' +
+      '.ccd-items-crossfade--out { opacity: 0.5; }\n' +
+      '.ccd-refreshing .ccd-qty__btn, .ccd-refreshing .ccd-item__remove, .ccd-refreshing .ccd-toggle { pointer-events: none !important; opacity: 0.4 !important; }\n' +
+      '.ccd-spinner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 28px; height: 28px; border: 2.5px solid rgba(150,150,150,0.15); border-top-color: rgba(150,150,150,0.6); border-radius: 50%; animation: ccd-spin 0.6s linear infinite; z-index: 11; }\n' +
+      '@keyframes ccd-spin { 100% { transform: translate(-50%, -50%) rotate(360deg); } }\n';
     // Remove any existing external CSS link (we're standalone now)
     var oldCss = document.getElementById('ccd-css-fallback');
     if (oldCss) oldCss.parentNode.removeChild(oldCss);
@@ -178,8 +231,69 @@
   // Every major cart app (Rebuy, Slide Cart, EliteCart) does this.
   // We override buildCart + block cart events during our animations.
   (function() {
+    // 0. EARLY MutationObserver — catch theme drawers BEFORE init() runs
+    //    Fires synchronously on script load, not waiting for DOMContentLoaded.
+    var _earlySelectors = '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer, .drawer--cart, .side-cart, #side-cart, .mini-cart-drawer, .ajax-cart__drawer';
+    function _earlySuppress() {
+      try {
+        var els = document.querySelectorAll(_earlySelectors);
+        els.forEach(function(el) {
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('pointer-events', 'none', 'important');
+          el.setAttribute('aria-hidden', 'true');
+          if (typeof el.open === 'function' && !el.open._ccdOverridden) {
+            el.open = function() { if (window.CCD) CCD.openDrawer(); };
+            el.open._ccdOverridden = true;
+          }
+          if (typeof el.renderContents === 'function') { el.renderContents = function() {}; }
+          if (typeof el.getSectionsToRender === 'function') { el.getSectionsToRender = function() { return []; }; }
+        });
+      } catch(e) {}
+    }
+    _earlySuppress();
+    if (typeof MutationObserver !== 'undefined') {
+      // Only treat attribute changes on KNOWN cart drawer elements as cart-open signals.
+      // Watching the entire subtree for 'is-active'/'active' causes false triggers on
+      // mobile carousels, accordions, tabs, sliders, etc. that use the same class names.
+      var _cartDrawerSelectorList = _earlySelectors.split(',').map(function(s) { return s.trim(); });
+      function _isCartDrawerElement(el) {
+        if (!el || !el.matches) return false;
+        try { return el.matches(_earlySelectors); } catch(e) { return false; }
+      }
+      var _earlyObserver = new MutationObserver(function(mutations) {
+        var needsCheck = false;
+        for (var i = 0; i < mutations.length; i++) {
+          var m = mutations[i];
+          if (m.addedNodes && m.addedNodes.length) { needsCheck = true; break; }
+          if (m.type === 'attributes') {
+            var el = m.target;
+            if (el.id === 'CCD-Drawer' || (el.closest && el.closest('#CCD-Drawer'))) continue;
+            // ONLY react to known cart drawer elements — NOT random page elements
+            if (!_isCartDrawerElement(el)) continue;
+            if (el.classList && (el.classList.contains('is-open') || el.classList.contains('drawer--is-open') ||
+                el.classList.contains('active') || el.classList.contains('is-active')) ||
+                el.hasAttribute('open')) {
+              el.style.setProperty('display', 'none', 'important');
+              if (el.classList) el.classList.remove('is-open', 'drawer--is-open', 'active', 'is-active');
+              el.removeAttribute('open');
+              if (window.CCD && !CCD._isOpen) CCD.openDrawer();
+            }
+          }
+        }
+        if (needsCheck) _earlySuppress();
+      });
+      var _observeTarget = document.body || document.documentElement;
+      _earlyObserver.observe(_observeTarget, {
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ['class', 'style', 'open', 'aria-hidden']
+      });
+      window.__ccd_early_observer = _earlyObserver;
+    }
+
     // 1. Override theme.cart.buildCart when it becomes available
     var _checkTheme = setInterval(function() {
+      _earlySuppress();
       if (window.theme && window.theme.cart) {
         var _origBuildCart = window.theme.cart.buildCart;
         window.theme.cart.buildCart = function(cart, openDrawer) {
@@ -276,10 +390,9 @@
   // Build a set of all gift handles across tiers
   var GIFT_HANDLES = {};
   var GIFT_VIDS = {}; // variant_id → true for ALL gift variants
-  GIFT_TIERS.forEach(function(t) {
+  REWARD_TIERS.forEach(function(t) {
     tierGifts(t).forEach(function(g) { if (g.variantId) GIFT_VIDS[String(g.variantId)] = true; });
   });
-  if (WATCH_CASE_VID) GIFT_VIDS[String(WATCH_CASE_VID)] = true;
   var GIFT_DISCOUNT_CODES = [];
   var GIFT_URL_MAP = {}; // duplicate handle → original product URL
   var GIFT_TIERS = []; // tiers that have a gift product
@@ -341,13 +454,7 @@
   var CCD = {
 
     fixMobileWidth: function() {
-      var drawer = document.getElementById('CCD-Drawer');
-      if (!drawer) return;
-      var vw = window.innerWidth;
-      if (vw > 0 && vw < 385) {
-        // Only fix small Android screens (Galaxy ~360px). iPhones (390px+) untouched. — looks identical on iPhone and Galaxy
-        drawer.style.setProperty('max-width', 'calc(100vw - 16px)', 'important');
-      }
+      // Mobile width controlled by --ccd-mobile-width CSS var (default 85%, configurable in dashboard)
     },
 
     showScarcityToast: function(msg) {
@@ -380,6 +487,7 @@
           var ov = document.createElement('div');
           ov.id = 'CCD-Overlay';
           ov.className = 'ccd-overlay';
+          ov.textContent = '\u200B'; // prevent div:empty{display:none} in theme CSS
           ov.addEventListener('click', function() { CCD.closeDrawer(); });
           document.body.appendChild(ov);
         }
@@ -415,6 +523,7 @@
       var overlay = document.createElement('div');
       overlay.id = 'CCD-Overlay';
       overlay.className = 'ccd-overlay';
+      overlay.textContent = '\u200B'; // prevent div:empty{display:none} in theme CSS
       overlay.addEventListener('click', function() { CCD.closeDrawer(); });
       document.body.appendChild(overlay);
 
@@ -426,7 +535,7 @@
       var protHtml = '';
       if (PROT_ENABLED && PROT_VID) {
         protHtml = '<div class="ccd-shipping-protection">' +
-          '<div class="ccd-shipping-protection__icon">' + (_spCfg.iconUrl ? '<img src="' + _spCfg.iconUrl + '" style="width:20px;height:20px" alt="" />' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>') + '</div>' +
+          '<div class="ccd-shipping-protection__icon">' + (_spCfg.iconUrl ? '<img src="' + _spCfg.iconUrl + '" style="width:20px;height:20px" alt="" />' : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"></path></svg>') + '</div>' +
           '<div class="ccd-shipping-protection__info">' +
             '<div class="ccd-shipping-protection__title">' + (CFG.protectionTitle || 'Shipping Protection') + '</div>' +
             '<div class="ccd-shipping-protection__desc">' + (CFG.protectionDesc || 'Against loss, theft & damage') + '</div>' +
@@ -446,7 +555,8 @@
         '<div class="ccd-fixed-header">' +
           '<div class="ccd-header">' +
             '<h2 class="ccd-title">' + (CFG.cartTitle || 'Your cart') + '</h2>' +
-            '<div class="ccd-close">' +
+            '<div class="ccd-close" style="display:flex;align-items:center;gap:4px">' +
+              '<button onclick="window._ccdShowDebug()" style="background:none;border:1px solid #ccc;color:#999;font:9px monospace;padding:2px 5px;border-radius:3px;cursor:pointer;opacity:0.4">DBG</button>' +
               '<button class="ccd-close-btn" aria-label="Close cart">' +
                 '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
               '</button>' +
@@ -463,9 +573,9 @@
           '</div>' +
         '</div>' +
         '<div class="ccd-cart-empty">' +
-          '<svg viewBox="0 0 24 24" width="48" height="48" fill="#fff" style="margin-bottom:8px"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>' +
-          '<p>' + (CFG.emptyCartText || 'Your cart is empty') + '</p>' +
-          '<button class="ccd-continue-btn" onclick="CCD.close()">' + (CFG.continueShoppingText || 'Continue Shopping') + '</button>' +
+          '<svg viewBox="0 0 24 24" width="48" height="48" fill="#bbb" style="margin-bottom:8px"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>' +
+          '<p style="color:#111;font-size:15px">' + (CFG.emptyCartText || 'Your cart is empty') + '</p>' +
+          '<button class="ccd-continue-btn" onclick="CCD.closeDrawer()">' + (CFG.continueShoppingText || 'Continue Shopping') + '</button>' +
         '</div>' +
         '<div class="ccd-sticky-footer" data-ccd-footer style="display:none">'  +
           protHtml +
@@ -476,7 +586,7 @@
           '</button>' +
           '<div class="ccd-trust">' +
             '<div class="ccd-trust__line">' +
-              '<svg class="ccd-trust__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg> ' +
+              '<svg class="ccd-trust__icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"></path></svg> ' +
               (CFG.trustText || '<strong>30 day</strong> risk free returns') +
             '</div>' +
             '<div class="ccd-trust__badges">' +
@@ -495,7 +605,7 @@
       var drawer = document.createElement('div');
       drawer.id = 'CCD-Drawer';
       drawer.className = 'ccd-drawer ccd--right';
-      drawer.style.cssText = 'position:fixed;top:0;right:0;';
+      drawer.style.cssText = '';
       drawer.innerHTML = drawerHtml;
       document.body.appendChild(drawer);
 
@@ -520,6 +630,8 @@
         var da = item.line_level_discount_allocations[i];
         var title = da.discount_application ? da.discount_application.title : '';
         if (!title) continue;
+        // Only show badge if discount actually applies to this item (amount > 0)
+        if (!da.amount || parseInt(da.amount, 10) <= 0) continue;
         html += '<span class="ccd-badge"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>' + title.replace(/</g, '&lt;') + '</span>';
       }
       return html;
@@ -546,7 +658,7 @@
       var unitPrice = item.final_price != null ? item.final_price : item.price;
       var linePrice = item.final_line_price != null ? item.final_line_price : (unitPrice * item.quantity);
       var origLinePrice = item.original_line_price || (item.original_price || item.price) * item.quantity;
-      var hasDiscount = item.discounts && item.discounts.length > 0;
+      var hasDiscount = item.discounts && item.discounts.some(function(d) { return d.amount > 0; });
       var isGiftItem = GIFT_HANDLES[item.handle] || item.handle === WATCH_CASE_HANDLE;
       var showFree = linePrice === 0 && (isGiftItem || hasDiscount);
       if (showFree) {
@@ -640,12 +752,21 @@
         if (_id) _id.style.display = 'flex';
         if (_pb) _pb.style.display = 'block';
         if (_ft) _ft.style.display = 'block';
+        // Pre-populate checkout total from last known cart to prevent $0 flash
+        if (CCD._lastCart) {
+          var _ot = CCD.getAdjustedTotal(CCD._lastCart);
+          var _ct = d.querySelector('.ccd-checkout-total');
+          var _st2 = d.querySelector('[data-subtotal]');
+          if (_ct && _ot > 0) _ct.textContent = CCD.fmt(_ot);
+          if (_st2 && _ot > 0) _st2.textContent = CCD.fmt(_ot);
+        }
       } else {
         // First open ever (_lastRealCount is -1) — hide everything, let fetch decide
         if (_pb) _pb.style.display = 'none';
         if (_ft) _ft.style.display = 'none';
         if (_id) _id.style.display = 'none';
       }
+      CCD._isOpen = true;
       d.classList.add('ccd-open');
       d.style.display = 'flex';
       var ov = document.getElementById('CCD-Overlay');
@@ -657,6 +778,9 @@
     closeDrawer: function() {
       var d = document.getElementById('CCD-Drawer');
       if (!d) return;
+      CCD._isOpen = false;
+      CCD._lastAddedVid = null; // Clear stale scarcity target on cart close
+      // Keep _scarcityLockedVid across close/reopen within same page
       d.classList.remove('ccd-open');
       var ov = document.getElementById('CCD-Overlay');
       if (ov) ov.classList.remove('ccd-overlay--visible');
@@ -711,7 +835,7 @@
 
       // UNIVERSAL FALLBACK: MutationObserver catches theme drawers opened by unknown JS
       // If any theme element becomes visible that looks like a cart drawer, suppress it and open ours
-      var _themeDrawerSelectors = '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer, .drawer--cart';
+      var _themeDrawerSelectors = '#CartDrawer, cart-drawer, .cart-drawer, [data-drawer=cart-drawer], .js-cart-drawer, .drawer--cart, .drawer[data-drawer=cart-drawer], .side-cart, #side-cart, .mini-cart-drawer, .ajax-cart__drawer';
       var _themeEls = document.querySelectorAll(_themeDrawerSelectors);
       if (_themeEls.length) {
         var _drawerObserver = new MutationObserver(function(mutations) {
@@ -783,12 +907,86 @@
       });
     },
 
+
+    // Suppress ALL known theme cart drawer mechanisms
+    _suppressThemeDrawer: function() {
+      // Universal theme suppressor — polls continuously until all theme JS is overridden
+      var _overrideCount = 0;
+      var _checkTheme = function() {
+        // Impulse/Archetype: theme.CartForm
+        if (window.theme && window.theme.CartForm) {
+          var origOpen = window.theme.CartForm.prototype && window.theme.CartForm.prototype.open;
+          if (origOpen && !origOpen._ccdOverridden) {
+            window.theme.CartForm.prototype.open = function() { CCD.openDrawer(); };
+            window.theme.CartForm.prototype.open._ccdOverridden = true;
+            _overrideCount++;
+          }
+        }
+        // Dawn/OS2: cart-drawer custom element
+        var cartDrawerEl = document.querySelector('cart-drawer');
+        if (cartDrawerEl) {
+          if (cartDrawerEl.open && !cartDrawerEl.open._ccdOverridden) {
+            cartDrawerEl.open = function() { CCD.openDrawer(); };
+            cartDrawerEl.open._ccdOverridden = true;
+            _overrideCount++;
+          }
+          if (typeof cartDrawerEl.renderContents === 'function' && !cartDrawerEl.renderContents._ccdNeutralized) {
+            cartDrawerEl.renderContents = function() {};
+            cartDrawerEl.renderContents._ccdNeutralized = true;
+          }
+          if (typeof cartDrawerEl.getSectionsToRender === 'function' && !cartDrawerEl.getSectionsToRender._ccdNeutralized) {
+            cartDrawerEl.getSectionsToRender = function() { return []; };
+            cartDrawerEl.getSectionsToRender._ccdNeutralized = true;
+          }
+        }
+        // Generic: Shopify.theme.cart
+        if (window.Shopify && window.Shopify.theme && window.Shopify.theme.cart) {
+          if (window.Shopify.theme.cart.openDrawer && !window.Shopify.theme.cart.openDrawer._ccdOverridden) {
+            window.Shopify.theme.cart.openDrawer = function() { CCD.openDrawer(); };
+            window.Shopify.theme.cart.openDrawer._ccdOverridden = true;
+            _overrideCount++;
+          }
+        }
+        // Cart notification (some themes use cart-notification instead of drawer)
+        var cartNotif = document.querySelector('cart-notification');
+        if (cartNotif) {
+          if (typeof cartNotif.open === 'function' && !cartNotif.open._ccdOverridden) {
+            cartNotif.open = function() { CCD.openDrawer(); };
+            cartNotif.open._ccdOverridden = true;
+            _overrideCount++;
+          }
+          cartNotif.style.setProperty('display', 'none', 'important');
+        }
+        // Force-hide all theme drawers every check (catches any theme JS that re-shows them)
+        var _allTheme = document.querySelectorAll('#CartDrawer, cart-drawer, .cart-drawer, .drawer--cart, .side-cart, .mini-cart-drawer, .ajax-cart__drawer, cart-notification');
+        _allTheme.forEach(function(el) {
+          if (el.id === 'CCD-Drawer') return;
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+        });
+      };
+      // Run immediately, then poll every 200ms for 10 seconds to catch late-loading theme JS
+      _checkTheme();
+      var _pollInterval = setInterval(function() { _checkTheme(); }, 200);
+      setTimeout(function() { clearInterval(_pollInterval); }, 10000);
+      // Continue checking every 2s after initial burst (for lazy-loaded theme scripts)
+      setInterval(_checkTheme, 2000);
+      // Intercept cart-related custom events (Impulse, Archetype, etc.)
+      ['drawer:open', 'cart:open', 'theme:cart:open', 'ajaxCart:open'].forEach(function(evtName) {
+        document.addEventListener(evtName, function(e) {
+          if (e.detail && e.detail.drawer && e.detail.drawer !== 'cart-drawer') return;
+          e.stopImmediatePropagation();
+          CCD.openDrawer();
+        }, true);
+      });
+    },
+
     init: function() {
       // Set free price color from config
       document.documentElement.style.setProperty('--ccd-free-color', FREE_PRICE_COLOR);
       // VERSION STAMP
-      console.log('%c[CCD v15.9] Theme-independent cart drawer loaded', 'background:#6b21a8;color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold');
-      window.__ccd_version = '15.0';
+      console.log('%c[CCD v16.11] Universal theme suppression — early observer + continuous polling + section strip', 'background:#6b21a8;color:#fff;padding:4px 8px;border-radius:4px;font-weight:bold');
+      window.__ccd_version = '16.10';
       window.__eliminai_cart_loaded = true;
 
       // Build our own drawer DOM (theme-independent)
@@ -797,6 +995,8 @@
       this.bindEvents();
       this.interceptAddToCart();
       this.interceptCartOpens();
+      // Suppress theme drawer JS: override known theme cart open functions
+      this._suppressThemeDrawer();
       // Neutralize theme drawer toggle functions so they cannot open theme drawer or redirect
       if (window.theme && window.theme.cart) {
         window.theme.cart.open = function() { CCD.openDrawer(); };
@@ -931,20 +1131,38 @@
       return cost;
     },
 
-    // Get the total to display = cart.total_price minus any gift costs Shopify didn't discount
+    // Get the total to display — sum of final_line_price for non-excluded items
+    // This is robust against race conditions: we NEVER subtract gift costs from cart.total_price.
+    // Instead, we sum only what the customer is paying for (non-gift, non-protection items).
+    // Protection is shown separately via the toggle, so we exclude it from the displayed total.
     getAdjustedTotal: function(cart) {
-      if (!cart) return 0;
-      var giftCost = CCD.getGiftSavings(cart);
-      var total = cart.total_price - giftCost;
-      // Safety: if Shopify reports 0 but items exist, recalculate from line prices
-      if ((total <= 0 || isNaN(total)) && cart.items && cart.items.length > 0) {
-        var recalc = 0;
-        cart.items.forEach(function(i) {
-          if (!CCD._isExcludedHandle(i.handle)) recalc += (i.final_line_price || i.line_price || 0);
-        });
-        if (recalc > 0) total = recalc - giftCost;
+      if (!cart || !cart.items) return 0;
+      // Primary: sum final_line_price of real items (excludes gifts + protection)
+      var realTotal = 0;
+      var hasRealItems = false;
+      cart.items.forEach(function(i) {
+        if (CCD._isExcludedHandle(i.handle)) return;
+        hasRealItems = true;
+        realTotal += (i.final_line_price != null ? i.final_line_price : (i.price * i.quantity));
+      });
+      // Protection total (add back — customer sees this as part of checkout)
+      var protTotal = 0;
+      cart.items.forEach(function(i) {
+        if (i.handle === PROT) protTotal += (i.final_line_price != null ? i.final_line_price : (i.price * i.quantity));
+      });
+      var total = realTotal + protTotal;
+      // Safety: never show $0 when real items exist
+      if (total <= 0 && hasRealItems) {
+        console.warn("[CCD] getAdjustedTotal fallback — realTotal=" + realTotal + " protTotal=" + protTotal + " cart.total_price=" + cart.total_price + " items=" + cart.items.length);
+        cart.items.forEach(function(i) { console.warn("[CCD]   item: handle=" + i.handle + " price=" + i.price + " qty=" + i.quantity + " final_line_price=" + i.final_line_price + " excluded=" + CCD._isExcludedHandle(i.handle)); });
+        // Fallback to cart.total_price minus gift item costs
+        var giftCost = CCD.getGiftSavings(cart);
+        total = (cart.total_price || 0) - giftCost;
+        if (total < 0) total = 0;
+        // Last resort: use raw cart.total_price
+        if (total <= 0 && cart.total_price > 0) total = cart.total_price;
       }
-      return total < 0 ? 0 : (isNaN(total) ? 0 : total);
+      return isNaN(total) ? 0 : total;
     },
 
     bindEvents: function() {
@@ -958,13 +1176,18 @@
         }
       });
 
-      // Checkout button — validate gift eligibility, then redirect
+      // Checkout button — show spinner INSTANTLY, then validate + redirect
       document.addEventListener('click', function(e) {
         var checkoutBtn = e.target.closest('.ccd-checkout-btn');
         if (checkoutBtn && !checkoutBtn.classList.contains('ccd-checkout-btn--loading')) {
           checkoutBtn.classList.add('ccd-checkout-btn--loading');
           e.preventDefault();
           e.stopPropagation();
+
+          // BUG-022 FIX: Force browser repaint so spinner renders BEFORE any redirect/async work
+          // Without this, the browser batches the class add + location change and never paints the spinner
+          void checkoutBtn.offsetHeight;
+          requestAnimationFrame(function() {
 
           // GUARD: Remove unearned gift items before checkout
           var lastCart = CCD._lastCart;
@@ -1014,6 +1237,8 @@
             }
           }
           window.location.href = '/checkout';
+
+          }); // end requestAnimationFrame
         }
       });
 
@@ -1047,22 +1272,14 @@
           e.stopImmediatePropagation();
           var item = removeBtn.closest('.ccd-item');
           if (item && !busy) {
+            // Dim item immediately (no collapse) — morphDOM handles removal
             item.classList.add('ccd-item--removing');
-
-            var _h = item.offsetHeight;
-            item.style.maxHeight = _h + 'px';
-            item.style.overflow = 'hidden';
-            item.offsetHeight;
-            item.style.transition = 'max-height 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.12s ease, padding 0.22s cubic-bezier(0.4, 0, 0.2, 1), margin 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-width 0.22s ease';
-            item.style.opacity = '0';
-            item.style.maxHeight = '0';
-            item.style.paddingTop = '0';
-            item.style.paddingBottom = '0';
-            item.style.marginTop = '0';
-            item.style.marginBottom = '0';
-            item.style.borderWidth = '0';
-            setTimeout(function() { if (item.parentNode) item.remove(); }, 240);
+            item.style.opacity = '0.3';
+            item.style.pointerEvents = 'none';
+            item.style.transition = 'opacity 0.15s ease';
           }
+          // Show loading overlay immediately
+          if (CCD._isOpen) CCD.showLoading();
           var rmKey = removeBtn.dataset.key;
           if (CCD._caseKey && rmKey === CCD._caseKey) {
             caseDismissed = true;
@@ -1088,18 +1305,11 @@
           var giftItem = giftRemoveBtn.closest('.ccd-gift-item');
           if (giftItem) {
             giftItem.classList.add('ccd-item--removing');
-            var gh = giftItem.offsetHeight;
-            giftItem.style.maxHeight = gh + 'px';
-            giftItem.style.overflow = 'hidden';
-            giftItem.offsetHeight;
-            giftItem.style.transition = 'max-height 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.1s ease, padding 0.15s cubic-bezier(0.4, 0, 0.2, 1), margin 0.15s cubic-bezier(0.4, 0, 0.2, 1)';
-            giftItem.style.opacity = '0';
-            giftItem.style.maxHeight = '0';
-            giftItem.style.paddingTop = '0';
-            giftItem.style.paddingBottom = '0';
-            giftItem.style.marginTop = '0';
-            giftItem.style.marginBottom = '0';
+            giftItem.style.opacity = '0.3';
+            giftItem.style.pointerEvents = 'none';
+            giftItem.style.transition = 'opacity 0.15s ease';
           }
+          if (CCD._isOpen) CCD.showLoading();
           var giftKey = giftRemoveBtn.dataset.key;
           if (giftKey) {
             fetch('/cart/change.js', {
@@ -1156,91 +1366,142 @@
         }
       }
       busy = true;
+      // Safety timeout: reset busy after 10s to prevent mobile stuck state
+      var _busyTimer = setTimeout(function() {
+        if (busy) {
+          console.warn('[CCD] changeQty: busy timeout after 10s — resetting');
+          busy = false;
+          window.__ccd_is_removing = false;
+          window.__ccd_block_rebuild = false;
+          CCD.hideLoading();
+          // Force refresh from server
+          var _oFT = CCD._origFetch || fetch;
+          _oFT('/cart.js').then(function(r) { return r.json(); }).then(function(c) { CCD.refresh(c); }).catch(function(){});
+        }
+      }, 10000);
       if (btnEl) btnEl.classList.add('ccd-qty__btn--loading');
       var item = btnEl ? btnEl.closest('.ccd-item') : null;
       if (item && qty === 0) item.classList.add('ccd-item--removing');
+      // Show loading for ALL operations — keeps drawer in loading state until fresh data arrives
+      if (CCD._isOpen && qty !== 0) CCD.showLoading();
 
-      fetch('/cart/change.js', {
+      // Use origFetch to avoid any interceptor interference
+      var _oFC = CCD._origFetch || fetch;
+      var _isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+      // Cache-bust on mobile to bypass service workers and browser cache
+      var _cacheBust = _isMobile ? '?_=' + Date.now() : '';
+      console.log('[CCD] changeQty: key=' + key + ' qty=' + qty + ' mobile=' + _isMobile);
+      _oFC('/cart/change.js' + _cacheBust, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: key, quantity: qty })
+        body: JSON.stringify({ id: key, quantity: qty }),
+        cache: 'no-store'
       })
       .then(function(r) { return r.json(); })
       .then(function(cart) {
-        window.__ccd_last_cart = cart;
-        busy = false;
-        if (btnEl) btnEl.classList.remove('ccd-qty__btn--loading');
-        // Execute queued operation if any
-        if (_pendingOp) {
-          var p = _pendingOp;
-          _pendingOp = null;
-          // Reset remove flags so the queued op gets a proper refresh path
-          window.__ccd_is_removing = false;
-          window.__ccd_block_rebuild = false;
-          // Start collapse animation for queued removes
-          if (p.qty === 0) {
-            var qItem = p.btnEl ? p.btnEl.closest('.ccd-item') : document.querySelector('.ccd-item[data-key="' + p.key + '"]');
-            if (qItem && !qItem.classList.contains('ccd-item--removing')) {
-              qItem.classList.add('ccd-item--removing');
-              var _qh = qItem.offsetHeight;
-              qItem.style.maxHeight = _qh + 'px';
-              qItem.style.overflow = 'hidden';
-              qItem.offsetHeight;
-              qItem.style.transition = 'max-height 0.22s cubic-bezier(0.4,0,0.2,1), opacity 0.12s ease, padding 0.22s cubic-bezier(0.4,0,0.2,1), margin 0.22s cubic-bezier(0.4,0,0.2,1), border-width 0.22s ease';
-              qItem.style.opacity = '0';
-              qItem.style.maxHeight = '0';
-              qItem.style.paddingTop = '0';
-              qItem.style.paddingBottom = '0';
-              qItem.style.marginTop = '0';
-              qItem.style.marginBottom = '0';
-              qItem.style.borderWidth = '0';
-              setTimeout(function() { if (qItem.parentNode) qItem.remove(); }, 240);
+        clearTimeout(_busyTimer);
+        console.log('[CCD] changeQty response: items=' + (cart.items ? cart.item_count : 'UNDEFINED') + ' total=' + cart.total_price);
+
+        // BUG FIX: If Shopify returned an error (no items array), the key was stale.
+        // Fetch fresh cart, find item by variant_id, retry with correct key.
+        if (!cart.items) {
+          console.warn('[CCD] changeQty got error response (stale key?) — fetching fresh cart to retry');
+          var _vid = String(key).split(':')[0];
+          _oFC('/cart.js' + (_isMobile ? '?_=' + Date.now() : ''), { cache: 'no-store' })
+          .then(function(r2) { return r2.json(); })
+          .then(function(freshCart) {
+            if (!freshCart.items) {
+              console.error('[CCD] Fresh cart also has no items — aborting');
+              busy = false; window.__ccd_is_removing = false; window.__ccd_block_rebuild = false;
+              CCD.hideLoading();
+              return;
+            }
+            var freshItem = null;
+            for (var fi = 0; fi < freshCart.items.length; fi++) {
+              if (String(freshCart.items[fi].variant_id) === _vid) { freshItem = freshCart.items[fi]; break; }
+            }
+            if (freshItem) {
+              console.log('[CCD] Retrying with fresh key: ' + freshItem.key + ' (was: ' + key + ')');
+              _oFC('/cart/change.js' + (_isMobile ? '?_=' + Date.now() : ''), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: freshItem.key, quantity: qty }),
+                cache: 'no-store'
+              })
+              .then(function(r3) { return r3.json(); })
+              .then(function(retryCart) {
+                console.log('[CCD] Retry success: items=' + (retryCart.items ? retryCart.item_count : 'ERR'));
+                var finalCart = retryCart.items ? retryCart : freshCart;
+                CCD._lastCart = finalCart; window.__ccd_last_cart = finalCart;
+                CCD._finishChangeQty(finalCart, freshItem.key, qty, btnEl, item);
+              })
+              .catch(function() {
+                CCD._lastCart = freshCart; window.__ccd_last_cart = freshCart;
+                CCD._finishChangeQty(freshCart, key, qty, btnEl, item);
+              });
+            } else {
+              // Item not found — already removed or doesn't exist
+              CCD._lastCart = freshCart; window.__ccd_last_cart = freshCart;
+              CCD._finishChangeQty(freshCart, key, qty, btnEl, item);
+            }
+          })
+          .catch(function() {
+            busy = false; window.__ccd_is_removing = false; window.__ccd_block_rebuild = false;
+            CCD.hideLoading();
+          });
+          return;
+        }
+
+        // REMOVE VERIFICATION: if we tried to remove (qty=0) but item still in cart, retry with line index
+        if (qty === 0) {
+          var stillThere = cart.items.some(function(ci) { return ci.key === key; });
+          if (stillThere) {
+            console.warn('[CCD] Remove FAILED silently — key=' + key + ' still in cart! Retrying with line index...');
+            var lineIdx = -1;
+            for (var li = 0; li < cart.items.length; li++) {
+              if (cart.items[li].key === key) { lineIdx = li + 1; break; }
+            }
+            if (lineIdx > 0) {
+              _oFC('/cart/change.js' + (_isMobile ? '?_=' + Date.now() : ''), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ line: lineIdx, quantity: 0 }),
+                cache: 'no-store'
+              })
+              .then(function(r2) { return r2.json(); })
+              .then(function(retryCart) {
+                console.log('[CCD] Retry remove by line=' + lineIdx + ': items=' + retryCart.item_count);
+                CCD._lastCart = retryCart;
+                window.__ccd_last_cart = retryCart;
+                CCD._finishChangeQty(retryCart, key, qty, btnEl, item);
+              })
+              .catch(function() {
+                CCD._lastCart = cart;
+                window.__ccd_last_cart = cart;
+                CCD._finishChangeQty(cart, key, qty, btnEl, item);
+              });
+              return;
             }
           }
-          CCD.changeQty(p.key, p.qty, p.btnEl);
-          return; // skip the rest — the queued changeQty will handle it
         }
-        var _isRemoving = window.__ccd_is_removing;
-        window.__ccd_is_removing = false;
-        if (_isRemoving) {
-          // Item removed — lightweight update (skip morphDOM to avoid flicker)
-          // Minimal update: only bubble + totals, zero DOM ops on items
-          CCD.updateCartBubble(cart);
-          var _ct = document.querySelector('.ccd-checkout-total');
-          if (_ct) _ct.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
-          var _st = document.querySelector('#CCD-Drawer [data-subtotal]');
-          if (_st) _st.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
-          // Update progress with real cart data
-          CCD.updateProgress(cart);
-
-          var _rc = CCD.getRealCount(cart);
-          if (_rc === 0) {
-            setTimeout(function() { window.__ccd_block_rebuild = false; CCD.refresh(cart); }, 50);
-          } else {
-            // After removing items, always do a full refresh from server.
-            // Shopify discount engine (Buy X Get Y) recalculates line items
-            // after removes — /cart/change.js can return stale allocations.
-            // Delayed /cart.js + full server HTML re-render ensures correct prices.
-            window.__ccd_block_rebuild = false;
-            var _rmGen = ++_refreshGen; // claim a generation for this refresh
-            setTimeout(function() {
-              var _oF = CCD._origFetch || fetch;
-              _oF("/cart.js").then(function(r) { return r.json(); }).then(function(freshCart) {
-                CCD.refresh(freshCart, _rmGen);
-              }).catch(function(err) {
-                console.warn("[CCD] post-remove /cart.js fetch failed:", err);
-              });
-            }, 150);
-          }
-        } else {
-          CCD.refresh(cart);
-        }
+        CCD._lastCart = cart;
+        window.__ccd_last_cart = cart;
+        CCD._finishChangeQty(cart, key, qty, btnEl, item);
       })
-      .catch(function() {
+      .catch(function(err) {
+        clearTimeout(_busyTimer);
+        console.error('[CCD] changeQty FAILED:', err, 'key=' + key, 'qty=' + qty);
         window.__ccd_block_rebuild = false;
+        window.__ccd_is_removing = false;
         busy = false;
         if (btnEl) btnEl.classList.remove('ccd-qty__btn--loading');
-        if (item) item.classList.remove('ccd-item--removing');
+        if (item) { item.classList.remove('ccd-item--removing'); item.style.opacity = ''; item.style.pointerEvents = ''; }
+        CCD.hideLoading();
+        // On error, force-refresh from Shopify to restore correct state (cache-bust on mobile)
+        var _oFE = CCD._origFetch || fetch;
+        _oFE('/cart.js' + (_isMobile ? '?_=' + Date.now() : ''), { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(c) {
+          CCD._lastCart = c; window.__ccd_last_cart = c; CCD.refresh(c);
+        }).catch(function(){});
         // Execute queued operation if any
         if (_pendingOp) {
           var p = _pendingOp;
@@ -1248,6 +1509,59 @@
           CCD.changeQty(p.key, p.qty, p.btnEl);
         }
       });
+    },
+
+    // Extracted post-change handler (used by changeQty and its remove-retry)
+    _finishChangeQty: function(cart, key, qty, btnEl, item) {
+      // Clear stale scarcity target after remove — will re-evaluate on next refresh
+      if (qty === 0) CCD._lastAddedVid = null;
+      if (btnEl) btnEl.classList.remove('ccd-qty__btn--loading');
+      // Execute queued operation if any
+      if (_pendingOp) {
+        var p = _pendingOp;
+        _pendingOp = null;
+        window.__ccd_is_removing = false;
+        window.__ccd_block_rebuild = false;
+        if (p.qty === 0) {
+          var qItem = p.btnEl ? p.btnEl.closest('.ccd-item') : document.querySelector('.ccd-item[data-key="' + p.key + '"]');
+          if (qItem && !qItem.classList.contains('ccd-item--removing')) {
+            qItem.classList.add('ccd-item--removing');
+            qItem.style.opacity = '0.3';
+            qItem.style.pointerEvents = 'none';
+            qItem.style.transition = 'opacity 0.15s ease';
+          }
+        }
+        CCD.changeQty(p.key, p.qty, p.btnEl);
+        return;
+      }
+      var _isRemoving = window.__ccd_is_removing;
+      window.__ccd_is_removing = false;
+      if (_isRemoving) {
+        if (CCD._isOpen) CCD.showLoading();
+        CCD.updateCartBubble(cart);
+        var _rc = CCD.getRealCount(cart);
+        if (_rc === 0) {
+          busy = false;
+          setTimeout(function() { window.__ccd_block_rebuild = false; CCD.refresh(cart); }, 50);
+        } else {
+          window.__ccd_block_rebuild = false;
+          var _rmGen = ++_refreshGen;
+          var _oF = CCD._origFetch || fetch;
+          var _mobCB = /Mobi|Android|iPhone/i.test(navigator.userAgent) ? '?_=' + Date.now() : '';
+          _oF("/cart.js" + _mobCB, { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(freshCart) {
+            console.log('[CCD] Fresh /cart.js after remove: items=' + freshCart.item_count + ' total=' + freshCart.total_price);
+            busy = false;
+            CCD.refresh(freshCart, _rmGen);
+          }).catch(function(err) {
+            busy = false;
+            console.warn("[CCD] post-remove /cart.js fetch failed:", err);
+            CCD.hideLoading();
+          });
+        }
+      } else {
+        busy = false;
+        CCD.refresh(cart);
+      }
     },
 
     toggleProtection: function(isChecked) {
@@ -1370,6 +1684,9 @@
         var vidInput = form.querySelector("input[name=id], select[name=id]");
         var formVid = vidInput ? String(vidInput.value) : null;
         if (!formVid) return;
+        // Track the variant being added via form submit (works even if theme bypasses fetch/XHR)
+        CCD._lastAddedVid = formVid;
+        console.log('[CCD] Form submit tracked vid:', formVid);
         if (formVid === sVid) {
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -1391,20 +1708,84 @@
         }
       }, true);
 
+      // UNIVERSAL FORM INTERCEPT: Catch ALL form POSTs to /cart/add
+      // Theme JS (e.g. Dawn's product-form.js) may cache window.fetch before our
+      // override is installed, so even when theme JS handles the submit via fetch,
+      // that fetch bypasses our override and the drawer never opens.
+      // Solution: ALWAYS intercept — prevent default + stop propagation so no theme
+      // handler runs, then route through our fetch override (which opens the drawer).
+      var _formAddBusy = false;
+      document.addEventListener("submit", function(e) {
+        var form = e.target;
+        if (!form || !form.action || form.action.indexOf("/cart/add") === -1) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        // Debounce: prevent double-click adding multiple items
+        if (_formAddBusy) return;
+        _formAddBusy = true;
+        // Show loading on ATC button — drawer opens AFTER item is in cart (no empty flash)
+        var submitBtn = form.querySelector('[type="submit"], button:not([type="button"])');
+        var _origBtnText = '';
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.style.pointerEvents = 'none';
+          _origBtnText = submitBtn.textContent;
+          submitBtn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px"><svg width="16" height="16" viewBox="0 0 24 24" style="animation:ccd-spin .6s linear infinite"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31 31" stroke-linecap="round"/></svg> Adding...</span>';
+        }
+        // Extract form data and POST via fetch (goes through our fetch override
+        // which handles scarcity, protection auto-add, drawer open, etc.)
+        var formData = new FormData(form);
+        var body = {};
+        formData.forEach(function(v, k) { body[k] = v; });
+        console.log('[CCD] Form intercept: routing /cart/add through fetch override', body.id);
+        // Do NOT open drawer here — let the fetch response handler open it
+        // AFTER the item is in the cart (prevents empty-cart flash)
+        fetch('/cart/add.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }).then(function() {
+          _formAddBusy = false;
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.style.pointerEvents = ''; submitBtn.textContent = _origBtnText; }
+        }).catch(function(err) {
+          _formAddBusy = false;
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.style.pointerEvents = ''; submitBtn.textContent = _origBtnText; }
+          console.error('[CCD] Form intercept add failed:', err);
+        });
+      }, true);
+
       var origFetch = window.fetch;
       CCD._origFetch = origFetch;
       window.fetch = function(url, opts) {
         if (typeof url === 'string' && url.indexOf('/cart/add') !== -1 && opts && opts.method && opts.method.toUpperCase() === 'POST') {
+          // Track the variant being added — used by applyScarcity to badge the LAST ADDED item
+          try {
+            var _addBody = typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body;
+            if (_addBody && _addBody.items && _addBody.items.length > 0) {
+              CCD._lastAddedVid = String(_addBody.items[0].id);
+            } else if (_addBody && _addBody.id) {
+              CCD._lastAddedVid = String(_addBody.id);
+            }
+            console.log('[CCD] Tracked last added vid:', CCD._lastAddedVid);
+          } catch(_ae) {}
           try {
             var body = JSON.parse(opts.body);
+            var cartAlreadyHasProt = window.__ccd_last_cart && window.__ccd_last_cart.items && window.__ccd_last_cart.items.some(function(ci) { return ci.handle === PROT; });
+            var _shouldInject = !cartAlreadyHasProt && !protectionDone && !_userToggledOff && PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
             if (body && body.items && Array.isArray(body.items)) {
               var hasProt = body.items.some(function(it) { return PROT_TIERS.some(function(t){return t.vid === it.id || String(t.vid) === String(it.id);}); });
-              var cartAlreadyHasProt = window.__ccd_last_cart && window.__ccd_last_cart.items && window.__ccd_last_cart.items.some(function(ci) { return ci.handle === PROT; });
-              if (!hasProt && !cartAlreadyHasProt && !protectionDone && !_userToggledOff && PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false) {
+              if (!hasProt && _shouldInject) {
                 body.items.push({ id: (getProtTier(0) || {vid:PROT_VID}).vid, quantity: 1 });
                 opts.body = JSON.stringify(body);
                 protectionDone = true;
               }
+            } else if (body && body.id && _shouldInject) {
+              // Simple {id, quantity} format (from form interceptor) — convert to items array with protection
+              var _simpleItem = { id: parseInt(body.id) || body.id, quantity: parseInt(body.quantity) || 1 };
+              if (body.properties) _simpleItem.properties = body.properties;
+              var _items = [_simpleItem, { id: (getProtTier(0) || {vid:PROT_VID}).vid, quantity: 1 }];
+              opts.body = JSON.stringify({ items: _items });
+              protectionDone = true;
             }
           } catch(ex) {
             // Body is form-encoded — convert to JSON and inject protection into same request
@@ -1413,6 +1794,7 @@
               try {
                 var formParams = new URLSearchParams(opts.body);
                 var formId = formParams.get('id');
+                if (formId) CCD._lastAddedVid = String(formId);
                 var formQty = parseInt(formParams.get('quantity')) || 1;
                 if (formId) {
                   var items = [{ id: parseInt(formId) || formId, quantity: formQty }];
@@ -1517,6 +1899,8 @@
             }
           } catch(_giftFormEx) {}
 
+          // BUG-3: Show loading overlay during add operation
+          if (CCD._isOpen) CCD.showLoading();
           // Hide empty-state immediately so theme can't flash it during add
           var _es = document.querySelector('#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty');
           if (_es) _es.classList.remove('ccd-show');
@@ -1531,6 +1915,40 @@
                   // After add completes: if protection missing and should be on, add it now
                   var _hasProt = cart.items.some(function(i) { return i.handle === PROT; });
                   var _shouldAdd = PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
+                  // BUG-020 FIX: Open drawer ONLY after ALL async ops complete + render immediately (no debounce)
+                  // This prevents: (1) empty drawer flash, (2) price-without-protection flash
+                  function _renderAndOpen(finalCart) {
+                    CCD._lastCart = finalCart;
+                    CCD._lastRealCount = CCD.getRealCount(finalCart);
+                    // Load experiment config (from cache — instant) so milestones/features render
+                    CCD.loadExperiment(function(config) {
+                      if (config) {
+                        CCD.applyExperimentFeatures(config);
+                        if (config.cartConfig && config.cartConfig.addons) {
+                          var sp = config.cartConfig.addons.shippingProtection;
+                          if (sp && sp.config) {
+                            if ('defaultOn' in sp.config) CFG.protectionDefaultOn = sp.config.defaultOn;
+                            if ('price' in sp.config) CFG.protectionPrice = sp.config.price;
+                          }
+                          CCD._mergeTiersFromConfig(config);
+                        }
+                        if (config.cartConfig && config.cartConfig.desktopWidth) {
+                          var dw = parseInt(config.cartConfig.desktopWidth);
+                          if (dw > 0 && !isNaN(dw)) document.documentElement.style.setProperty('--ccd-desktop-width', dw + 'px');
+                        }
+                        if (config.cartConfig && config.cartConfig.mobileWidth) {
+                          var mw = parseInt(config.cartConfig.mobileWidth);
+                          if (mw >= 70 && mw <= 100 && !isNaN(mw)) document.documentElement.style.setProperty('--ccd-mobile-width', mw + '%');
+                        }
+                      }
+                      // Cancel any pending debounced refresh — render cart IMMEDIATELY before showing drawer
+                      if (CCD._refreshTimer) { clearTimeout(CCD._refreshTimer); CCD._refreshTimer = null; }
+                      CCD._pendingCart = null;
+                      CCD._doRefresh(finalCart);
+                      CCD._skipRefreshOnOpen = true;
+                      CCD.openDrawer();
+                    });
+                  }
                   if (!_hasProt && !_userToggledOff && _shouldAdd && !protectionDone && CCD.getRealCount(cart) > 0) {
                     protectionDone = true;
                     CCD.setToggleNoTransition(true);
@@ -1542,8 +1960,8 @@
                       body: JSON.stringify({ updates: _updObj })
                     })
                     .then(function(r2) { return r2.json(); })
-                    .then(function(fullCart) { CCD.refresh(fullCart, _interceptGen); })
-                    .catch(function() { CCD.refresh(cart, _interceptGen); });
+                    .then(function(fullCart) { _renderAndOpen(fullCart); })
+                    .catch(function() { _renderAndOpen(cart); });
                   } else {
                     if (_hasProt) CCD.setToggleNoTransition(true);
                     var _protQtyItem = cart.items.find(function(i) { return i.handle === PROT; });
@@ -1556,18 +1974,33 @@
                         body: JSON.stringify({ updates: _fixObj })
                       })
                       .then(function(r3) { return r3.json(); })
-                      .then(function(fixedCart) { CCD.refresh(fixedCart, _interceptGen); })
-                      .catch(function() { CCD.refresh(cart, _interceptGen); });
+                      .then(function(fixedCart) { _renderAndOpen(fixedCart); })
+                      .catch(function() { _renderAndOpen(cart); });
                     } else {
-                      CCD.refresh(cart, _interceptGen);
+                      _renderAndOpen(cart);
                     }
                   }
-                  CCD.openDrawer();
                 });
               });
             }).catch(function(){});
             return resp;
           });
+        }
+        // SECTION-RENDERING INTERCEPTION: Strip cart-drawer sections from /cart/add responses
+        // Dawn/OS2 themes pass 'sections' param to /cart/add.js — the response includes
+        // rendered HTML that theme's product-form.js uses to update the cart drawer.
+        // We strip it so the theme has nothing to render, preventing flash.
+        if (typeof url === 'string' && url.indexOf('/cart/add') !== -1 && opts && opts.body) {
+          try {
+            var _secBody = typeof opts.body === 'string' ? opts.body : '';
+            if (_secBody.indexOf('sections') !== -1) {
+              var _secParsed = JSON.parse(_secBody);
+              if (_secParsed.sections) {
+                delete _secParsed.sections;
+                opts = Object.assign({}, opts, { body: JSON.stringify(_secParsed) });
+              }
+            }
+          } catch(_secEx) {}
         }
         return origFetch.apply(this, arguments);
       };
@@ -1582,6 +2015,14 @@
       };
       XMLHttpRequest.prototype.send = function(body) {
         if (this._ccdUrl && this._ccdUrl.indexOf && this._ccdUrl.indexOf('/cart/add') !== -1 && this._ccdMethod && this._ccdMethod.toUpperCase() === 'POST') {
+          // Track last added vid for scarcity badge
+          try {
+            var _xab = typeof body === 'string' ? JSON.parse(body) : body;
+            if (_xab && _xab.items && _xab.items[0]) CCD._lastAddedVid = String(_xab.items[0].id);
+            else if (_xab && _xab.id) CCD._lastAddedVid = String(_xab.id);
+          } catch(_xat) {
+            try { var _xfp = new URLSearchParams(body); if (_xfp.get('id')) CCD._lastAddedVid = String(_xfp.get('id')); } catch(_xft) {}
+          }
           // GUARD: Block external adds of gift variants via XHR
           try {
             var _xhrBody = typeof body === 'string' ? body : '';
@@ -1851,7 +2292,15 @@
             return r.json().then(function(err) {
               console.error('[CCD GIFT] add failed id=' + item.id + ':', JSON.stringify(err));
               var h = Object.keys(shouldHave).find(function(k) { return shouldHave[k] == item.id; });
-              if (h) _giftAddFails[h] = (_giftAddFails[h] || 0) + 1;
+              if (h) {
+                // Permanent skip for variants that don't exist — retrying won't help
+                if (err && err.description && err.description.indexOf('Cannot find variant') !== -1) {
+                  _giftAddFails[h] = 999;
+                  console.warn('[CCD GIFT] Variant ' + item.id + ' does not exist — permanently skipped');
+                } else {
+                  _giftAddFails[h] = (_giftAddFails[h] || 0) + 1;
+                }
+              }
             });
           }
           console.log('[CCD GIFT] added id=' + item.id);
@@ -1946,35 +2395,14 @@
         var found = newList.some(function(n) { return n.key === k; });
         if (!found) {
           var el = existMap[k];
-            if (el.classList.contains('ccd-item--removing')) { return; } // already collapsing — let CSS animation finish
-          el.classList.add('ccd-item--removing');
-          var h = el.offsetHeight;
-          el.style.maxHeight = h + 'px';
-          el.style.overflow = 'hidden';
-          el.offsetHeight; /* force reflow */
-          el.style.transition = 'max-height 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.1s ease, padding 0.15s cubic-bezier(0.4, 0, 0.2, 1), margin 0.15s cubic-bezier(0.4, 0, 0.2, 1), border-width 0.15s ease';
-          el.style.opacity = '0';
-          el.style.maxHeight = '0';
-          el.style.paddingTop = '0';
-          el.style.paddingBottom = '0';
-          el.style.marginTop = '0';
-          el.style.marginBottom = '0';
-          el.style.borderWidth = '0';
-          setTimeout(function() { el.remove(); }, 180);
+          // Item not in new cart — remove it from DOM immediately
+          // (it's already dimmed at 0.3 opacity from the click handler)
+          el.remove();
         }
       });
 
       var giftEl = existing.querySelector('.ccd-gift-item');
-      // Smooth reflow: only when items are being removed
-      var hasRemovals = Object.keys(existMap).some(function(k) { return !newList.some(function(n) { return n.key === k; }); });
-      if (hasRemovals) Object.keys(existMap).forEach(function(k) {
-        var rl = existMap[k];
-        if (!rl.classList.contains('ccd-item--removing')) {
-          rl.style.transition = 'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)';
-          var cl = function() { rl.style.transition = ''; rl.removeEventListener('transitionend', cl); };
-          rl.addEventListener('transitionend', cl);
-        }
-      });
+      // Items removed instantly — remaining items reflow naturally
 
       newList.forEach(function(n) {
         if (existMap[n.key]) {
@@ -1982,9 +2410,6 @@
           var exInp = ex.querySelector('.ccd-qty__input');
           var nInp = n.el.querySelector('.ccd-qty__input');
           if (exInp && nInp && exInp.value !== nInp.value) {
-            exInp.value = nInp.value;
-
-          } else if (exInp && nInp && exInp.value !== nInp.value) {
             exInp.value = nInp.value;
           }
           var exPrice = ex.querySelector('.ccd-item__price');
@@ -2006,6 +2431,8 @@
           if (nBdg && !exBdg && exPC) { exPC.appendChild(nBdg); }
           else if (!nBdg && exBdg) { exBdg.remove(); }
           else if (exBdg && nBdg && exBdg.innerHTML !== nBdg.innerHTML) { exBdg.innerHTML = nBdg.innerHTML; }
+          // BUG-023 FIX: track which DOM element to use for reordering
+          n._domEl = ex;
         } else {
           // Animate new item: smooth expand + fade in + scroll into view
           n.el.style.maxHeight = '0';
@@ -2018,6 +2445,7 @@
           if (giftEl) { existing.insertBefore(n.el, giftEl); }
           else { existing.appendChild(n.el); }
           n.el.classList.add('ccd-item--adding');
+          n._domEl = n.el; // new items use the newly inserted element
           // Two-frame rAF: ensures browser has painted the collapsed state
           requestAnimationFrame(function() {
             var naturalHeight = n.el.scrollHeight;
@@ -2049,6 +2477,17 @@
           });
         }
       });
+
+      // BUG-023 FIX: Reorder DOM children to match Shopify's cart.items order
+      // Without this, existing items stay in their old DOM position when Shopify
+      // returns them in a different order (e.g., after gift add/remove refreshes cart)
+      var _giftRef = existing.querySelector('.ccd-gift-item');
+      for (var _ri = 0; _ri < newList.length; _ri++) {
+        var _el = newList[_ri]._domEl;
+        if (!_el || !_el.parentNode) continue;
+        if (_giftRef) { existing.insertBefore(_el, _giftRef); }
+        else { existing.appendChild(_el); }
+      }
 
       var exGift = existing.querySelector('.ccd-gift-item');
       var nGift = newCartItems.querySelector('.ccd-gift-item');
@@ -2122,19 +2561,39 @@
           if (priceCol) priceCol.appendChild(badge);
         }
 
-        // 4. Set price to "Free" with compare price
+        // 4. Set price to "Free" with compare price from tier config
         var priceEl = giftEl.querySelector('.ccd-item__price');
         if (priceEl) {
           priceEl.textContent = 'Free';
           priceEl.classList.add('ccd-item__price--free');
         }
-        var origPrice = giftCartItem.original_price || giftCartItem.price || 0;
+        // Gift products are $0 duplicates, so cart price is 0.
+        // Look up the ORIGINAL price from tier config (gift.price stored as string like "49.99")
+        var origPrice = 0;
+        var _gHandle = giftCartItem.handle;
+        for (var _ti = 0; _ti < REWARD_TIERS.length && origPrice === 0; _ti++) {
+          var _tGifts = tierGifts(REWARD_TIERS[_ti]);
+          for (var _gi = 0; _gi < _tGifts.length; _gi++) {
+            if (_tGifts[_gi].handle === _gHandle && _tGifts[_gi].price) {
+              origPrice = parseFloat(_tGifts[_gi].price) * 100; // convert dollars to cents for fmt()
+              break;
+            }
+          }
+        }
+        // Fallback: check giftMappings for original product price via compare_at_price from cart
+        if (origPrice === 0) origPrice = giftCartItem.original_price || giftCartItem.compare_at_price || giftCartItem.price || 0;
+        console.log('[CCD GIFT] comparePrice: handle=' + _gHandle + ' origPrice=' + origPrice + ' REWARD_TIERS=' + REWARD_TIERS.length + ' SHOW=' + GIFT_SHOW_COMPARE_PRICE);
         var priceRow = giftEl.querySelector('.ccd-item__price-row') || (priceEl ? priceEl.parentElement : null);
-        if (GIFT_SHOW_COMPARE_PRICE && priceRow && !priceRow.querySelector('.ccd-item__compare-price') && origPrice > 0) {
-          var cp = document.createElement('span');
-          cp.className = 'ccd-item__compare-price';
-          cp.textContent = CCD.fmt(origPrice);
-          priceRow.insertBefore(cp, priceRow.firstChild);
+        if (GIFT_SHOW_COMPARE_PRICE && priceRow && origPrice > 0) {
+          var existingCompare = priceRow.querySelector('.ccd-item__compare-price');
+          if (existingCompare) {
+            existingCompare.textContent = CCD.fmt(origPrice);
+          } else {
+            var cp = document.createElement('span');
+            cp.className = 'ccd-item__compare-price';
+            cp.textContent = CCD.fmt(origPrice);
+            priceRow.insertBefore(cp, priceRow.firstChild);
+          }
         }
 
         // 5. Hide discount labels on gift item (Shopify theme renders these from line_level_discount_allocations)
@@ -2148,14 +2607,69 @@
         giftEl.setAttribute('data-gift', '1');
       });
     },
-    // Lightweight refresh: update totals, progress, empty state — NO morphDOM
+    // ── BUG-3 FIX: Loading overlay helpers ──
+    _loadingOverlay: null,
+    showLoading: function() {
+      var d = document.getElementById('CCD-Drawer');
+      if (!d) return;
+      d.classList.add('ccd-refreshing');
+      var scrollable = d.querySelector('.ccd-scrollable');
+      if (!scrollable) return;
+      var ov = scrollable.querySelector('.ccd-loading-overlay');
+      if (!ov) {
+        ov = document.createElement('div');
+        ov.className = 'ccd-loading-overlay';
+        scrollable.style.position = 'relative';
+        scrollable.appendChild(ov);
+      }
+      if (!ov.querySelector('.ccd-spinner')) {
+        var sp = document.createElement('div');
+        sp.className = 'ccd-spinner';
+        ov.appendChild(sp);
+      }
+      CCD._loadingOverlay = ov;
+      var items = d.querySelector('[data-products]');
+      if (items) { items.classList.add('ccd-items-crossfade'); items.classList.add('ccd-items-crossfade--out'); }
+      // Disable checkout button during loading to prevent $0 / stale-cart checkout
+      var _chkBtn = d.querySelector('.ccd-checkout-btn');
+      if (_chkBtn) _chkBtn.classList.add('ccd-checkout-btn--loading');
+      requestAnimationFrame(function() { ov.classList.add('ccd-loading-overlay--visible'); });
+      // Safety: auto-hide loading after 5s in case refresh never completes
+      if (CCD._loadingSafety) clearTimeout(CCD._loadingSafety);
+      CCD._loadingSafety = setTimeout(function() {
+        CCD._loadingSafety = null;
+        CCD.hideLoading();
+        console.warn('[CCD] Safety timeout: loading auto-hidden after 5s');
+      }, 5000);
+    },
+    hideLoading: function() {
+      if (CCD._loadingSafety) { clearTimeout(CCD._loadingSafety); CCD._loadingSafety = null; }
+      var d = document.getElementById('CCD-Drawer');
+      if (!d) return;
+      d.classList.remove('ccd-refreshing');
+      var ov = CCD._loadingOverlay || (d.querySelector && d.querySelector('.ccd-loading-overlay'));
+      if (ov) { ov.classList.remove('ccd-loading-overlay--visible'); }
+      // Re-enable checkout button after loading completes
+      var _chkBtn2 = d.querySelector('.ccd-checkout-btn');
+      if (_chkBtn2) _chkBtn2.classList.remove('ccd-checkout-btn--loading');
+      var items = d.querySelector('[data-products]');
+      if (items) { items.classList.remove('ccd-items-crossfade--out'); }
+    },
+
+        // Lightweight refresh: update totals, progress, empty state — NO morphDOM
     refreshLight: function(cart) {
       CCD.updateCartBubble(cart);
       CCD.enforceGiftItem(cart);
+      var _adjTotal = CCD.getAdjustedTotal(cart);
+      // Safety: if calculated total is $0 but cart has value, use cart.total_price
+      if (_adjTotal <= 0 && cart.total_price > 0 && CCD.getRealCount(cart) > 0) {
+        _adjTotal = cart.total_price;
+        console.warn('[CCD] Total was $0 but cart.total_price=' + cart.total_price + ' — using fallback');
+      }
       var ct = document.querySelector('.ccd-checkout-total');
-      if (ct) ct.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
+      if (ct) ct.textContent = CCD.fmt(_adjTotal);
       var st = document.querySelector('#CCD-Drawer [data-subtotal]');
-      if (st) st.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
+      if (st) st.textContent = CCD.fmt(_adjTotal);
       CCD.rebuildDiscountRow(cart);
       var protItem = cart.items.find(function(i) { return i.handle === PROT; });
       CCD._protKey = protItem ? protItem.key : null;
@@ -2164,16 +2678,21 @@
         _oFP('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: protItem.key, quantity: 1 }) });
       }
       // Silent tier swap in refreshLight
+      // Total is already updated above — safe to return early
       if (protItem && PROT_TIERS.length > 1) {
         var cartValExProtL = CCD.getAdjustedTotal(cart);
         var correctTierL = getProtTier(cartValExProtL);
         if (correctTierL && protItem.variant_id !== correctTierL.vid) {
+          CCD.hideLoading(); // Prevent stuck loading during tier swap
+          CCD._lastCart = cart;
+          window.__ccd_last_cart = cart;
           var _oSwapL = CCD._origFetch || fetch;
           _oSwapL('/cart/change.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: protItem.key, quantity: 0 }) })
           .then(function() { return _oSwapL('/cart/add.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: [{ id: correctTierL.vid, quantity: 1 }] }) }); })
           .then(function() { return _oSwapL('/cart.js'); })
           .then(function(r) { return r.json(); })
-          .then(function(swappedCart) { CCD.refreshLight(swappedCart); });
+          .then(function(swappedCart) { CCD.refreshLight(swappedCart); })
+          .catch(function() { CCD.hideLoading(); });
           return;
         }
       }
@@ -2198,6 +2717,8 @@
       CCD.updateProgress(cart);
       CCD.applyScarcity(cart);
       CCD.lockScarcityQty();
+      // BUG-3: Ensure loading overlay is hidden after full refresh
+      CCD.hideLoading();
       var rc = CCD.getRealCount(cart); CCD._lastRealCount = rc;
       var es = document.querySelector('#CCD-Drawer .ccd-cart-empty, #CCD-Drawer .ccd-empty');
       var id = document.querySelector('#CCD-Drawer [data-ccd-inner]');
@@ -2215,41 +2736,117 @@
         if (ft) ft.style.display = 'none';
       } else {
         if (es) es.classList.remove('ccd-show');
-        if (id) id.style.display = '';
-        if (pb) pb.style.display = '';
-        if (ft) ft.style.display = '';
+        if (id) id.style.display = 'flex';
+        if (pb) pb.style.display = 'block';
+        if (ft) ft.style.display = 'block';
       }
+      // BUG-3: Ensure loading overlay hidden after refreshLight
+      CCD.hideLoading();
+      // Delay overflow check until browser has completed layout paint
+      requestAnimationFrame(function() { CCD.checkOverflow(); });
     },
+    // Debounced refresh entry point: coalesces rapid calls into one render
+    _refreshTimer: null,
+    _pendingCart: null,
     refresh: function(cart, _gen) {
-      // Generation guard: if a newer refresh was requested, skip this stale one
-      if (_gen !== undefined && _gen < _refreshGen) {
-        console.log("[CCD] refresh() skipped — stale gen " + _gen + " < " + _refreshGen);
-        return;
+      // Store the latest cart data — if multiple refreshes fire rapidly,
+      // we always render the LATEST cart, not an intermediate state
+      if (cart) CCD._pendingCart = cart;
+      var finalCart = CCD._pendingCart || cart;
+      if (!finalCart) return;
+      // Debounce: cancel any pending refresh, schedule a new one in 50ms
+      // This coalesces double/triple refreshes (e.g., remove + gift change + protection)
+      // into a single visual update
+      if (CCD._refreshTimer) clearTimeout(CCD._refreshTimer);
+      CCD._refreshTimer = setTimeout(function() {
+        CCD._refreshTimer = null;
+        CCD._doRefresh(CCD._pendingCart);
+      }, 50);
+    },
+    _doRefresh: function(cart) {
+      if (!cart) return;
+      CCD._pendingCart = null;
+      console.log("[CCD] _doRefresh() called — single render");
+
+      // CART-DIFF DETECTION: detect newly added items by comparing old vs new cart
+      // This works regardless of HOW items are added (fetch, XHR, form submit, Ajax.js, theme JS)
+      if (CCD._lastCart && CCD._lastCart.items && cart.items && cart.items.length > 0) {
+        var _oldQtyMap = {};
+        for (var _di = 0; _di < CCD._lastCart.items.length; _di++) {
+          var _ov = String(CCD._lastCart.items[_di].variant_id);
+          _oldQtyMap[_ov] = (_oldQtyMap[_ov] || 0) + CCD._lastCart.items[_di].quantity;
+        }
+        // Shopify returns newest items FIRST — scan from start to find new/increased items
+        for (var _dj = 0; _dj < cart.items.length; _dj++) {
+          var _nv = String(cart.items[_dj].variant_id);
+          var _oldQ = _oldQtyMap[_nv] || 0;
+          if (cart.items[_dj].quantity > _oldQ) {
+            CCD._lastAddedVid = _nv;
+            console.log('[CCD] Cart-diff detected new item: vid=' + _nv + ' (old qty=' + _oldQ + ', new qty=' + cart.items[_dj].quantity + ')');
+            break;
+          }
+        }
+      } else if (!CCD._lastCart && cart.items && cart.items.length > 0) {
+        // First cart load — badge the first item (newest, since Shopify orders newest first)
+        CCD._lastAddedVid = String(cart.items[0].variant_id);
       }
-      console.log("[CCD] refresh() called gen=" + (_gen || 'direct'));
+
       CCD.updateCartBubble(cart);
 
       // Pre-set toggle to ON before morphDOM can flash it off
       var shouldDefaultOn = CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
-      if (shouldDefaultOn && CCD.getRealCount(cart) > 0) {
+      if (shouldDefaultOn && CCD.getRealCount(cart) > 0 && !_userToggledOff) {
         CCD.setToggleNoTransition(true);
       }
 
       // Theme-independent: render items from cart JSON (no /cart?view=ajax)
+      // BUG-3 FIX: Build new DOM, then crossfade transition (no visible flash)
       var pc = document.querySelector("#CCD-Drawer [data-products]");
       if (pc) {
         var ni = CCD.renderCartItems(cart);
         if (ni) {
-          CCD.morphDOM(pc, ni);
+          // If items already showing, crossfade: dim → morph → brighten
+          if (pc.children.length > 0 && CCD._isOpen) {
+            pc.classList.add('ccd-items-crossfade');
+            CCD.morphDOM(pc, ni);
+            // Remove dim after morph (hideLoading handles full fade-in)
+            requestAnimationFrame(function() {
+              pc.classList.remove('ccd-items-crossfade--out');
+              CCD.hideLoading();
+            });
+          } else {
+            CCD.morphDOM(pc, ni);
+            CCD.hideLoading();
+          }
         }
       }
 
       CCD.enforceGiftItem(cart);
 
+      var _adjTotal = CCD.getAdjustedTotal(cart);
+      // Safety: if calculated total is $0 but cart has value, use cart.total_price
+      if (_adjTotal <= 0 && cart.total_price > 0 && CCD.getRealCount(cart) > 0) {
+        _adjTotal = cart.total_price;
+        console.warn('[CCD] Total was $0 but cart.total_price=' + cart.total_price + ' — using fallback');
+      }
       var ct = document.querySelector('.ccd-checkout-total');
-      if (ct) ct.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
       var st = document.querySelector('#CCD-Drawer [data-subtotal]');
-      if (st) st.textContent = CCD.fmt(CCD.getAdjustedTotal(cart));
+      // Checkout loading animation: if price changed, briefly show spinner then reveal new price
+      var checkoutBtn = document.querySelector('.ccd-checkout-btn');
+      var oldTotal = ct ? ct.textContent : '';
+      var newTotal = CCD.fmt(_adjTotal);
+      if (checkoutBtn && oldTotal && newTotal !== oldTotal) {
+        checkoutBtn.classList.add('ccd-checkout-btn--loading');
+        if (ct) ct.style.opacity = '0';
+        setTimeout(function() {
+          if (ct) { ct.textContent = newTotal; ct.style.opacity = '1'; }
+          if (st) st.textContent = newTotal;
+          checkoutBtn.classList.remove('ccd-checkout-btn--loading');
+        }, 400);
+      } else {
+        if (ct) ct.textContent = newTotal;
+        if (st) st.textContent = newTotal;
+      }
 
       CCD.rebuildDiscountRow(cart);
 
@@ -2260,16 +2857,21 @@
         _oFP('/cart/change.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: protItem.key, quantity: 1 }) });
       }
       // Silent tier swap — if cart value changed, swap to correct tier
+      // Total + loading are already updated above — safe to return early
       if (protItem && PROT_TIERS.length > 1) {
         var cartValExProt = CCD.getAdjustedTotal(cart);
         var correctTier = getProtTier(cartValExProt);
         if (correctTier && protItem.variant_id !== correctTier.vid) {
+          CCD.hideLoading(); // Prevent stuck loading during tier swap
+          CCD._lastCart = cart;
+          window.__ccd_last_cart = cart;
           var _oSwap = CCD._origFetch || fetch;
           _oSwap('/cart/change.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: protItem.key, quantity: 0 }) })
           .then(function() { return _oSwap('/cart/add.js', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: [{ id: correctTier.vid, quantity: 1 }] }) }); })
           .then(function() { return _oSwap('/cart.js'); })
           .then(function(r) { return r.json(); })
-          .then(function(swappedCart) { ++_refreshGen; CCD.refresh(swappedCart); });
+          .then(function(swappedCart) { ++_refreshGen; CCD.refresh(swappedCart); })
+          .catch(function() { CCD.hideLoading(); });
           return; // Skip rest of refresh — will re-enter with correct cart
         }
       }
@@ -2282,6 +2884,7 @@
           _priceEl.setAttribute('data-prot-price', _tierNow.price);
         }
       }
+      CCD._lastCart = cart;
       window.__ccd_last_cart = cart;
 
       // If defaultOn and protection is being auto-added, keep toggle ON to avoid flash
@@ -2328,6 +2931,7 @@
         if (pb) pb.style.display = 'none';
         if (ft) ft.style.display = 'none';
         protectionDone = false;
+        CCD.hideLoading();
       } else {
         if (es) es.classList.remove('ccd-show');
         if (id) id.style.display = 'flex';
@@ -2336,7 +2940,8 @@
       }
 
       CCD.checkWatchCase(cart);
-      CCD.checkOverflow();
+      // Delay overflow check until browser has completed layout paint
+      requestAnimationFrame(function() { CCD.checkOverflow(); CCD.setupScrollIndicator(); });
     },
 
     getScarcitySvg: function() {
@@ -2373,35 +2978,35 @@
         }
         else {
           // Numeric target: activate scarcity when N+ unique variants exist
-          // Pick the variant with LOWEST total qty (the one just added)
+          // Badge goes on the LAST item in the cart (most recently added — Shopify orders by add time)
           var tNum = parseInt(target) || 1;
-          var qtyByVid = {};
-          var firstIdx = {};
+          var seenVids = {};
+          var uniqueCount = 0;
           for (var i = 0; i < realItems.length; i++) {
-            var vid = realItems[i].variant_id;
-            if (!qtyByVid[vid]) {
-              qtyByVid[vid] = 0;
-              firstIdx[vid] = i;
+            var vid = String(realItems[i].variant_id);
+            if (!seenVids[vid]) {
+              seenVids[vid] = true;
+              uniqueCount++;
             }
-            qtyByVid[vid] += realItems[i].quantity;
           }
-          var uniqueVids = Object.keys(qtyByVid);
-          if (uniqueVids.length >= tNum) {
-            // Find the variant with lowest total qty; ties broken by last in array (newest)
-            var bestVid = null;
-            var bestQty = Infinity;
-            var bestIdx = -1;
-            for (var v = 0; v < uniqueVids.length; v++) {
-              var thisVid = uniqueVids[v];
-              var thisQty = qtyByVid[thisVid];
-              var thisIdx = firstIdx[thisVid];
-              if (thisQty < bestQty || (thisQty === bestQty && thisIdx > bestIdx)) {
-                bestQty = thisQty;
-                bestVid = thisVid;
-                bestIdx = thisIdx;
+          // STICKY BADGE: locked to one variant forever. Shows when that variant is in cart.
+          // Never jumps. If removed and re-added, badge returns.
+          var _lockedVid = CCD._scarcityLockedVid;
+          if (_lockedVid) {
+            for (var j = 0; j < realItems.length; j++) {
+              if (String(realItems[j].variant_id) === _lockedVid) { idx = j; break; }
+            }
+          } else if (uniqueCount >= tNum) {
+            if (CCD._lastAddedVid) {
+              for (var jj = 0; jj < realItems.length; jj++) {
+                if (String(realItems[jj].variant_id) === CCD._lastAddedVid) { idx = jj; break; }
               }
             }
-            if (bestVid) idx = firstIdx[bestVid];
+            if (idx < 0) idx = 0;
+            CCD._scarcityLockedVid = String(realItems[idx].variant_id);
+          }
+          if (idx >= 0) {
+            console.log('[CCD] Scarcity: badge idx=' + idx + ' vid=' + realItems[idx].variant_id + ' (locked=' + CCD._scarcityLockedVid + ')');
           }
         }
 
@@ -2426,6 +3031,7 @@
       } catch(e) {}
 
       // Render badges
+      console.log('[CCD] applyScarcity: targetVid=' + targetVid + ' realItems=' + realItems.map(function(ri) { return ri.variant_id + '(' + ri.product_title + ')'; }).join(', '));
       var items = document.querySelectorAll('#CCD-Drawer .ccd-item');
       items.forEach(function(el) {
         var inp = el.querySelector('.ccd-qty__input');
@@ -2532,8 +3138,9 @@
         if (progressWrap) progressWrap.style.display = 'none';
         return;
       }
-      // Show progress bar when tiers exist
-      if (progressWrap) progressWrap.style.display = '';
+      // Show progress bar when tiers exist AND cart has items (prevents flash on empty cart)
+      if (progressWrap && currentValue > 0) progressWrap.style.display = '';
+      if (progressWrap && currentValue === 0) { progressWrap.style.display = 'none'; return; }
       // Legacy fallback when no dynamic tiers configured (dead code after above)
       if (false) {
         tiers = [
@@ -2629,6 +3236,12 @@
     },
 
     refreshOnOpen: function() {
+      // Skip if response handler already provided fresh cart data (no redundant fetch)
+      if (CCD._skipRefreshOnOpen) {
+        CCD._skipRefreshOnOpen = false;
+        CCD.hideLoading();
+        return;
+      }
       var self = this;
       this.loadExperiment(function(config) {
         if (config) {
@@ -2651,12 +3264,21 @@
               document.documentElement.style.setProperty('--ccd-desktop-width', dw + 'px');
             }
           }
+          // ── Apply mobile width from backend config ──
+          if (config.cartConfig && config.cartConfig.mobileWidth) {
+            var mw = parseInt(config.cartConfig.mobileWidth);
+            if (mw >= 70 && mw <= 100 && !isNaN(mw)) {
+              document.documentElement.style.setProperty('--ccd-mobile-width', mw + '%');
+            }
+          }
         }
         // Track CART_OPENED on first actual cart open (not on pre-fetch)
         if (!self._cartOpenTracked) {
           self._cartOpenTracked = true;
           self.sendEvent('CART_OPENED', { source: 'client-open' });
         }
+        // BUG-3: Show loading during initial cart fetch
+        if (CCD._lastRealCount > 0) CCD.showLoading();
         // Single cart fetch — no race between ensureProtection and refresh
         fetch('/cart.js')
         .then(function(r) { return r.json(); })
@@ -2665,8 +3287,8 @@
           // Add protection if needed (inline instead of separate ensureProtection to avoid double fetch)
           var shouldAutoAdd = PROT_ENABLED && PROT_VID && CFG.protectionDefaultOn !== false && CFG.protectionAutoAdd !== false;
           var hasProt = cart.items.some(function(i) { return i.handle === PROT; });
-          if (!protectionDone && !toggling && !_userToggledOff && shouldAutoAdd && rc > 0 && !hasProt) {
-            // Nobody added protection yet — add via /cart/update.js (returns full cart in one call)
+          if (!toggling && !_userToggledOff && shouldAutoAdd && rc > 0 && !hasProt) {
+            // Protection should be in cart but isn't — add via /cart/update.js (single round-trip, no flash)
             protectionDone = true;
             CCD.setToggleNoTransition(true);
             var _oF = CCD._origFetch || fetch;
@@ -2680,16 +3302,6 @@
             .then(function(r2) { return r2.json(); })
             .then(function(updatedCart) { CCD.refresh(updatedCart); })
             .catch(function() { CCD.refresh(cart); });
-          } else if (protectionDone && !hasProt && !_userToggledOff && shouldAutoAdd && rc > 0) {
-            // Interceptor already injected protection into the add request — just wait for it to land
-            CCD.setToggleNoTransition(true);
-            setTimeout(function() {
-              var _oF2 = CCD._origFetch || fetch;
-              _oF2('/cart.js')
-                .then(function(r) { return r.json(); })
-                .then(function(freshCart) { CCD.refresh(freshCart); })
-                .catch(function() { CCD.refresh(cart); });
-            }, 300);
           } else {
             if (shouldAutoAdd && hasProt) protectionDone = true;
             CCD.refresh(cart);
@@ -2703,7 +3315,8 @@
     setupScrollIndicator: function() {
       var scrollable = document.querySelector('#CCD-Drawer .ccd-scrollable');
       var inner = document.querySelector('#CCD-Drawer .ccd-inner');
-      if (scrollable && inner) {
+      if (scrollable && inner && !scrollable._ccdScrollBound) {
+        scrollable._ccdScrollBound = true;
         scrollable.addEventListener('scroll', function() {
           var atBottom = scrollable.scrollHeight - scrollable.scrollTop - scrollable.clientHeight < 8;
           inner.classList.toggle('scrolled-bottom', atBottom);

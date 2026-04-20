@@ -1,0 +1,133 @@
+{
+  "addons": {
+    "socialProof": {
+      "mode": "off",
+      "config": {
+        "style": "subtle-text",
+        "position": "header",
+        "textTemplate": "people-viewing"
+      },
+      "enabled": false,
+      "results": null,
+      "optimizeState": null
+    },
+    "trustBadges": {
+      "mode": "locked",
+      "config": {
+        "text": "",
+        "icons": [
+          "paypal",
+          "visa",
+          "amex",
+          "discover",
+          "mastercard",
+          "apple-pay",
+          "google-pay"
+        ],
+        "style": "icons-labels",
+        "position": "below-checkout"
+      },
+      "enabled": true,
+      "results": null,
+      "optimizeState": null
+    },
+    "scarcityTimer": {
+      "mode": "off",
+      "config": {
+        "style": "subtle-text",
+        "duration": "15",
+        "position": "below-header",
+        "textTemplate": "reserve-expires"
+      },
+      "enabled": false,
+      "results": null,
+      "optimizeState": null
+    },
+    "freeShippingBar": {
+      "mode": "off",
+      "config": {
+        "tiers": [
+          {
+            "id": "tier-1",
+            "goal": 1,
+            "icon": "shipping",
+            "label": "Free Shipping",
+            "afterText": "<span style=\"color: #1a7a1a\">Free shipping unlocked!</span>",
+            "beforeText": "<span style=\"color: #333333\">Add {remaining} more to unlock</span>",
+            "giftProduct": null
+          },
+          {
+            "id": "tier-2",
+            "goal": 3,
+            "icon": "tag",
+            "label": "1+2 FREE",
+            "afterText": "<span style=\"color: #1a7a1a\">Bonus item unlocked!</span>",
+            "beforeText": "<span style=\"color: #333333\">Add <b>{remaining}</b> more for FREE</span>",
+            "giftProduct": {
+              "price": "49.99",
+              "title": "Eleganto Case",
+              "handle": "eleganto-premium-watch-organizer",
+              "imageUrl": "https://cdn.shopify.com/s/files/1/0655/6509/8235/files/IMG_5230_3.jpg?v=1765743042",
+              "variantId": 46941745742075
+            },
+            "giftProducts": [
+              {
+                "price": "49.99",
+                "title": "Eleganto Case",
+                "handle": "eleganto-premium-watch-organizer",
+                "imageUrl": "https://cdn.shopify.com/s/files/1/0655/6509/8235/files/IMG_5230_3.jpg?v=1765743042",
+                "variantId": 46941745742075
+              }
+            ]
+          }
+        ],
+        "position": "above-items",
+        "testFlag": null,
+        "thresholdMode": "items",
+        "highestTierOnly": false,
+        "giftHideDiscountLabel": true,
+        "allRewardsUnlockedText": "<span style=\"color: #1a7a1a\">🎉 You have unlocked all rewards!</span>"
+      },
+      "enabled": true,
+      "results": null,
+      "optimizeState": null
+    },
+    "shippingProtection": {
+      "mode": "off",
+      "config": {
+        "price": 4.99,
+        "style": "compact",
+        "defaultOn": true,
+        "description": "Covers lost, stolen, or damaged packages"
+      },
+      "enabled": false,
+      "results": null,
+      "optimizeState": null
+    },
+    "upsellRecommendations": {
+      "mode": "off",
+      "config": {
+        "layout": "horizontal-scroll",
+        "source": "ai-selected",
+        "headline": "you-may-also-like",
+        "position": "below-items"
+      },
+      "enabled": false,
+      "results": null,
+      "optimizeState": null
+    }
+  },
+  "autopilot": {
+    "queue": [],
+    "enabled": false,
+    "startedAt": "2026-04-10T11:26:20.568Z",
+    "totalLift": 0,
+    "completedCount": 0,
+    "currentTestSlot": null
+  },
+  "optimizeQueue": [
+    "trustBadges",
+    "freeShippingBar",
+    "scarcityTimer"
+  ]
+}

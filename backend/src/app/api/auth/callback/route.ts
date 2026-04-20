@@ -15,26 +15,29 @@ export async function GET(req: NextRequest) {
 
   const accessToken = await exchangeToken(shop, code);
 
-  // Fetch shop info
-  const shopInfo = await fetch(`https://${shop}/admin/api/2025-01/shop.json`, {
-    headers: { 'X-Shopify-Access-Token': accessToken },
+  // Fetch shop info via GraphQL
+  const shopGql = await fetch(`https://${shop}/admin/api/2025-10/graphql.json`, {
+    method: 'POST',
+    headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: `{ shop { name currencyCode } }` }),
   }).then(r => r.json());
+  const shopData = shopGql?.data?.shop;
 
   // Upsert store
   await prisma.store.upsert({
     where: { shopDomain: shop },
     create: {
       shopDomain: shop,
-      shopName: shopInfo.shop?.name || shop,
+      shopName: shopData?.name || shop,
       accessToken,
-      currency: shopInfo.shop?.currency || 'USD',
+      currency: shopData?.currencyCode || 'USD',
       config: {},
       isActive: true,
     },
     update: {
       accessToken,
-      shopName: shopInfo.shop?.name || shop,
-      currency: shopInfo.shop?.currency || 'USD',
+      shopName: shopData?.name || shop,
+      currency: shopData?.currencyCode || 'USD',
       isActive: true,
     },
   });
@@ -46,12 +49,14 @@ export async function GET(req: NextRequest) {
   try {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const countRes = await fetch(
-      `https://${shop}/admin/api/2025-01/orders/count.json?created_at_min=${thirtyDaysAgo.toISOString()}&status=any`,
-      { headers: { 'X-Shopify-Access-Token': accessToken } },
-    );
+    const countRes = await fetch(`https://${shop}/admin/api/2025-10/graphql.json`, {
+      method: 'POST',
+      headers: { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: `{ ordersCount(query: "created_at:>='${thirtyDaysAgo.toISOString()}'") { count } }` }),
+    });
     if (countRes.ok) {
-      const { count } = await countRes.json();
+      const gql = await countRes.json();
+      const count = gql?.data?.ordersCount?.count ?? 0;
       const dailyOrders = Math.max(1, Math.round(count / 30));
       await prisma.store.update({
         where: { shopDomain: shop },

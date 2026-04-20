@@ -18,6 +18,7 @@ export async function GET(
   const config = parseConfig(store);
   return NextResponse.json({
     desktopWidth: config.desktopWidth ?? 480,
+    mobileWidth: config.mobileWidth ?? 85,
   });
 }
 
@@ -35,6 +36,9 @@ export async function PATCH(
   if (typeof body.desktopWidth === 'number' && body.desktopWidth >= 320 && body.desktopWidth <= 800) {
     config.desktopWidth = body.desktopWidth;
   }
+  if (typeof body.mobileWidth === 'number' && body.mobileWidth >= 70 && body.mobileWidth <= 100) {
+    config.mobileWidth = body.mobileWidth;
+  }
 
   await prisma.store.update({
     where: { id: params.id },
@@ -43,5 +47,6 @@ export async function PATCH(
 
   return NextResponse.json({
     desktopWidth: config.desktopWidth ?? 480,
+    mobileWidth: config.mobileWidth ?? 85,
   });
 }

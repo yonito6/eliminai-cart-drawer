@@ -1,0 +1,15 @@
+api_version = "2025-01"
+uid = "2b3084bf-9323-6933-8d68-23c09a17146ea2375041"
+
+[[extensions]]
+name = "Eliminai Cart Drawer"
+handle = "eliminai-cart-drawer"
+type = "theme"
+
+  [[extensions.blocks]]
+  template = "blocks/app-embed.liquid"
+  name = "Eliminai Cart Drawer"
+  target = "body"
+
+    [extensions.blocks.default]
+    enabled = true

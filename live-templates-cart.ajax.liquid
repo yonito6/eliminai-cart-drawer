@@ -1,0 +1,73 @@
+{% layout none %}
+{%- assign ccd_prot_handle = settings.ccd_protection_handle | default: "shipping-protection-1" -%}
+{%- assign ccd_gift_handle = settings.ccd_gift_handle | default: "eleganto-premium-watch-organizer" -%}
+{%- assign ccd_gift_cprice = settings.ccd_gift_compare_price | default: "$49.99" -%}
+
+{%- assign real_item_count = 0 -%}
+{%- assign unique_variant_count = 0 -%}
+{%- assign seen_variants = '' -%}
+{%- assign watch_count = 0 -%}
+{%- assign watch_handles = '' -%}
+{%- assign seen_watch_pids = '' -%}
+
+{%- for item in cart.items -%}
+  {%- unless item.handle == ccd_prot_handle or item.handle == ccd_gift_handle -%}
+    {%- assign real_item_count = real_item_count | plus: item.quantity -%}
+    {%- assign vid_str = item.variant_id | append: ',' -%}
+    {%- unless seen_variants contains vid_str -%}
+      {%- assign unique_variant_count = unique_variant_count | plus: 1 -%}
+      {%- assign seen_variants = seen_variants | append: vid_str -%}
+    {%- endunless -%}
+    {%- if item.product.tags contains 'watch' -%}
+      {%- assign pid_str = item.product_id | append: ',' -%}
+      {%- unless seen_watch_pids contains pid_str -%}
+        {%- assign watch_count = watch_count | plus: 1 -%}
+        {%- assign seen_watch_pids = seen_watch_pids | append: pid_str -%}
+      {%- endunless -%}
+      {%- unless watch_handles contains item.handle -%}
+        {%- assign watch_handles = watch_handles | append: item.handle | append: ',' -%}
+      {%- endunless -%}
+    {%- endif -%}
+  {%- endunless -%}
+{%- endfor -%}
+
+<div class="cart__items"
+  data-count="{{ cart.item_count }}"
+  data-real-count="{{ real_item_count }}"
+  data-unique-count="{{ unique_variant_count }}"
+  data-watch-count="{{ watch_count }}"
+  data-watch-handles="{{ watch_handles }}"
+  data-cart-subtotal="{{ cart.total_price }}">
+
+  {%- for item in cart.items -%}
+    {%- unless item.handle == ccd_prot_handle or item.handle == ccd_gift_handle -%}
+      {%- render 'cart-item', product: item -%}
+    {%- endunless -%}
+  {%- endfor -%}
+
+  {%- for item in cart.items -%}
+    {%- if item.handle == ccd_gift_handle -%}
+      <div class="ccd-gift-item" data-key="{{ item.key }}" data-handle="{{ ccd_gift_handle }}">
+        <div class="ccd-gift-label">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1z"/></svg>
+          {{ settings.ccd_gift_label | default: "Bonus gift" }}
+          <button type="button" class="ccd-gift-item__remove" data-key="{{ item.key }}" aria-label="Remove gift"><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+        </div>
+        <div class="ccd-gift-item__body">
+          <div class="ccd-item__image">
+            <a href="{{ item.url }}">
+              <img src="{{ item | img_url: '180x' }}" alt="{{ item.product.title | escape }}">
+            </a>
+          </div>
+          <div class="ccd-gift-item__info">
+            <a href="{{ item.url }}" class="ccd-item__name" style="font-size:13px">{{ item.product.title }}</a>
+            <div class="ccd-gift-item__price-row">
+              <span class="ccd-item__compare-price">{{ ccd_gift_cprice }}</span>
+              <span class="ccd-item__price ccd-item__price--free">Free</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    {%- endif -%}
+  {%- endfor -%}
+</div>

@@ -278,7 +278,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       description: 'Covers lost, stolen, or damaged packages',
       defaultOn: true,
       pricingMode: 'single',
-      price: 499,
+      price: 4.99,
       tiers: [],
       iconId: 'box-shield',
       iconUrl: null,

@@ -273,13 +273,18 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     const defaultOn = addonConfig.defaultOn !== false;
 
     // Update icon to match selected icon
-    const iconId = addonConfig.iconId || 'shield-check';
+    const iconId = addonConfig.iconId || 'shield-filled';
     const iconSvg = addonConfig.customIconUrl
       ? `<img src="${addonConfig.customIconUrl}" style="width:24px;height:24px" alt="" />`
       : getProtectionIconSvg(iconId);
+    // Apply icon color — set color+fill on SVG so fill:currentColor works
+    const iconColor = addonConfig.iconColor || '#555555';
+    const coloredIconSvg = iconSvg.includes('<svg')
+      ? iconSvg.replace(/<svg/, `<svg style="color:${iconColor};fill:${iconColor}"`)
+      : iconSvg; // img icons don't need color
     cartHtml = cartHtml.replace(
       /(<div class="ccd-shipping-protection__icon">)[\s\S]*?(<\/div>\s*<div class="ccd-shipping-protection__info">)/,
-      '$1' + iconSvg + '$2'
+      '$1' + coloredIconSvg + '$2'
     );
     // Update title
     cartHtml = cartHtml.replace(

@@ -1,7 +1,6 @@
 /**
  * Built-in SVG icons for shipping protection addon.
- * High-quality icons from Lucide/Heroicons icon libraries (MIT licensed, free to use).
- * Each icon is a complete inline SVG string that can be rendered in the cart drawer.
+ * All icons use Material Design filled style (fill="currentColor") for visual consistency.
  */
 
 export interface ProtectionIcon {
@@ -12,60 +11,66 @@ export interface ProtectionIcon {
 
 export const PROTECTION_ICONS: ProtectionIcon[] = [
   {
+    id: 'shield-filled',
+    label: 'Shield (Default)',
+    // Material filled shield
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"></path></svg>`,
+  },
+  {
     id: 'shield-check',
     label: 'Shield with Checkmark',
-    // Lucide shield-check
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>`,
+    // Material verified-user (filled shield + check)
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>`,
   },
   {
     id: 'shield-lock',
     label: 'Shield with Lock',
-    // Lucide shield + lock combo
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><rect x="9" y="10" width="6" height="5" rx="1"/><path d="M10 10V8a2 2 0 1 1 4 0v2"/></svg>`,
+    // Material security (filled shield + lock)
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 6c1.4 0 2.8 1.1 2.8 2.5V11c.6 0 1.2.6 1.2 1.2v3.5c0 .7-.6 1.3-1.2 1.3H9.2c-.7 0-1.2-.6-1.2-1.2v-3.5c0-.7.5-1.3 1.2-1.3V9.5C9.2 8.1 10.6 7 12 7zm0 1.2c-.8 0-1.5.7-1.5 1.3V11h3V9.5c0-.6-.7-1.3-1.5-1.3z"/></svg>`,
   },
   {
     id: 'box-shield',
     label: 'Package Protection',
-    // Lucide package + shield overlay
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
+    // Material inventory-2 (filled package box)
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1 0-2 1-2 2v3.01c0 .72.43 1.34 1 1.69V20c0 1.1 1.1 2 2 2h14c.9 0 2-.9 2-2V8.7c.57-.35 1-.97 1-1.69V4c0-1-1-2-2-2zm-5 12H9v-2h6v2zm5-7H4V4h16v3z"/></svg>`,
   },
   {
     id: 'umbrella',
     label: 'Insurance Umbrella',
-    // Lucide umbrella
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12a10.06 10.06 0 0 0-20 0Z"/><path d="M12 12v8a2 2 0 0 0 4 0"/><path d="M12 2v1"/></svg>`,
+    // Material beach-access simplified (filled umbrella)
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M13.127 14.56l1.43-1.43 6.44 6.443L19.57 21l-6.443-6.44zm-3.96.637l-1.37 1.36c-.78.78-.78 2.05 0 2.83l-.71.71c-1.17-1.17-1.17-3.07 0-4.24l1.37-1.36.71.7zM6.75 2.84c1.96-1.96 5.13-1.96 7.07 0l-3.54 3.54 5.66 5.66-3.54 3.54-5.66-5.66-3.54 3.54c-1.96-1.96-1.96-5.12.01-7.08l3.54-3.54z"/></svg>`,
   },
   {
     id: 'shield-heart',
     label: 'Shield with Heart',
-    // Lucide shield + heart
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 17.5s-3.5-2.5-3.5-4.5a2 2 0 0 1 3.5-1.4A2 2 0 0 1 15.5 13c0 2-3.5 4.5-3.5 4.5z"/></svg>`,
+    // Material shield with heart (filled)
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 5c1.1 0 2 .5 2.6 1.3.6-.8 1.5-1.3 2.6-1.3 1.8 0 2.8 1.4 2.8 3 0 3.2-5.4 6-5.4 6S9.2 14.2 9.2 10c0-1.6 1-3 2.8-3z"/></svg>`,
   },
   {
     id: 'truck-shield',
     label: 'Shipping Shield',
-    // Lucide truck
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 13.52 9H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>`,
+    // Material local-shipping (filled delivery truck)
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>`,
   },
   {
     id: 'hand-shield',
     label: 'Safeguard Hand',
-    // Lucide hand + shield
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V4a2 2 0 0 1 4 0v2"/><path d="M11 6V3a2 2 0 0 1 4 0v4"/><path d="M15 7V5a2 2 0 0 1 4 0v7c0 4-3 7-7 7H9c-2 0-4-1-5.5-3L2 14"/><path d="M7 11a2 2 0 0 0-4 0v1"/></svg>`,
+    // Material pan-tool (filled hand)
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M23 5.5V20c0 2.2-1.8 4-4 4h-7.3c-1.08 0-2.1-.43-2.85-1.19L1 14.83s1.26-1.23 1.3-1.25c.22-.19.49-.29.79-.29.22 0 .42.06.6.16.04.01 4.31 2.46 4.31 2.46V4c0-.83.67-1.5 1.5-1.5S11 3.17 11 4v7h1V1.5c0-.83.67-1.5 1.5-1.5S15 .67 15 1.5V11h1V2.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5V11h1V5.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5z"/></svg>`,
   },
   {
     id: 'shield-star',
     label: 'Premium Protection',
-    // Lucide shield + star
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><polygon points="12,8.5 13.1,11 15.9,11.2 13.8,13 14.5,15.7 12,14.2 9.5,15.7 10.2,13 8.1,11.2 10.9,11"/></svg>`,
+    // Material shield with star (filled)
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l1.7 3.5 3.8.5-2.75 2.7.65 3.8L12 13.8 8.6 15.5l.65-3.8L6.5 9l3.8-.5L12 5z"/></svg>`,
   },
 ];
 
 /**
  * Get the SVG string for a built-in protection icon by ID.
- * Returns the shield-check icon as default if the ID is not found.
+ * Returns the shield-filled icon as default if the ID is not found.
  */
 export function getProtectionIconSvg(iconId: string): string {
   const icon = PROTECTION_ICONS.find((i) => i.id === iconId);
-  return icon?.svg ?? PROTECTION_ICONS[0].svg; // default to shield-check
+  return icon?.svg ?? PROTECTION_ICONS[0].svg; // default to shield-filled
 }

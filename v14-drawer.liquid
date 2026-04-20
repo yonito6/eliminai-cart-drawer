@@ -1,20 +1,25 @@
-{%- if settings.cart_type == 'drawer' and settings.ccd_enabled != false -%}
-  <div id="CartDrawer" class="drawer drawer--right custom-cart-drawer">
-    <form id="CartDrawerForm" action="{{ routes.cart_url }}" method="post" novalidate class="drawer__contents">
+{%- comment -%}
+  CCD Cart Drawer — Theme-Independent
+  ALL internal classes use ccd-* prefix.
+  Fully self-contained. Injected into document.body by JS. No theme dependency.
+{%- endcomment -%}
+{%- comment -%} No theme condition — CCD renders on ALL themes {%- endcomment -%}
+  <div id="CCD-Drawer" style="display:none">
+    <form id="CCD-Form" action="{{ routes.cart_url }}" method="post" novalidate class="ccd-contents">
 
-      <div class="drawer__fixed-header">
-        <div class="drawer__header appear-animation appear-delay-1">
-          <div class="h2 drawer__title">Your Cart</div>
-          <div class="drawer__close">
-            <button type="button" class="drawer__close-button js-drawer-close" aria-label="Close cart">
+      <div class="ccd-fixed-header">
+        <div class="ccd-header">
+          <div class="ccd-title">Your Cart</div>
+          <div class="ccd-close">
+            <button type="button" class="ccd-close-btn" data-ccd-close aria-label="Close cart">
               <svg aria-hidden="true" focusable="false" role="presentation" viewBox="0 0 64 64"><path d="M19 17.61l27.12 27.13m0-27.12L19 44.74" stroke="currentColor" stroke-width="3" fill="none"/></svg>
-              <span class="icon__fallback-text">{{ 'cart.general.close_cart' | t }}</span>
+              <span class="ccd-sr-only">{{ 'cart.general.close_cart' | t }}</span>
             </button>
           </div>
         </div>
 
         <style>
-  #CartDrawer.custom-cart-drawer {
+  #CCD-Drawer {
     --ccd-primary: {{ settings.ccd_color_primary | default: '#111111' }};
     --ccd-bg: {{ settings.ccd_color_background | default: '#ffffff' }};
     --ccd-progress-bg: {{ settings.ccd_color_progress_bg | default: '#dddddd' }};
@@ -29,14 +34,14 @@
     enabled: {{ settings.ccd_enabled | default: true }},
     protectionEnabled: {{ settings.ccd_protection_enabled | default: true }},
     protectionHandle: {{ settings.ccd_protection_handle | default: 'shipping-protection-1' | json }},
-    protectionVariantId: {{ settings.ccd_protection_variant_id | default: '47779174023419' | json }},
+    protectionVariantId: {{ settings.ccd_protection_variant_id | default: '' | json }},
     protectionAutoAdd: {{ settings.ccd_protection_auto_add | default: true }},
     protectionDefaultOn: {{ settings.ccd_protection_default_on | default: true }},
     progressEnabled: {{ settings.ccd_progress_enabled | default: true }},
     promoGoal: {{ settings.ccd_promo_goal | default: 3 }},
     giftEnabled: {{ settings.ccd_gift_enabled | default: true }},
-    giftHandle: {{ settings.ccd_gift_handle | default: 'eleganto-premium-watch-organizer' | json }},
-    giftVariantId: {{ settings.ccd_gift_variant_id | default: '46941745742075' | json }},
+    giftHandle: {{ settings.ccd_gift_handle | default: '' | json }},
+    giftVariantId: {{ settings.ccd_gift_variant_id | default: '' | json }},
     giftGoal: {{ settings.ccd_gift_goal | default: 3 }},
     colorPrimary: {{ settings.ccd_color_primary | default: '#111111' | json }},
     colorBackground: {{ settings.ccd_color_background | default: '#ffffff' | json }},
@@ -55,7 +60,7 @@
   </script>
 
         {%- assign ccd_prot_handle = settings.ccd_protection_handle | default: 'shipping-protection-1' -%}
-        {%- assign ccd_gift_handle = settings.ccd_gift_handle | default: 'eleganto-premium-watch-organizer' -%}
+        {%- assign ccd_gift_handle = settings.ccd_gift_handle | default: '' -%}
         {%- assign ccd_gift_cprice = settings.ccd_gift_compare_price | default: '$49.99' -%}
         {%- assign real_item_count = 0 -%}
         {%- assign unique_variant_count = 0 -%}
@@ -86,7 +91,7 @@
         {%- assign shipping_reached = false -%}
         {%- if real_item_count >= 1 -%}{%- assign shipping_reached = true -%}{%- endif -%}
 
-        <div class="ccd-progress appear-animation appear-delay-1" data-ccd-progress {% if real_item_count == 0 %}style="display:none"{% endif %}>
+        <div class="ccd-progress" data-ccd-progress {% if real_item_count == 0 %}style="display:none"{% endif %}>
           <div class="ccd-progress__message" data-ccd-progress-msg>
             {%- if promo_reached -%}
               🎉 You've unlocked all rewards <strong>(expires soon)</strong>
@@ -113,10 +118,10 @@
         </div>
       </div>
 
-      <div class="drawer__inner" data-ccd-inner {% if real_item_count == 0 %}style="display:none"{% endif %}>
-        <div class="drawer__scrollable">
-          <div data-products class="appear-animation appear-delay-2">
-            <div class="cart__items" data-count="{{ cart.item_count }}" data-real-count="{{ real_item_count }}" data-unique-count="{{ unique_variant_count }}" data-watch-count="{{ watch_count }}" data-cart-subtotal="{{ cart.total_price }}">
+      <div class="ccd-inner" data-ccd-inner {% if real_item_count == 0 %}style="display:none"{% endif %}>
+        <div class="ccd-scrollable">
+          <div data-products>
+            <div class="ccd-items" data-count="{{ cart.item_count }}" data-real-count="{{ real_item_count }}" data-unique-count="{{ unique_variant_count }}" data-watch-count="{{ watch_count }}" data-cart-subtotal="{{ cart.total_price }}">
               {%- for item in cart.items -%}
                 {%- unless item.handle == ccd_prot_handle or item.handle == ccd_gift_handle -%}
                   {%- render 'cart-item', product: item -%}
@@ -215,7 +220,7 @@
         </div>
       </div>
 
-      <div class="drawer__cart-empty appear-animation appear-delay-2" {% if real_item_count > 0 %}style="display:none"{% endif %}>
+      <div class="ccd-empty" {% if real_item_count > 0 %}style="display:none"{% endif %}>
         <div style="padding: 32px 20px; text-align: center;">
           <svg viewBox="0 0 24 24" width="40" height="40" fill="#bbb" style="margin-bottom: 12px;"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
           <p style="color: #888; font-size: 15px; margin-bottom: 12px;">Your cart is empty</p>
@@ -224,4 +229,3 @@
       </div>
     </form>
   </div>
-{%- endif -%}

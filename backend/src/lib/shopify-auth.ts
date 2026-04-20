@@ -39,16 +39,31 @@ export async function registerWebhooks(shop: string, accessToken: string): Promi
 
   for (const wh of webhooks) {
     try {
-      const res = await fetch(`https://${shop}/admin/api/2025-01/webhooks.json`, {
+      // Convert REST topic format (orders/create) to GraphQL enum (ORDERS_CREATE)
+      const gqlTopic = wh.topic.replace('/', '_').toUpperCase();
+      const res = await fetch(`https://${shop}/admin/api/2025-10/graphql.json`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Shopify-Access-Token': accessToken,
         },
-        body: JSON.stringify({ webhook: { ...wh, format: 'json' } }),
+        body: JSON.stringify({
+          query: `mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+            webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+              webhookSubscription { id }
+              userErrors { field message }
+            }
+          }`,
+          variables: {
+            topic: gqlTopic,
+            webhookSubscription: {
+              callbackUrl: wh.address,
+              format: 'JSON',
+            },
+          },
+        }),
       });
-      // 422 = already exists (idempotent), anything else that's not 2xx log but don't fail install
-      if (!res.ok && res.status !== 422) {
+      if (!res.ok) {
         console.error(`Webhook registration failed for ${wh.topic}:`, res.status, await res.text());
       }
     } catch (err) {

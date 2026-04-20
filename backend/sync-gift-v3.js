@@ -1,0 +1,84 @@
+const { PrismaClient } = require('@prisma/client');
+const p = new PrismaClient();
+
+async function gql(domain, token, query, variables) {
+  const res = await fetch(`https://${domain}/admin/api/2025-10/graphql.json`, {
+    method: 'POST',
+    headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  });
+  return res.json();
+}
+
+(async () => {
+  const store = await p.store.findFirst({ 
+    where: { shopDomain: { contains: 'eleganto-3011' } }, 
+    select: { id: true, shopDomain: true, accessToken: true } 
+  });
+  if (!store) { console.log('No store'); return; }
+  const { shopDomain, accessToken: token } = store;
+
+  const caseGid = 'gid://shopify/Product/8959501435131';
+  const necklaceGid = 'gid://shopify/Product/7810439905531';
+  const giftGids = [caseGid, necklaceGid];
+  const allCollectionGid = 'gid://shopify/Collection/429369393403';
+
+  console.log('Creating "Cart Drawer Gifts" with collection for customerBuys...');
+  const r = await gql(shopDomain, token, `
+    mutation discountAutomaticBxgyCreate($automaticBxgyDiscount: DiscountAutomaticBxgyInput!) {
+      discountAutomaticBxgyCreate(automaticBxgyDiscount: $automaticBxgyDiscount) {
+        automaticDiscountNode { id automaticDiscount { ... on DiscountAutomaticBxgy { title status } } }
+        userErrors { field message }
+      }
+    }
+  `, {
+    automaticBxgyDiscount: {
+      title: 'Cart Drawer Gifts',
+      startsAt: new Date().toISOString(),
+      customerBuys: {
+        items: { collections: { add: [allCollectionGid] } },
+        value: { quantity: "1" },
+      },
+      customerGets: {
+        items: { products: { productsToAdd: giftGids } },
+        value: { discountOnQuantity: { quantity: String(giftGids.length), effect: { percentage: 1.0 } } },
+      },
+      combinesWith: { productDiscounts: true, orderDiscounts: true, shippingDiscounts: true },
+    },
+  });
+  
+  const errors = r?.data?.discountAutomaticBxgyCreate?.userErrors;
+  if (errors?.length > 0) {
+    console.log('ERRORS:', JSON.stringify(errors, null, 2));
+  } else {
+    const node = r?.data?.discountAutomaticBxgyCreate?.automaticDiscountNode;
+    console.log('SUCCESS:', node?.id, node?.automaticDiscount?.title);
+  }
+
+  // Verify final state
+  console.log('\nFinal discount state:');
+  const verify = await gql(shopDomain, token, `{
+    automaticDiscountNodes(first: 20) {
+      nodes { id automaticDiscount {
+        ... on DiscountAutomaticBxgy { title status
+          customerBuys { value { ... on DiscountQuantity { quantity } } }
+          customerGets { 
+            value { ... on DiscountOnQuantity { quantity { quantity } effect { ... on DiscountPercentage { percentage } } } }
+            items { ... on DiscountProducts { products(first: 10) { nodes { id title } } } }
+          }
+          combinesWith { productDiscounts orderDiscounts shippingDiscounts }
+          usesPerOrderLimit
+        }
+      } }
+    }
+  }`);
+  for (const n of (verify?.data?.automaticDiscountNodes?.nodes || [])) {
+    const d = n.automaticDiscount;
+    if (!d?.title) continue;
+    const gets = d.customerGets;
+    const prods = gets?.items?.products?.nodes?.map(p => p.title).join(', ') || 'N/A';
+    console.log(`  ${d.title}: buysQty=${d.customerBuys?.value?.quantity}, getsQty=${gets?.value?.quantity?.quantity}, products=[${prods}], combines=${JSON.stringify(d.combinesWith)}, usesPerOrder=${d.usesPerOrderLimit}`);
+  }
+
+  await p.$disconnect();
+})();

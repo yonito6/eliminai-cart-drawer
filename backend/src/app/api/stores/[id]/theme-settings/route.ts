@@ -10,22 +10,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     });
     if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 });
 
-    // Fetch the active theme
-    const themesRes = await fetch(
-      `https://${store.shopDomain}/admin/api/2025-01/themes.json`,
-      { headers: { 'X-Shopify-Access-Token': store.accessToken } }
-    );
-    const themesData = await themesRes.json();
-    const activeTheme = themesData.themes?.find((t: any) => t.role === 'main');
+    // Fetch the active theme via GraphQL
+    const gqlUrl = `https://${store.shopDomain}/admin/api/2025-10/graphql.json`;
+    const gqlHeaders = { 'X-Shopify-Access-Token': store.accessToken, 'Content-Type': 'application/json' };
+
+    const themesGql = await fetch(gqlUrl, {
+      method: 'POST', headers: gqlHeaders,
+      body: JSON.stringify({ query: `{ themes(first: 10, roles: MAIN) { nodes { id name role } } }` }),
+    }).then(r => r.json());
+    const activeTheme = themesGql?.data?.themes?.nodes?.[0];
     if (!activeTheme) return NextResponse.json({ error: 'No active theme' }, { status: 404 });
 
-    // Fetch settings_data.json
-    const assetRes = await fetch(
-      `https://${store.shopDomain}/admin/api/2025-01/themes/${activeTheme.id}/assets.json?asset[key]=config/settings_data.json`,
-      { headers: { 'X-Shopify-Access-Token': store.accessToken } }
-    );
-    const assetData = await assetRes.json();
-    const settingsRaw = assetData.asset?.value;
+    // Fetch settings_data.json via theme asset query
+    const assetGql = await fetch(gqlUrl, {
+      method: 'POST', headers: gqlHeaders,
+      body: JSON.stringify({
+        query: `query themeAsset($themeId: ID!, $key: String!) {
+          theme(id: $themeId) { file(filename: $key) { body { ... on OnlineStoreThemeFileBodyText { content } } } }
+        }`,
+        variables: { themeId: activeTheme.id, key: 'config/settings_data.json' },
+      }),
+    }).then(r => r.json());
+    const settingsRaw = assetGql?.data?.theme?.file?.body?.content;
     if (!settingsRaw) return NextResponse.json({ error: 'No settings data' }, { status: 404 });
 
     const settings = JSON.parse(settingsRaw);

@@ -44,7 +44,6 @@ export default function DashboardWrapper() {
 function Dashboard() {
   const { storeId: STORE_ID, store: storeInfo, loading: storeLoading, error: storeError } = useStore();
 
-
   const [stats, setStats] = useState<Stats | null>(null);
   const [exps, setExps] = useState<Exp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +56,7 @@ function Dashboard() {
   const [days, setDays] = useState(14);
   const [previewExp, setPreviewExp] = useState<string | null>(null);
   const [showLiveCart, setShowLiveCart] = useState(false);
+  const [themeStatus, setThemeStatus] = useState<{ enabled: boolean; editorUrl?: string; themeName?: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -71,6 +71,15 @@ function Dashboard() {
   }, [STORE_ID]);
 
   useEffect(() => { load(); const i = setInterval(load, 15000); return () => clearInterval(i); }, [load]);
+
+  // Check if app embed is enabled on published theme
+  useEffect(() => {
+    if (!STORE_ID) return;
+    fetch(API + '/api/stores/' + STORE_ID + '/theme-status')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setThemeStatus(data); })
+      .catch(() => {});
+  }, [STORE_ID]);
 
   // ── Early returns (MUST be after all hooks) ──
   if (storeLoading) return <div style={{padding: 40, textAlign: 'center'}}>Loading store...</div>;
@@ -115,7 +124,7 @@ function Dashboard() {
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: '#111827' }}>Cart Optimizer</h1>
             <p style={{ color: '#9ca3af', margin: '4px 0 0', fontSize: 13 }}>
-              {stats?.store.shopDomain || 'Loading...'} \u00b7 Auto-refreshes every 15s
+              {stats?.store.shopDomain || 'Loading...'} {'\u00b7'} Auto-refreshes every 15s
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
@@ -130,6 +139,52 @@ function Dashboard() {
           </div>
         </div>
 
+        {/* App Embed Setup Banner */}
+        {themeStatus && !themeStatus.enabled && (
+          <div style={{
+            background: 'linear-gradient(135deg, #fefce8 0%, #fef3c7 100%)',
+            borderRadius: 12, padding: '20px 24px', marginBottom: 20,
+            border: '1px solid #fde68a',
+            display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' as const,
+          }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 20 }}>{'\u26a0\ufe0f'}</span>
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: '#92400e' }}>Cart Drawer Not Active</h3>
+              </div>
+              <p style={{ fontSize: 13, color: '#a16207', margin: 0, lineHeight: 1.5 }}>
+                Enable the Eliminai Cart Drawer in your theme editor so it appears on your store.
+                Go to <strong>App embeds</strong> and toggle it on.
+              </p>
+            </div>
+            <a
+              href={themeStatus.editorUrl || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '10px 20px', background: '#111827', color: '#fff',
+                borderRadius: 8, textDecoration: 'none', fontWeight: 600, fontSize: 13,
+                whiteSpace: 'nowrap' as const, flexShrink: 0,
+              }}
+            >
+              Enable in Theme Editor {'\u2197'}
+            </a>
+          </div>
+        )}
+        {themeStatus && themeStatus.enabled && (
+          <div style={{
+            background: '#f0fdf4', borderRadius: 10, padding: '12px 16px',
+            marginBottom: 20, border: '1px solid #bbf7d0',
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <span style={{ fontSize: 16 }}>{'\u2705'}</span>
+            <span style={{ fontSize: 13, color: '#166534', fontWeight: 500 }}>
+              Cart Drawer is active on your theme ({themeStatus.themeName})
+            </span>
+          </div>
+        )}
+
         {/* LIVE CART PREVIEW — Real store iframe */}
         {showLiveCart && (
           <div style={{ background: '#fff', borderRadius: 12, padding: 24, marginBottom: 24, border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -142,7 +197,7 @@ function Dashboard() {
               </div>
               <a href={'https://' + (stats?.store?.shopDomain || '')} target="_blank" rel="noopener noreferrer"
                 style={{ fontSize: 12, color: '#7c3aed', textDecoration: 'none', fontWeight: 500 }}>
-                Open in new tab \u2197
+                Open in new tab {'\u2197'}
               </a>
             </div>
             <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e7eb', height: 500 }}>
@@ -205,7 +260,7 @@ function Dashboard() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16, marginBottom: 20 }}>
               <div>
-                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', margin: '0 0 10px' }}>Control (A) \u2014 Features</h3>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#6b7280', margin: '0 0 10px' }}>Control (A) {'\u2014'} Features</h3>
                 {FEATS.map(f => (
                   <label key={f.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10, cursor: 'pointer', fontSize: 13 }}>
                     <input type="checkbox" checked={!!ctrlF[f.key]} onChange={e => setCtrlF(p => ({ ...p, [f.key]: e.target.checked }))} style={{ marginTop: 3 }} />
@@ -217,7 +272,7 @@ function Dashboard() {
                 ))}
               </div>
               <div>
-                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#7c3aed', margin: '0 0 10px' }}>Variant B \u2014 Features</h3>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#7c3aed', margin: '0 0 10px' }}>Variant B {'\u2014'} Features</h3>
                 {FEATS.map(f => (
                   <label key={f.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10, cursor: 'pointer', fontSize: 13 }}>
                     <input type="checkbox" checked={!!varF[f.key]} onChange={e => setVarF(p => ({ ...p, [f.key]: e.target.checked }))} style={{ marginTop: 3 }} />
@@ -265,7 +320,7 @@ function Dashboard() {
                   }}>{exp.status}</span>
                 </h3>
                 <p style={{ color: '#9ca3af', margin: '4px 0 0', fontSize: 12 }}>
-                  Started {new Date(exp.startedAt).toLocaleDateString()} · {exp.totalVisitors} visitors
+                  Started {new Date(exp.startedAt).toLocaleDateString()} {'\u00b7'} {exp.totalVisitors} visitors
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
@@ -305,7 +360,7 @@ function Dashboard() {
               {exp.variantStats.map(v => (
                 <div key={v.id} style={{ background: '#fafafa', borderRadius: 8, padding: 12, border: '1px solid #f3f4f6' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: v.id === 'control' ? '#6b7280' : '#7c3aed', marginBottom: 6 }}>
-                    {v.name} {exp.winnerVariantId === v.id && <span style={{ color: '#16a34a' }}> \u2714 Winner!</span>}
+                    {v.name} {exp.winnerVariantId === v.id && <span style={{ color: '#16a34a' }}> {'\u2714'} Winner!</span>}
                   </div>
                   <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
                     {Object.entries(v.features || {}).filter(([, val]) => val).map(([k]) => k).join(', ') || 'No features (baseline)'}

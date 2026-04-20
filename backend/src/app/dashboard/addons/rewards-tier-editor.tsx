@@ -51,6 +51,9 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
   const [discountSyncing, setDiscountSyncing] = useState(false);
   // Track whether gift discounts already exist on Shopify — skip confirmation modal if they do
   const [discountsExist, setDiscountsExist] = useState(false);
+  const [variantPickerProduct, setVariantPickerProduct] = useState<any | null>(null);
+  const [variantPickerTierId, setVariantPickerTierId] = useState<string | null>(null);
+  const [selectedVariants, setSelectedVariants] = useState<Set<number>>(new Set());
   useEffect(() => {
     if (!storeId) return;
     fetch(`/api/stores/${storeId}/gift-discounts`)
@@ -61,6 +64,25 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
 
   function updateTiers(newTiers: RewardTier[]) {
     onConfigChange({ tiers: newTiers });
+  }
+
+  function addGiftToTier(tierId: string, product: any, vId: number, vTitle?: string) {
+    const tier = tiers.find(t => t.id === tierId);
+    if (!tier) return;
+    const norm = normalizeTier(tier);
+    const v = product.variants?.find((x: any) => x.id === vId) || product.variants?.[0];
+    const img = product.imageUrl || product.image?.src || product.images?.[0]?.src || '';
+    const title = vTitle && vTitle !== 'Default Title' ? product.title + ' \u2014 ' + vTitle : product.title;
+    const newGift = { handle: product.handle, variantId: vId, title, imageUrl: img, price: v?.price || '' };
+    let updated: any[];
+    if (replacingGiftIndex !== null) {
+      updated = [...norm.giftProducts];
+      updated[replacingGiftIndex] = newGift;
+      setReplacingGiftIndex(null);
+    } else {
+      updated = [...norm.giftProducts, newGift];
+    }
+    updateTier(tierId, { giftProducts: updated, giftProduct: updated[0] });
   }
 
   function updateTier(tierId: string, patch: Partial<RewardTier>) {
@@ -537,9 +559,94 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
                           <span style={labelStyle}>Gift Products</span>
-                          <div style={{ fontSize: 10, color: '#6b7280', marginTop: -2, marginBottom: 4 }}>Auto-added to cart when tier is reached. You can add multiple gifts.</div>
+                          <div style={{ fontSize: 10, color: '#6b7280', marginTop: -2, marginBottom: 4 }}>Add gifts that unlock when this tier is reached</div>
                         </div>
                       </div>
+
+                      {/* Gift Mode — Auto-add vs Customer Choice */}
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                        <button
+                          onClick={() => onConfigChange({ giftCustomerChoice: false })}
+                          style={{
+                            flex: 1, padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                            border: config.giftCustomerChoice !== true ? '2px solid #7c3aed' : '1px solid #e5e7eb',
+                            background: config.giftCustomerChoice !== true ? '#f5f3ff' : '#fff',
+                            textAlign: 'left', transition: 'all 0.15s',
+                          }}
+                        >
+                          <div style={{ fontSize: 12, fontWeight: 600, color: config.giftCustomerChoice !== true ? '#7c3aed' : '#374151' }}>Auto-add</div>
+                          <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>Gift is added to cart automatically</div>
+                        </button>
+                        <button
+                          onClick={() => onConfigChange({ giftCustomerChoice: true })}
+                          style={{
+                            flex: 1, padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                            border: config.giftCustomerChoice === true ? '2px solid #7c3aed' : '1px solid #e5e7eb',
+                            background: config.giftCustomerChoice === true ? '#f5f3ff' : '#fff',
+                            textAlign: 'left', transition: 'all 0.15s',
+                          }}
+                        >
+                          <div style={{ fontSize: 12, fontWeight: 600, color: config.giftCustomerChoice === true ? '#7c3aed' : '#374151' }}>Customer chooses</div>
+                          <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>Customer picks their preferred gift</div>
+                        </button>
+                      </div>
+
+                      {/* Picker Title + validation — shown in Customer Choice mode */}
+                      {config.giftCustomerChoice === true && (() => {
+                        const gifts = normalizeTier(tier).giftProducts;
+                        const choiceCount = gifts.length;
+                        const needsMore = choiceCount < 2;
+                        return (
+                          <>
+                            {needsMore && (
+                              <div style={{ marginBottom: 10, padding: '10px 12px', background: '#fef3c7', borderRadius: 8, border: '1px solid #fcd34d', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 16 }}>&#9888;</span>
+                                <div>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#92400e' }}>
+                                    {choiceCount === 0 ? 'Add at least 2 gift options' : 'Add at least 1 more gift option'}
+                                  </div>
+                                  <div style={{ fontSize: 10, color: '#a16207', marginTop: 1 }}>
+                                    Customers need at least 2 options to choose from
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            <div style={{ marginBottom: 10, padding: '8px 12px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
+                              <span style={{ fontSize: 11, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 4 }}>Picker Title <span style={{ fontWeight: 400, color: '#9ca3af' }}>(shown to customer)</span></span>
+                              <input
+                                type="text"
+                                value={config.giftPickerTitle || 'Choose your free gift'}
+                                onChange={e => onConfigChange({ giftPickerTitle: e.target.value })}
+                                placeholder="Choose your free gift"
+                                style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 12, color: '#374151', outline: 'none', boxSizing: 'border-box' }}
+                              />
+                            </div>
+                                                      {/* Change button settings */}
+                            <div style={{ marginBottom: 10, padding: '8px 12px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
+                              <span style={{ fontSize: 11, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 4 }}>Change Button Text</span>
+                              <input
+                                type="text"
+                                value={config.giftChangeText || 'Change'}
+                                onChange={e => onConfigChange({ giftChangeText: e.target.value })}
+                                placeholder="Change"
+                                style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 12, color: '#374151', outline: 'none', boxSizing: 'border-box' }}
+                              />
+                            </div>
+                            <div style={{ marginBottom: 10, padding: '8px 12px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
+                              <span style={{ fontSize: 11, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 4 }}>Change Button Color</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <input
+                                  type="color"
+                                  value={config.giftChangeColor || '#111111'}
+                                  onChange={e => onConfigChange({ giftChangeColor: e.target.value })}
+                                  style={{ width: 36, height: 30, border: '1px solid #d1d5db', borderRadius: 6, cursor: 'pointer', padding: 2 }}
+                                />
+                                <span style={{ fontSize: 11, color: '#6b7280' }}>{config.giftChangeColor || '#111111'}</span>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
 
                       {/* Selected gifts list */}
                       {normalizeTier(tier).giftProducts.length > 0 && (
@@ -652,19 +759,18 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                                       onClick={() => {
                                         const normalized = normalizeTier(tier);
                                         const tierAlreadyHasGifts = normalized.giftProducts.length > 0;
-                                        // First gift ever (no discounts on Shopify yet) → show confirmation modal
-                                        // Otherwise (replacing, adding more, or discounts already exist) → silent add
+                                        const hasMultipleVariants = (product.variants?.length ?? 0) > 1;
+
+                                        // Multi-variant → open variant picker
+                                        if (hasMultipleVariants) {
+                                          setVariantPickerProduct({ ...product, imageUrl: imgSrc });
+                                          setVariantPickerTierId(tier.id);
+                                          setSelectedVariants(new Set());
+                                          return;
+                                        }
+
                                         if (tierAlreadyHasGifts || replacingGiftIndex !== null || discountsExist) {
-                                          const newGift = { handle: product.handle, variantId: product.variants?.[0]?.id ?? 0, title: product.title, imageUrl: imgSrc, price: product.variants?.[0]?.price || '' };
-                                          let updated: any[];
-                                          if (replacingGiftIndex !== null) {
-                                            updated = [...normalized.giftProducts];
-                                            updated[replacingGiftIndex] = newGift;
-                                            setReplacingGiftIndex(null);
-                                          } else {
-                                            updated = [...normalized.giftProducts, newGift];
-                                          }
-                                          updateTier(tier.id, { giftProducts: updated, giftProduct: updated[0] });
+                                          addGiftToTier(tier.id, { ...product, imageUrl: imgSrc }, product.variants?.[0]?.id ?? 0);
                                           setGiftSearchResults([]);
                                           setGiftSearchQuery('');
                                         } else {
@@ -888,6 +994,7 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                       </div>
                     )}
 
+
                     {/* Free Price Label — shown when tier has gifts */}
                     {normalizeTier(tier).giftProducts.length > 0 && (
                       <div style={{ padding: '10px 12px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
@@ -918,7 +1025,69 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
           })}
         </div>
 
-        {tiers.length === 0 && (
+      {/* Variant Picker Modal */}
+      {variantPickerProduct && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', maxHeight: '80vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              {variantPickerProduct.imageUrl && (
+                <img src={variantPickerProduct.imageUrl} alt="" style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', border: '1px solid #e5e7eb' }} />
+              )}
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>{variantPickerProduct.title}</div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>Select which variant(s) to offer as gift</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button onClick={() => setSelectedVariants(new Set(variantPickerProduct.variants.map((v: any) => v.id)))} style={{ fontSize: 11, color: '#7c3aed', background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '4px 12px', cursor: 'pointer', fontWeight: 500 }}>Select All</button>
+              <button onClick={() => setSelectedVariants(new Set())} style={{ fontSize: 11, color: '#6b7280', background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '4px 12px', cursor: 'pointer', fontWeight: 500 }}>Clear</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {variantPickerProduct.variants?.map((v: any) => {
+                const isSel = selectedVariants.has(v.id);
+                return (
+                  <label key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, border: isSel ? '2px solid #7c3aed' : '1px solid #e5e7eb', background: isSel ? '#f5f3ff' : '#fff', cursor: 'pointer', transition: 'all 0.15s' }}>
+                    <input type="checkbox" checked={isSel} onChange={() => { const n = new Set(selectedVariants); if (isSel) n.delete(v.id); else n.add(v.id); setSelectedVariants(n); }} style={{ accentColor: '#7c3aed', width: 16, height: 16 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: '#111827' }}>{v.title || 'Default'}</div>
+                      {v.price && <div style={{ fontSize: 11, color: "#6b7280" }}>{"$"}{v.price}</div>}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+              <button onClick={() => { setVariantPickerProduct(null); setVariantPickerTierId(null); }} style={{ padding: "8px 20px", background: "#f3f4f6", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, cursor: "pointer", fontWeight: 500, color: "#374151" }}>Cancel</button>
+              <button disabled={selectedVariants.size === 0} onClick={() => {
+                if (!variantPickerTierId) return;
+                const tier = tiers.find(t => t.id === variantPickerTierId);
+                if (!tier) return;
+                const norm = normalizeTier(tier);
+                const img = variantPickerProduct.imageUrl || variantPickerProduct.image?.src || variantPickerProduct.images?.[0]?.src || '';
+                const newGifts = Array.from(selectedVariants).map((vid) => {
+                  const vr = variantPickerProduct.variants?.find((x: any) => x.id === vid);
+                  const title = vr?.title && vr.title !== 'Default Title' ? variantPickerProduct.title + ' \u2014 ' + vr.title : variantPickerProduct.title;
+                  return { handle: variantPickerProduct.handle, variantId: vid, title, imageUrl: img, price: vr?.price || '' };
+                });
+                let updated: any[];
+                if (replacingGiftIndex !== null) {
+                  updated = [...norm.giftProducts];
+                  updated.splice(replacingGiftIndex, 1, ...newGifts);
+                  setReplacingGiftIndex(null);
+                } else {
+                  updated = [...norm.giftProducts, ...newGifts];
+                }
+                updateTier(variantPickerTierId, { giftProducts: updated, giftProduct: updated[0] });
+                setVariantPickerProduct(null); setVariantPickerTierId(null); setGiftSearchResults([]); setGiftSearchQuery('');
+              }} style={{ padding: "8px 20px", background: selectedVariants.size === 0 ? "#d1d5db" : "#7c3aed", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: selectedVariants.size === 0 ? "not-allowed" : "pointer" }}>
+                {"Add " + (selectedVariants.size > 0 ? selectedVariants.size + " Variant" + (selectedVariants.size > 1 ? "s" : "") : "Selected")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+        
+{tiers.length === 0 && (
           <div style={{ padding: 20, textAlign: 'center', color: '#9ca3af', fontSize: 13, background: '#f9fafb', borderRadius: 8, border: '1px dashed #d1d5db' }}>
             No reward tiers yet. Click "+ Add Tier" to create your first milestone.
           </div>

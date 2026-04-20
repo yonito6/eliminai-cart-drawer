@@ -63,7 +63,7 @@ export function addExperimentNote(
   type: NoteType,
   detail: string,
 ): ExperimentNote[] {
-  const notes = [...(existingNotes || [])];
+  const notes = [...(Array.isArray(existingNotes) ? existingNotes : [])];
   notes.push({
     timestamp: new Date().toISOString(),
     type,
