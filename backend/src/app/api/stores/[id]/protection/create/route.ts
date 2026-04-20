@@ -273,16 +273,24 @@ export async function POST(
     });
 
     addons.shippingProtection = {
+      ...(addons.shippingProtection || {}),
       enabled: true,
       handle: product.handle,
       productId: productGid,
-      iconId,
-      pricingMode,
-      defaultOn,
-      description,
-      title,
       tiers: tierConfig,
       createdAt: new Date().toISOString(),
+      config: {
+        ...(addons.shippingProtection?.config || {}),
+        tiers: tierConfig,
+        variantId: tierConfig[0]?.vid,
+        handle: product.handle,
+        productId: productGid,
+        iconId,
+        pricingMode,
+        defaultOn,
+        description,
+        productName: title,
+      },
     };
 
     config.addons = addons;
