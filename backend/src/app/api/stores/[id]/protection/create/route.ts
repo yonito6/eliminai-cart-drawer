@@ -37,10 +37,11 @@ async function shopifyGraphQL(shopDomain: string, token: string, query: string, 
 
 function buildTierTitle(maxCartValue: number | null, index: number, total: number): string {
   if (total === 1) return 'Shipping Protection';
+  // maxCartValue comes from editor in DOLLARS
   if (index === total - 1) {
-    return `$${Math.round((maxCartValue ?? 0) / 100)}+`;
+    return `$${Math.round(maxCartValue ?? 0)}+`;
   }
-  return `Up to $${Math.round((maxCartValue ?? 0) / 100)}`;
+  return `Up to $${Math.round(maxCartValue ?? 0)}`;
 }
 
 export async function POST(
@@ -64,7 +65,7 @@ export async function POST(
       iconId = 'shield-filled',
       customIconBase64,
       pricingMode = 'single',
-      singlePrice = 199, // cents
+      singlePrice = 4.99, // dollars (editor sends dollars)
       tiers = [],
       defaultOn = true,
       description = '',
@@ -124,7 +125,8 @@ export async function POST(
     const defaultVariantId = product.variants.nodes[0]?.id;
 
     // 2. Update default variant with correct price and title
-    const firstPriceDollars = (effectiveTiers[0].price / 100).toFixed(2);
+    // Price comes from editor in DOLLARS (e.g. 4.99), not cents
+    const firstPriceDollars = Number(effectiveTiers[0].price).toFixed(2);
     const firstTierTitle = buildTierTitle(effectiveTiers[0].maxCartValue, 0, effectiveTiers.length);
 
     const updateResult = await shopifyGraphQL(shopDomain, token, `
@@ -153,7 +155,7 @@ export async function POST(
     if (effectiveTiers.length > 1) {
       const additionalVariants = effectiveTiers.slice(1).map((tier: any, idx: number) => ({
         title: buildTierTitle(tier.maxCartValue, idx + 1, effectiveTiers.length),
-        price: (tier.price / 100).toFixed(2),
+        price: Number(tier.price).toFixed(2),
       }));
 
       const bulkResult = await shopifyGraphQL(shopDomain, token, `
