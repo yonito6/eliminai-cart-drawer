@@ -13,16 +13,27 @@ export function useStore() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  // Resolve the shop domain from multiple sources (priority order):
+  // 1. URL ?shop= param (most reliable — Shopify always passes on initial load)
+  // 2. window.__shopifyShop (set by AppBridgeProvider from initial URL)
+  // 3. localStorage cache (only if it matches one of the above)
+  function getShopDomain(): string | null {
+    if (typeof window === 'undefined') return null;
+    const urlShop = new URLSearchParams(window.location.search).get('shop');
+    if (urlShop) return urlShop;
+    const bridgeShop = (window as any).__shopifyShop;
+    if (bridgeShop) return bridgeShop;
+    return null;
+  }
+
   const [store, setStore] = useState<StoreInfo | null>(() => {
     try {
       const cached = localStorage.getItem('ccd_store');
       if (!cached) return null;
       const parsed = JSON.parse(cached);
-      // If ?shop= is in the URL and it doesn't match cached store, ignore cache
-      if (typeof window !== 'undefined') {
-        const urlShop = new URLSearchParams(window.location.search).get('shop');
-        if (urlShop && parsed.shopDomain !== urlShop) return null;
-      }
+      // Only use cache if it matches the current shop context
+      const currentShop = getShopDomain();
+      if (currentShop && parsed.shopDomain !== currentShop) return null;
       return parsed;
     } catch {}
     return null;
@@ -32,7 +43,8 @@ export function useStore() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const shop = searchParams.get('shop');
+    // Use searchParams first, then fall back to AppBridge global
+    const shop = searchParams.get('shop') || getShopDomain();
     const url = shop
       ? '/api/stores/resolve?shop=' + encodeURIComponent(shop)
       : '/api/stores/resolve';
