@@ -61,6 +61,7 @@ export default function ProtectionEditor({
   const initPrice = config.price ?? config.singlePrice ?? 4.99;
   const [iconId, setIconId] = useState(config.iconId ?? 'shield-filled');
   const [customIconUrl, setCustomIconUrl] = useState(config.customIconUrl ?? '');
+  const customIconBase64Ref = useRef<string | null>(null);
   const [iconColor, setIconColor] = useState(config.iconColor ?? '#555555');
   const [productName, setProductName] = useState(config.productName ?? 'Shipping Protection');
   const [description, setDescription] = useState(
@@ -165,10 +166,18 @@ export default function ProtectionEditor({
     setCreating(true);
     try {
       const payload = buildPayload();
+      // Include base64 image for Shopify product if user uploaded a custom icon
+      const createBody: any = {
+        ...payload,
+        title: payload.productName,
+      };
+      if (customIconBase64Ref.current) {
+        createBody.customIconBase64 = customIconBase64Ref.current;
+      }
       const res = await fetch(`/api/stores/${storeId}/protection/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(createBody),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -372,6 +381,10 @@ export default function ProtectionEditor({
                 setCustomIconUrl(url);
                 setIconId('custom');
                 pushPreview({ customIconUrl: url, iconId: 'custom' });
+                // Store base64 for Shopify product image upload on create
+                const reader = new FileReader();
+                reader.onload = () => { customIconBase64Ref.current = reader.result as string; };
+                reader.readAsDataURL(file);
               }}
             />
           </label>
