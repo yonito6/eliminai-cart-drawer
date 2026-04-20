@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { DEFAULT_PROTECTION_ICON_BASE64 } from '@/lib/protection-icon-default';
 
 /**
  * POST /api/stores/:id/protection/create
@@ -189,14 +190,15 @@ export async function POST(
     // Previously we unpublished it which broke cart add on every store.
     console.log('[protection/create] Product stays published (required for cart add)');
 
-    // 4. Optionally upload custom icon
-    if (customIconBase64) {
+    // 4. Upload icon image (custom from editor OR default embedded icon)
+    const iconBase64 = customIconBase64 || DEFAULT_PROTECTION_ICON_BASE64;
+    {
       try {
-        const mimeMatch = customIconBase64.match(/^data:(image\/\w+);base64,/);
+        const mimeMatch = iconBase64.match(/^data:(image\/\w+);base64,/);
         const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
         const extension = mimeType.split('/')[1] || 'png';
         const fileName = `protection-icon.${extension}`;
-        const base64Data = customIconBase64.replace(/^data:image\/\w+;base64,/, '');
+        const base64Data = iconBase64.replace(/^data:image\/\w+;base64,/, '');
         const buffer = Buffer.from(base64Data, 'base64');
 
         const stagedResult = await shopifyGraphQL(shopDomain, token, `
