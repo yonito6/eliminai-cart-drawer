@@ -34,7 +34,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           display: flex; flex-direction: column; flex-shrink: 0;
         }
         .dash-mobile-toggle { display: none; }
-        .dash-main { flex: 1; overflow: auto; min-width: 0; }
+        .dash-main { flex: 1; overflow: visible; min-width: 0; }
         @media (max-width: 768px) {
           .dash-wrap { flex-direction: column; }
           .dash-nav {
