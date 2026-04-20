@@ -14,9 +14,9 @@ import { prisma } from '@/lib/prisma';
  * Steps:
  *   1. Create Shopify product (type: Service, tags: _eliminai-cart-protection)
  *   2. Update default variant price + create additional variants for tiers 2+
- *   3. Unpublish from Online Store via publishableUnpublish
+ *   3. Unpublish from Online Store via REST published:false
  *   4. Optionally upload icon via stagedUploadsCreate + productCreateMedia
- *   5. Save config to store DB under config.addons.shippingProtection
+ *   5. Save config to store DB under config.addons.shippingProtection (BOTH live + demo)
  */
 
 async function shopifyGraphQL(shopDomain: string, token: string, query: string, variables?: any) {
@@ -51,7 +51,7 @@ export async function POST(
     const { id } = await params;
     const store = await prisma.store.findUnique({
       where: { id },
-      select: { shopDomain: true, accessToken: true, config: true },
+      select: { shopDomain: true, accessToken: true, config: true, demoConfig: true },
     });
 
     if (!store?.accessToken) {
@@ -181,23 +181,10 @@ export async function POST(
       allVariants.push(...newVariants);
     }
 
-    // 3. Unpublish from Online Store via REST API (doesn't need publications scope)
-    try {
-      const numericId = productGid.replace('gid://shopify/Product/', '');
-      const unpubRes = await fetch(`https://${shopDomain}/admin/api/2025-01/products/${numericId}.json`, {
-        method: 'PUT',
-        headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product: { id: parseInt(numericId), published: false } }),
-      });
-      if (unpubRes.ok) {
-        console.log('[protection/create] Unpublished product from Online Store');
-      } else {
-        console.warn('[protection/create] Unpublish failed:', unpubRes.status);
-      }
-    } catch (unpubErr) {
-      console.warn('[protection/create] Unpublish warning:', unpubErr.message);
-    }
-
+    // 3. Keep product published — it MUST be published for /cart/add.js to work.
+    // Customers won't find it: no collection, hidden tag, and the handle is obscure.
+    // Previously we unpublished it which broke cart add on every store.
+    console.log('[protection/create] Product stays published (required for cart add)');
 
     // 4. Optionally upload custom icon
     if (customIconBase64) {
@@ -258,7 +245,7 @@ export async function POST(
       }
     }
 
-    // 5. Save config to store DB
+    // 5. Save config to store DB (BOTH live config AND demo config)
     const config = (store.config as any) ?? {};
     const addons = config.addons ?? {};
 
@@ -272,15 +259,13 @@ export async function POST(
       };
     });
 
-    addons.shippingProtection = {
-      ...(addons.shippingProtection || {}),
+    const protectionData = {
       enabled: true,
       handle: product.handle,
       productId: productGid,
       tiers: tierConfig,
       createdAt: new Date().toISOString(),
       config: {
-        ...(addons.shippingProtection?.config || {}),
         tiers: tierConfig,
         variantId: tierConfig[0]?.vid,
         handle: product.handle,
@@ -293,10 +278,32 @@ export async function POST(
       },
     };
 
+    addons.shippingProtection = {
+      ...(addons.shippingProtection || {}),
+      ...protectionData,
+      config: {
+        ...(addons.shippingProtection?.config || {}),
+        ...protectionData.config,
+      },
+    };
     config.addons = addons;
+
+    // Also update demoConfig so protection works on demo theme too
+    const demoConfig = (store.demoConfig as any) ?? {};
+    const demoAddons = demoConfig.addons ?? {};
+    demoAddons.shippingProtection = {
+      ...(demoAddons.shippingProtection || {}),
+      ...protectionData,
+      config: {
+        ...(demoAddons.shippingProtection?.config || {}),
+        ...protectionData.config,
+      },
+    };
+    demoConfig.addons = demoAddons;
+
     await prisma.store.update({
       where: { id },
-      data: { config },
+      data: { config, demoConfig },
     });
 
     return NextResponse.json({
