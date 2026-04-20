@@ -104,28 +104,19 @@ async function duplicateAndZeroPrice(
     });
   }
 
-  // 4. Unpublish from Online Store so customers can't browse to it
-  const pubResult = await shopifyGraphQL(shopDomain, token, `{
-    publications(first: 10) {
-      nodes { id name }
-    }
-  }`);
-  const publications = pubResult?.data?.publications?.nodes ?? [];
-  const onlineStore = publications.find((p: any) =>
-    p.name === 'Online Store' || p.name === 'online_store'
-  );
-  if (onlineStore) {
-    await shopifyGraphQL(shopDomain, token, `
-      mutation publishableUnpublish($id: ID!, $input: [PublicationInput!]!) {
-        publishableUnpublish(id: $id, input: $input) {
-          userErrors { field message }
-        }
-      }
-    `, {
-      id: newProduct.id,
-      input: [{ publicationId: onlineStore.id }],
-    });
-    console.log(`[gift-discounts] Unpublished "${newTitle}" from Online Store`);
+  // 4. Unpublish from Online Store via REST API (published: false)
+  //    This works without read_publications/write_publications scopes.
+  //    Product stays ACTIVE (can be added to cart) but hidden from storefront.
+  const numericProductId = newProduct.id.replace('gid://shopify/Product/', '');
+  const unpubRes = await fetch(`https://${shopDomain}/admin/api/2025-01/products/${numericProductId}.json`, {
+    method: 'PUT',
+    headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ product: { id: parseInt(numericProductId), published: false } }),
+  });
+  if (unpubRes.ok) {
+    console.log(`[gift-discounts] Unpublished "${newTitle}" from Online Store (published=false)`);
+  } else {
+    console.warn(`[gift-discounts] Failed to unpublish "${newTitle}": ${unpubRes.status}`);
   }
 
   // 5. Remove duplicate from ALL collections — Shopify copies collection memberships
@@ -290,22 +281,33 @@ export async function POST(
     const legacyCleaned = await cleanupLegacyDiscounts(store.shopDomain, token);
 
     // 3. Build desired state from tiers
-    const desired: { handle: string; title: string; originalGid: string; originalPrice: string; tierGoal: number; tierNumber: number }[] = [];
+    const desired: { handle: string; title: string; originalGid: string; originalPrice: string; tierGoal: number; tierNumber: number; giftIndex: number; tierIndex: number; variantTitle?: string }[] = [];
     const notFound: string[] = [];
 
+    // Cache product lookups to avoid repeated API calls for same handle
+    const productCache: Record<string, { id: string; title: string; price: string } | null> = {};
+
     let tierNumber = 0;
-    for (const tier of tiers) {
+    for (let tIdx = 0; tIdx < tiers.length; tIdx++) {
+      const tier = tiers[tIdx];
       tierNumber++;
       const giftProducts = tier.giftProducts ?? (tier.giftProduct ? [tier.giftProduct] : []);
-      for (const gift of giftProducts) {
+      for (let gIdx = 0; gIdx < giftProducts.length; gIdx++) {
+        const gift = giftProducts[gIdx];
         if (!gift.handle) continue;
         const lookupHandle = gift.originalHandle || gift.handle;
-        const product = await getProductByHandle(store.shopDomain, token, lookupHandle);
+
+        if (!(lookupHandle in productCache)) {
+          productCache[lookupHandle] = await getProductByHandle(store.shopDomain, token, lookupHandle);
+        }
+        const product = productCache[lookupHandle];
         if (!product) {
           console.warn(`[gift-discounts] Product not found: ${lookupHandle}`);
           notFound.push(lookupHandle);
           continue;
         }
+        // Extract variant-specific title (part after em-dash)
+        const variantTitle = gift.title?.includes('\u2014') ? gift.title.split('\u2014').pop()?.trim() : undefined;
         desired.push({
           handle: lookupHandle,
           title: product.title,
@@ -313,13 +315,16 @@ export async function POST(
           originalPrice: gift.price || product.price,
           tierGoal: tier.goal,
           tierNumber,
+          giftIndex: gIdx,
+          tierIndex: tIdx,
+          variantTitle,
         });
       }
     }
 
     // 4. Duplicate each gift product at $0
     const results: any[] = [];
-    const giftMappings: { originalHandle: string; originalUrl: string; duplicateHandle: string; duplicateVariantId: string; duplicateGid: string }[] = [];
+    const giftMappings: { originalHandle: string; originalUrl: string; duplicateHandle: string; duplicateVariantId: string; duplicateGid: string; tierIndex?: number; giftIndex?: number; _used?: boolean }[] = [];
     const errors: any[] = [];
 
     for (const want of desired) {
@@ -337,6 +342,8 @@ export async function POST(
         duplicateHandle: dupResult.duplicateHandle,
         duplicateVariantId: dupResult.duplicateVariantId,
         duplicateGid: dupResult.duplicateGid,
+        tierIndex: want.tierIndex,
+        giftIndex: want.giftIndex,
       });
 
       results.push({
@@ -371,12 +378,17 @@ export async function POST(
         const addons = c.addons ?? {};
         const rewardConfig = addons.freeShippingBar?.config ?? {};
         const cfgTiers = rewardConfig.tiers ?? [];
-        for (const tier of cfgTiers) {
+        for (let tI = 0; tI < cfgTiers.length; tI++) {
+          const tier = cfgTiers[tI];
           const giftProducts = tier.giftProducts ?? (tier.giftProduct ? [tier.giftProduct] : []);
-          for (const gp of giftProducts) {
+          for (let gI = 0; gI < giftProducts.length; gI++) {
+            const gp = giftProducts[gI];
             const lookupHandle = gp.originalHandle || gp.handle;
-            const mapping = giftMappings.find(m => m.originalHandle === lookupHandle);
+            // Match by tierIndex + giftIndex for unique mapping (handles same product in multiple slots)
+            const mapping = giftMappings.find(m => m.tierIndex === tI && m.giftIndex === gI)
+              || giftMappings.find(m => m.originalHandle === lookupHandle && !m._used);
             if (mapping) {
+              (mapping as any)._used = true;
               gp.originalHandle = lookupHandle;
               gp.originalUrl = mapping.originalUrl;
               gp.handle = mapping.duplicateHandle;
