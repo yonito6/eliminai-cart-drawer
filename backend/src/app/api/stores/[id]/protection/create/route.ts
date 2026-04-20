@@ -125,6 +125,9 @@ export async function POST(
     const productGid = product.id;
     const defaultVariantId = product.variants.nodes[0]?.id;
 
+    // Wait for Shopify to fully register the product+variant before updating
+    await new Promise(r => setTimeout(r, 2000));
+
     // 2. Update default variant with correct price and title
     // Price comes from editor in DOLLARS (e.g. 4.99), not cents
     const firstPriceDollars = Number(effectiveTiers[0].price).toFixed(2);
@@ -151,6 +154,11 @@ export async function POST(
       }],
     });
 
+    console.log('[protection/create] Variant update result:', JSON.stringify(updateResult?.data?.productVariantsBulkUpdate));
+    const variantUpdateErrors = updateResult?.data?.productVariantsBulkUpdate?.userErrors;
+    if (variantUpdateErrors?.length > 0) {
+      console.error('[protection/create] Variant update ERRORS:', JSON.stringify(variantUpdateErrors));
+    }
     const allVariants = updateResult?.data?.productVariantsBulkUpdate?.productVariants ?? [product.variants.nodes[0]];
 
     // 2b. Create additional variants for tiers 2+
