@@ -1950,8 +1950,8 @@ function AddonsPage() {
                         />
                       )}
 
-                      {/* Standard dimensions (for rewards, only position remains) */}
-                      <div
+                      {/* Standard dimensions — skip for shippingProtection (has its own editor) */}
+                      {def.key !== 'shippingProtection' && <div
                         style={{
                           display: 'flex',
                           flexDirection: 'column' as const,
@@ -2000,7 +2000,7 @@ function AddonsPage() {
                             )}
                           </div>
                         ))}
-                      </div>
+                      </div>}
 
                       {/* Start Optimize button — with clear description */}
                       {addon.enabled && !experiments[def.key]?.status && def.dimensions.some(d => d.testable) && (
