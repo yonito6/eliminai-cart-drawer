@@ -13,9 +13,12 @@ import { DEFAULT_PROTECTION_ICON_BASE64 } from '@/lib/protection-icon-default';
  *   defaultOn, description
  *
  * Steps:
- *   1. Create Shopify product (type: Service, tags: _eliminai-cart-protection)
+ *   1. Create Shopify product (type: Service, tags: _eliminai-cart-protection, _eliminai-hidden)
  *   2. Update default variant price + create additional variants for tiers 2+
- *   3. Unpublish from Online Store via REST published:false
+ *   3. Keep product PUBLISHED (required for /cart/add.js) but HIDE from customers:
+ *      - Tag: _eliminai-hidden (used by theme patch to exclude from recommendations)
+ *      - Metafield: seo.hidden = 1 (noindex for search engines)
+ *   3b. Patch theme product-recommendations.liquid to skip hidden products (all themes)
  *   4. Optionally upload icon via stagedUploadsCreate + productCreateMedia
  *   5. Save config to store DB under config.addons.shippingProtection (BOTH live + demo)
  */
@@ -43,6 +46,59 @@ function buildTierTitle(maxCartValue: number | null, index: number, total: numbe
     return `$${Math.round(maxCartValue ?? 0)}+`;
   }
   return `Up to $${Math.round(maxCartValue ?? 0)}`;
+}
+
+/**
+ * Patches all themes' product-recommendations.liquid to exclude products
+ * tagged with _eliminai-hidden. Idempotent — skips themes already patched.
+ */
+async function patchThemeRecommendations(shopDomain: string, token: string) {
+  try {
+    const themesRes = await fetch(`https://${shopDomain}/admin/api/2025-01/themes.json`, {
+      headers: { 'X-Shopify-Access-Token': token },
+    });
+    if (!themesRes.ok) return;
+    const { themes } = await themesRes.json();
+
+    const PATCH_LINE = `{%- if product.tags contains "_eliminai-hidden" -%}{%- continue -%}{%- endif -%}`;
+
+    for (const theme of themes) {
+      try {
+        const assetRes = await fetch(
+          `https://${shopDomain}/admin/api/2025-01/themes/${theme.id}/assets.json?asset[key]=sections/product-recommendations.liquid`,
+          { headers: { 'X-Shopify-Access-Token': token } },
+        );
+        if (!assetRes.ok) continue;
+        const { asset } = await assetRes.json();
+        if (!asset?.value) continue;
+
+        // Already patched?
+        if (asset.value.includes('_eliminai-hidden')) continue;
+
+        // Find the for loop over recommendations and inject our continue
+        const patched = asset.value.replace(
+          /(\{%-?\s*for\s+product\s+in\s+recommendations\.products\s*-?%\})/,
+          `$1\n        ${PATCH_LINE}`,
+        );
+
+        if (patched === asset.value) continue; // no match found, skip
+
+        await fetch(`https://${shopDomain}/admin/api/2025-01/themes/${theme.id}/assets.json`, {
+          method: 'PUT',
+          headers: {
+            'X-Shopify-Access-Token': token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ asset: { key: 'sections/product-recommendations.liquid', value: patched } }),
+        });
+        console.log(`[protection/create] Patched recommendations in theme ${theme.id} (${theme.name})`);
+      } catch (themeErr: any) {
+        console.warn(`[protection/create] Could not patch theme ${theme.id}:`, themeErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.warn('[protection/create] Theme patch warning:', err.message);
+  }
 }
 
 export async function POST(
@@ -84,7 +140,7 @@ export async function POST(
       return NextResponse.json({ error: 'At least one tier/price is required' }, { status: 400 });
     }
 
-    // 1. Create Shopify product (new API: product arg, no variants/requiresShipping inline)
+    // 1. Create Shopify product with hidden tags (published but invisible to customers)
     const createResult = await shopifyGraphQL(shopDomain, token, `
       mutation productCreate($product: ProductCreateInput!) {
         productCreate(product: $product) {
@@ -106,7 +162,7 @@ export async function POST(
       product: {
         title,
         productType: 'Service',
-        tags: ['_eliminai-cart-protection'],
+        tags: ['_eliminai-cart-protection', '_eliminai-hidden'],
         descriptionHtml: description || `<p>${title} — protects your order against loss, damage, and theft during shipping.</p>`,
       },
     });
@@ -191,10 +247,39 @@ export async function POST(
       allVariants.push(...newVariants);
     }
 
-    // 3. Keep product published — it MUST be published for /cart/add.js to work.
-    // Customers won't find it: no collection, hidden tag, and the handle is obscure.
-    // Previously we unpublished it which broke cart add on every store.
-    console.log('[protection/create] Product stays published (required for cart add)');
+    // 3. Product stays PUBLISHED (required for /cart/add.js to work).
+    // Hide from customers via: _eliminai-hidden tag + noindex metafield.
+    // Theme patch (step 3b) ensures it's excluded from product recommendations.
+    console.log('[protection/create] Product stays published (required for cart add). Hiding via tags + metafield.');
+
+    // 3a. Set noindex metafield so search engines don't index it
+    try {
+      await shopifyGraphQL(shopDomain, token, `
+        mutation productUpdate($input: ProductInput!) {
+          productUpdate(input: $input) {
+            userErrors { field message }
+          }
+        }
+      `, {
+        input: {
+          id: productGid,
+          metafields: [{
+            namespace: 'seo',
+            key: 'hidden',
+            value: '1',
+            type: 'number_integer',
+          }],
+        },
+      });
+    } catch (metaErr: any) {
+      console.warn('[protection/create] Metafield warning:', metaErr.message);
+    }
+
+    // 3b. Patch all themes to exclude _eliminai-hidden products from recommendations
+    // Runs in background — don't block the API response
+    patchThemeRecommendations(shopDomain, token).catch((err) => {
+      console.warn('[protection/create] Background theme patch error:', err.message);
+    });
 
     // 4. Upload icon image (custom from editor OR default embedded icon)
     const iconBase64 = customIconBase64 || DEFAULT_PROTECTION_ICON_BASE64;
