@@ -114,8 +114,14 @@ async function handleRequest(req: NextRequest) {
     }
 
     // 9. Return config + experiment assignment
+    // NOTE: trustBadgesV2 is force-disabled until V2 renderer ships — see BUG-019.
+    // Without this override, the V2 FF gates the legacy V1 renderer (v14-complete.js
+    // injectTrustBadges early-returns when CCD.FF('trustBadgesV2') is true), but no
+    // working V2 DOM exists, so badges disappear entirely on the storefront.
+    const rawFlags = (store as any).featureFlags || {};
+    const featureFlags = { ...rawFlags, trustBadgesV2: false };
     return NextResponse.json({
-      cartConfig: { ...(cartConfig as any), ...(jsUrl ? { _jsUrl: jsUrl } : {}), ...(cssUrl ? { _cssUrl: cssUrl } : {}) },
+      cartConfig: { ...(cartConfig as any), ...(jsUrl ? { _jsUrl: jsUrl } : {}), ...(cssUrl ? { _cssUrl: cssUrl } : {}), featureFlags },
       currency: store.currency,
       segment: assignment.segment,
       experiment: assignment.experiment

@@ -21,7 +21,8 @@
  *
  * LOCK TESTS (behavior that must never regress):
  *   - LOCK-1: Invalid HMAC → 401
- *   - LOCK-2: Missing shop or sessionToken → 400
+ *   - LOCK-2: Missing sessionToken auto-generates anon token (200) — supports anon flows
+ *   - LOCK-2b: Missing shop → 400
  *   - LOCK-3: Unknown store → 404
  *   - LOCK-4: Inactive store → 404
  *   - LOCK-5: Baseline (no experiment) increments baselineCartOpens
@@ -40,6 +41,12 @@ vi.mock('../lib/prisma', () => ({
     store: {
       findUnique: vi.fn(),
       update: vi.fn(),
+    },
+    variantAssignment: {
+      findUnique: vi.fn(),
+    },
+    event: {
+      create: vi.fn(),
     },
   },
 }));
@@ -122,12 +129,15 @@ describe('POST /api/proxy/config', () => {
     expect(prisma.store.findUnique).not.toHaveBeenCalled();
   });
 
-  // LOCK-2: Missing sessionToken → 400
-  it('LOCK-2: returns 400 when sessionToken is missing', async () => {
+  // LOCK-2: Missing sessionToken auto-generates anon token (intentional — supports anon flows)
+  it('LOCK-2: auto-generates anon sessionToken when missing (returns 200)', async () => {
     const POST = (await getHandler());
     const req = makeRequest(VALID_QUERY, {}); // no sessionToken
     const res = await POST(req);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    // Verify assignVariant was called with an auto-generated anon token
+    const callArgs = (assignVariant as any).mock.calls[0];
+    expect(callArgs[1]).toMatch(/^anon-/);
   });
 
   // LOCK-2b: Missing shop → 400
@@ -212,7 +222,9 @@ describe('POST /api/proxy/config', () => {
       features: { showTrustBadges: true },
     });
     expect(json.sessionId).toBe('sess_exp');
-    expect(json.cartConfig).toEqual(MOCK_STORE.config);
+    // cartConfig merges store.config + featureFlags (always added by route)
+    expect(json.cartConfig).toMatchObject(MOCK_STORE.config);
+    expect(json.cartConfig).toHaveProperty('featureFlags');
     expect(json.currency).toBe('USD');
   });
 
@@ -272,5 +284,40 @@ describe('POST /api/proxy/config', () => {
       1,
       false
     );
+  });
+
+  // LOCK-10: featureFlags from store DB are merged into cartConfig response
+  // (locks the existing pass-through behavior so my fix doesn't break it)
+  it('LOCK-10: passes through arbitrary featureFlags from store DB into cartConfig', async () => {
+    (prisma.store.findUnique as any).mockResolvedValue({
+      ...MOCK_STORE,
+      featureFlags: { someFlag: true, anotherFlag: 'value' },
+    });
+    const POST = (await getHandler());
+    const req = makeRequest(VALID_QUERY, { sessionToken: 'tok1' });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.cartConfig.featureFlags.someFlag).toBe(true);
+    expect(json.cartConfig.featureFlags.anotherFlag).toBe('value');
+  });
+
+  // BUG-019: Trust badges not rendering — V2 unimplemented but FF gate suppresses V1.
+  // Backend MUST force trustBadgesV2:false in response until V2 ships, even if
+  // a store record has it set to true (legacy/test state). Locks the fix.
+  it('BUG-019: forces trustBadgesV2 to false in response regardless of DB value', async () => {
+    (prisma.store.findUnique as any).mockResolvedValue({
+      ...MOCK_STORE,
+      featureFlags: { trustBadgesV2: true, otherFlag: true },
+    });
+    const POST = (await getHandler());
+    const req = makeRequest(VALID_QUERY, { sessionToken: 'tok1' });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    // Forced override: V2 must be false (so legacy V1 renderer activates)
+    expect(json.cartConfig.featureFlags.trustBadgesV2).toBe(false);
+    // Other flags must still pass through unchanged
+    expect(json.cartConfig.featureFlags.otherFlag).toBe(true);
   });
 });
