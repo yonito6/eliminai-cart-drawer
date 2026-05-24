@@ -2070,15 +2070,19 @@ Sticky bottom bar inside the right panel:
 
 When `crossTabBanner?.kind === 'incoming-while-dirty'`:
 - Render a yellow inline banner above the Discard/Save buttons.
+- **Must include `data-cart-editor-conflict-banner="incoming"`** on the root banner element (used by Playwright test in Chunk 5 Task 5.3).
 - Copy: "Another tab saved newer changes (v{incomingVersion}). You have unsaved edits here."
 - Buttons: [Discard mine & load latest] → `acceptIncoming()`. [Keep my changes] → `dismissBanner()`.
+- Escape key on this banner is a no-op (it's inline, not modal).
 
 - [ ] **Step 3: Build 409 server-conflict modal**
 
 When `crossTabBanner?.kind === 'server-conflict-409'`:
 - Render a blocking modal (`role="dialog"`, focus trap, esc-to-cancel).
+- **Must include `data-cart-editor-conflict-banner="server-409"`** on the modal root element (used by Playwright test in Chunk 5 Task 5.3).
 - Copy: "Your changes couldn't be saved because someone else updated this configuration. Their version: v{incomingVersion}."
 - Buttons: [Discard mine & reload latest] → `acceptIncoming()`. [Keep my changes] → `dismissBanner()` (returns to dirty state; user can re-save which will 409 again — they must explicitly resolve).
+- Escape key invokes `dismissBanner()` (matches the [Keep my changes] action).
 
 - [ ] **Step 4: Verify**
 
@@ -2099,30 +2103,46 @@ git commit -m "feat(cart-editor): save bar + crossTabBanner-driven conflict UI"
 
 ## Chunk 5: Stage 3c + Stage 4 — Navigation guard, Playwright tests, docs
 
-### Task 5.1: Cross-tab conflict banner UI
+> **Note:** Cross-tab conflict banner UI is fully delivered in Chunk 4 Task 4.4 (inline `incoming-while-dirty` banner + `server-conflict-409` modal, both reading `crossTabBanner` from the draft store). There is no separate banner file in this chunk — Task 4.4 is the single source of truth for conflict UI.
 
-**Files:**
-- Create: `backend/src/app/dashboard/cart-editor/cross-tab-banner.tsx`
-
-- [ ] **Step 1: Build banner**
-
-Reads `crossTabBanner` from draft store. When `{ kind: 'conflict', incomingVersion }`:
-
-> "Settings updated in another tab. [Discard mine & reload] [Keep my changes]"
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add backend/src/app/dashboard/cart-editor/cross-tab-banner.tsx
-git commit -m "feat(cart-editor): cross-tab conflict banner"
-```
-
----
-
-### Task 5.2: Navigation guard
+### Task 5.1: Navigation guard
 
 **Files:**
 - Modify: `backend/src/app/dashboard/cart-editor/page.tsx`
+- Test: `backend/__tests__/cart-editor/navigation-guard.test.tsx`
+
+- [ ] **Step 0: Failing test** — covers all three behaviors (beforeunload, intra-app Link, sessionStorage round-trip). Per CLAUDE.md Test-First ZERO TOLERANCE.
+
+```tsx
+import { render, fireEvent } from '@testing-library/react';
+import { CartEditorPage } from '../../src/app/dashboard/cart-editor/page';
+
+it('beforeunload prompt fires only when isDirty=true', () => {
+  const { rerender } = render(<CartEditorPage storeId="s1" initialIsDirty={false} />);
+  const evClean = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+  window.dispatchEvent(evClean);
+  expect(evClean.defaultPrevented).toBe(false);
+
+  rerender(<CartEditorPage storeId="s1" initialIsDirty={true} />);
+  const evDirty = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+  window.dispatchEvent(evDirty);
+  expect(evDirty.defaultPrevented).toBe(true);
+});
+
+it('intra-app Link click while isDirty=true opens dashboard confirm modal', () => {
+  const { getByTestId, queryByRole } = render(<CartEditorPage storeId="s1" initialIsDirty={true} />);
+  fireEvent.click(getByTestId('nav-link-addons'));
+  expect(queryByRole('dialog')).toHaveTextContent(/unsaved changes/i);
+});
+
+it('sessionStorage round-trip restores draft on mount', () => {
+  sessionStorage.setItem('cart-editor:s1:draft', JSON.stringify({ header: { title: 'Restored' } }));
+  const { getByLabelText } = render(<CartEditorPage storeId="s1" />);
+  expect((getByLabelText(/title/i) as HTMLInputElement).value).toBe('Restored');
+});
+```
+
+Run: FAIL.
 
 - [ ] **Step 1: Beforeunload listener**
 
@@ -2144,28 +2164,35 @@ Subscribe to Next.js router events; if `isDirty`, intercept route changes with t
 
 - [ ] **Step 3: sessionStorage draft persistence**
 
-On every `setField`, write `sessionStorage.setItem(`cart-editor:${storeId}:draft`, JSON.stringify(draft))`. On mount, restore from sessionStorage if present. Clear on save/discard.
+On every `setField`, write ``sessionStorage.setItem(`cart-editor:${storeId}:draft`, JSON.stringify(draft))``. On mount, restore from sessionStorage if present. Clear on save/discard.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Verify**
+
+Run: `cd backend && npm test -- navigation-guard.test`. Expected: PASS.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add backend/src/app/dashboard/cart-editor/page.tsx
+git add backend/src/app/dashboard/cart-editor/page.tsx backend/__tests__/cart-editor/navigation-guard.test.tsx
 git commit -m "feat(cart-editor): navigation guard + sessionStorage draft persistence"
 ```
 
 ---
 
-### Task 5.3: Playwright tests — 12 preview integration tests
+### Task 5.2: Playwright tests — 12 preview integration tests
 
 **Files:**
 - Create: `tests/cart-editor-preview.spec.js`
 
 - [ ] **Step 1: Write all 12 tests** matching spec §8.4 exactly:
 
+> **Auth seeding:** dashboard routes require a logged-in session. Use the existing Playwright auth fixture (see `tests/helpers/auth-seed.js` if present, otherwise `playwright.config.js` `globalSetup`). The `beforeEach` below assumes a stored auth state has already been loaded by the project config (`use: { storageState: 'tests/.auth/dashboard-user.json' }`). If that fixture does not exist, add it before running this suite.
+
 ```js
 const { test, expect } = require('@playwright/test');
 
 test.beforeEach(async ({ page }) => {
+  // requires dashboard auth fixture (see note above)
   await page.goto('/dashboard/cart-editor?storeId=test-store');
 });
 
@@ -2174,12 +2201,16 @@ test('click Header shows Header editor', async ({ page }) => {
   await expect(page.locator('[data-cart-editor-panel]')).toContainText('Header');
 });
 
-test('header.title edit updates preview within 500ms', async ({ page }) => {
+test('header.title edit updates preview within 1000ms of last keystroke', async ({ page }) => {
   await page.locator('[data-cart-editor-preview-root] .ccd-header').click();
-  const t0 = Date.now();
   await page.fill('input[name="header.title"]', 'New Title');
+  // Measure ONLY the preview-propagation latency after the last keystroke (excludes typing time).
+  const t0 = await page.evaluate(() => performance.now());
   await expect(page.locator('[data-cart-editor-preview-root] .ccd-header')).toContainText('New Title');
-  expect(Date.now() - t0).toBeLessThan(500);
+  const t1 = await page.evaluate(() => performance.now());
+  // Spec §3.3 budget is 16ms p95 in single-process, but Playwright adds RPC overhead.
+  // Use 1000ms as a non-flaky CI ceiling; tighten in perf-only runs.
+  expect(t1 - t0).toBeLessThan(1000);
 });
 
 test('save then reload shows persisted value', async ({ page }) => {
@@ -2250,7 +2281,10 @@ test('cache bust: PUT → /apps/eliminai/config returns new version within 2s', 
   await page.fill('input[name="header.title"]', 'CacheTest');
   await page.click('button:has-text("Save Changes")');
   await new Promise(r => setTimeout(r, 2000));
-  const r = await request.get('/api/proxy/config?shop=test-store.myshopify.com&...');
+  // Full proxy URL — params match Shopify App Proxy signature shape used by the cart drawer.
+  // See backend/src/app/api/proxy/config/route.ts for required params (shop, path_prefix, timestamp, signature).
+  const proxyUrl = '/api/proxy/config?shop=test-store.myshopify.com&path_prefix=%2Fapps%2Feliminai&timestamp=1700000000&signature=test';
+  const r = await request.get(proxyUrl);
   const body = await r.json();
   expect(body.cartConfig.editorOverrides.header.title).toBe('CacheTest');
 });
@@ -2283,25 +2317,54 @@ git commit -m "test(cart-editor): 12 Playwright preview + cross-tab + ownership 
 
 ---
 
-### Task 5.4: CI gate — pre-commit + pre-deploy reconcile
+### Task 5.3: CI gate — pre-commit + pre-deploy reconcile
 
 **Files:**
 - Modify: `tests/pre-upload-gate.js` (or whichever pre-commit script the repo already uses)
 
-- [ ] **Step 1: Add test-count assertion**
+- [ ] **Step 1: Add per-section test-count assertions**
 
-After running the suite, parse vitest/test output and assert at least 514 passing (399 baseline + 115 new). On miss, print the section breakdown from spec §8.6 and exit non-zero.
+After running the suite, parse vitest/test output and assert each section minimum from spec §8.6 individually, then assert the grand total. On any miss, print the failing section and exit non-zero.
+
+Required per-section minimums (spec §8.6):
+- Baseline contract tests in `tests/contract.test.js`: **≥ 339** (existing pre-editor)
+- Cart-editor contract additions in `tests/contract.test.js`: **≥ 60** (new field wiring)
+- Cart-editor unit tests in `backend/__tests__/cart-editor/**`: **≥ 37**
+- Cart-editor Playwright tests in `tests/cart-editor-preview.spec.js`: **≥ 12**
+- Blast-radius locks in `tests/blast-radius/cart-editor.test.js`: **= 6** (exact)
+- Grand total across all suites: **≥ 514** (399 baseline + 115 new)
+
+Pseudo-code:
+
+```js
+const sections = {
+  contractBaseline: { pattern: /tests\/contract\.test\.js \[baseline\]/, min: 339 },
+  contractEditor:   { pattern: /tests\/contract\.test\.js \[cart-editor\]/, min: 60 },
+  unitEditor:       { pattern: /backend\/__tests__\/cart-editor\//, min: 37 },
+  playwrightEditor: { pattern: /tests\/cart-editor-preview\.spec\.js/, min: 12 },
+  blastRadius:      { pattern: /tests\/blast-radius\/cart-editor\.test\.js/, min: 6, exact: true },
+};
+for (const [name, s] of Object.entries(sections)) {
+  const count = countPassing(s.pattern);
+  if (s.exact ? count !== s.min : count < s.min) {
+    console.error(`Section ${name}: expected ${s.exact ? '=' : '>='} ${s.min}, got ${count}`);
+    process.exit(1);
+  }
+}
+const total = sumAllPassing();
+if (total < 514) { console.error(`Total ${total} < 514`); process.exit(1); }
+```
 
 - [ ] **Step 2: Commit**
 
 ```bash
 git add tests/pre-upload-gate.js
-git commit -m "test(cart-editor): CI gate enforces ≥514 passing tests"
+git commit -m "test(cart-editor): CI gate enforces per-section minimums + >=514 total"
 ```
 
 ---
 
-### Task 5.5: Stage 4 — docs
+### Task 5.4: Stage 4 — docs
 
 **Files:**
 - Create: `docs/cart-editor/settings-reference.md`
@@ -2324,7 +2387,20 @@ git commit -m "docs(cart-editor): settings reference + competitor parity check"
 
 ---
 
-### Task 5.6: Stage 3 + Stage 4 deploy
+### Task 5.5: Stage 3 + Stage 4 deploy
+
+- [ ] **Step 0: LOCK 5 production smoke replay (deploy gate per spec §8.5)**
+
+Snapshot current production cart DOM and replay it through the editor renderer with `editorOverrides = null`. Result MUST be byte-identical to the production snapshot. This is the deploy gate for Stage 2 onward — if this fails, do NOT proceed.
+
+```bash
+# Capture fresh production snapshot
+node tests/scripts/snapshot-production-cart.js
+# Run only LOCK 5 against the fresh snapshot
+node tests/blast-radius/cart-editor.test.js --only=lock-5
+```
+
+Expected: PASS with exit 0. On failure, abort deploy and investigate divergence between editor renderer and live cart.
 
 - [ ] **Step 1: Run full gate**
 
@@ -2335,7 +2411,7 @@ node tests/blast-radius/cart-editor.test.js
 npx playwright test cart-editor-preview.spec.js
 ```
 
-All must pass. Total count ≥ 514.
+All must pass. Per-section minimums and total count >= 514 enforced by Task 5.3 pre-upload gate.
 
 - [ ] **Step 2: Set Railway env**
 
@@ -2352,10 +2428,21 @@ cd backend && npm run deploy
 
 - [ ] **Step 4: Verify in production**
 
+Happy path:
 - Open dashboard → Cart Editor tab visible
 - Edit header.title → save → reload → persists
-- Open second tab → save in first → second tab syncs
-- Open shopper cart on demo theme → header.title from editor renders live
+- Open second tab → save in first → second tab `savedConfig` updates within 1s (cross-tab sync path)
+- Open shopper cart on demo theme → header.title from editor renders live within 5 minutes (cache-bust path)
+
+Conflict path:
+- In tab B, dirty a field
+- In tab A, save a different change
+- Tab B must show the `incoming-while-dirty` inline banner from Task 4.4
+- In tab B, click [Keep my changes], then click Save → must receive 409 → must show the `server-conflict-409` modal from Task 4.4
+
+Cache-bust verification:
+- Capture `If-None-Match: "ce-<oldVersion>"` request to `/api/proxy/config` → expect 200 with new ETag (not 304) within 5 minutes of save
+- Subsequent request with the new ETag → expect 304
 
 - [ ] **Step 5: Tag release**
 
