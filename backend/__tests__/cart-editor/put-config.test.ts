@@ -42,7 +42,7 @@ describe('PUT /api/cart-editor/[storeId]/config', () => {
     mockUpdate.mockResolvedValue({ editorOverrides: { schemaVersion: 1 }, editorOverridesVersion: 1 });
 
     let lastRes: Response | null = null;
-    // PUT limiter allows 10/60s — send 11
+    // PUT limiter allows 10/60s - send 11
     for (let i = 0; i <= 10; i++) {
       mockFindUnique.mockResolvedValue({ editorOverrides: null, editorOverridesVersion: i });
       mockUpdate.mockResolvedValue({ editorOverrides: { schemaVersion: 1 }, editorOverridesVersion: i + 1 });
@@ -64,6 +64,32 @@ describe('PUT /api/cart-editor/[storeId]/config', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/invalid json/i);
+  });
+
+  it('returns 400 when body is JSON null', async () => {
+    const storeId = 'null-body-store-put';
+    const req = new NextRequest(`http://localhost/api/cart-editor/${storeId}/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'If-Match': '"ce-0"' },
+      body: 'null',
+    });
+    const res = await PUT(req, { params: { storeId } });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/body must be a json object/i);
+  });
+
+  it('returns 400 when body is a JSON array', async () => {
+    const storeId = 'array-body-store-put';
+    const req = new NextRequest(`http://localhost/api/cart-editor/${storeId}/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'If-Match': '"ce-0"' },
+      body: JSON.stringify([]),
+    });
+    const res = await PUT(req, { params: { storeId } });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/body must be a json object/i);
   });
 
   it('returns 400 with conflictPath when body contains addon-owned path', async () => {

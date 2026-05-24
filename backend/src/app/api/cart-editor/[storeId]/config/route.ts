@@ -59,12 +59,17 @@ export async function PUT(
     });
   }
 
-  // Parse JSON body — explicit try/catch for clear 400 on malformed JSON
+  // Parse JSON body - explicit try/catch for clear 400 on malformed JSON
   let raw: unknown;
   try {
     raw = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  // Guard: body must be a plain object (not null, not an array)
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return NextResponse.json({ error: 'Body must be a JSON object' }, { status: 400 });
   }
 
   // Ownership guard: reject if body contains any addon-owned paths
@@ -104,7 +109,8 @@ export async function PUT(
 
   const currentVersion = store.editorOverridesVersion ?? 0;
 
-  // If-Match concurrency check: strong ETag must match current version
+  // If-Match concurrency check: strong ETag must match current version.
+  // If the header is absent, we allow the write (useful for initial saves).
   const ifMatch = req.headers.get('If-Match');
   const expectedETag = `"ce-${currentVersion}"`;
   if (ifMatch !== null && ifMatch !== expectedETag) {
@@ -117,7 +123,7 @@ export async function PUT(
     );
   }
 
-  // Atomic update: write editorOverrides + increment version
+  // Atomic update: write editorOverrides and increment version in one operation
   const updated = await prisma.store.update({
     where: { id: storeId },
     data: {
@@ -133,7 +139,7 @@ export async function PUT(
   try {
     revalidateTag(`cart-config:${storeId}`);
   } catch {
-    // revalidateTag can throw outside Next.js rendering context — swallow silently
+    // revalidateTag can throw outside the Next.js rendering context - swallow silently
   }
 
   return NextResponse.json(
