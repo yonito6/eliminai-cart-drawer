@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+process.env.CART_EDITOR_API_ENABLED = 'true';
+
 // Mock prisma before importing the route
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -72,5 +74,14 @@ describe('GET /api/cart-editor/[storeId]/config', () => {
     const res = await GET(req, { params: { storeId: 'store-y' } });
 
     expect(res.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('returns 404 when feature flag is disabled', async () => {
+    process.env.CART_EDITOR_API_ENABLED = 'false';
+    const res = await GET(new NextRequest('http://localhost/api/cart-editor/x/config'), { params: { storeId: 'x' } });
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/disabled/i);
+    process.env.CART_EDITOR_API_ENABLED = 'true'; // restore for other tests
   });
 });

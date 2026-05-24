@@ -11,6 +11,10 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { storeId: string } }
 ) {
+  if (process.env.CART_EDITOR_API_ENABLED !== 'true') {
+    return NextResponse.json({ error: 'Cart Editor API disabled' }, { status: 404 });
+  }
+
   const { storeId } = params;
 
   if (!getLimiter.check(`ce:get:${storeId}`)) {
@@ -49,6 +53,10 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: { storeId: string } }
 ) {
+  if (process.env.CART_EDITOR_API_ENABLED !== 'true') {
+    return NextResponse.json({ error: 'Cart Editor API disabled' }, { status: 404 });
+  }
+
   const { storeId } = params;
 
   // Rate limit: 10 PUT requests per 60s per store

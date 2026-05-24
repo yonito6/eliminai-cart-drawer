@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
+process.env.CART_EDITOR_API_ENABLED = 'true';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -226,5 +227,16 @@ describe('PUT /api/cart-editor/[storeId]/config', () => {
     const body2 = await res2.json();
     expect(body2.editorOverridesVersion).toBe(2);
     expect(res2.headers.get('ETag')).toBe('"ce-2"');
+  });
+
+  it('returns 404 when feature flag is disabled', async () => {
+    process.env.CART_EDITOR_API_ENABLED = 'false';
+    const storeId = 'flag-disabled-put';
+    const req = makeRequest(storeId, { editorOverrides: {} }, '"ce-0"');
+    const res = await PUT(req, { params: { storeId } });
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/disabled/i);
+    process.env.CART_EDITOR_API_ENABLED = 'true';
   });
 });
