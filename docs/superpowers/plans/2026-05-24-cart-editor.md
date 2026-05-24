@@ -2070,7 +2070,7 @@ Sticky bottom bar inside the right panel:
 
 When `crossTabBanner?.kind === 'incoming-while-dirty'`:
 - Render a yellow inline banner above the Discard/Save buttons.
-- **Must include `data-cart-editor-conflict-banner="incoming"`** on the root banner element (used by Playwright test in Chunk 5 Task 5.3).
+- **Must include `data-cart-editor-conflict-banner="incoming"`** on the root banner element (used by Playwright test in Chunk 5 Task 5.2).
 - Copy: "Another tab saved newer changes (v{incomingVersion}). You have unsaved edits here."
 - Buttons: [Discard mine & load latest] → `acceptIncoming()`. [Keep my changes] → `dismissBanner()`.
 - Escape key on this banner is a no-op (it's inline, not modal).
@@ -2079,7 +2079,7 @@ When `crossTabBanner?.kind === 'incoming-while-dirty'`:
 
 When `crossTabBanner?.kind === 'server-conflict-409'`:
 - Render a blocking modal (`role="dialog"`, focus trap, esc-to-cancel).
-- **Must include `data-cart-editor-conflict-banner="server-409"`** on the modal root element (used by Playwright test in Chunk 5 Task 5.3).
+- **Must include `data-cart-editor-conflict-banner="server-409"`** on the modal root element (used by Playwright test in Chunk 5 Task 5.2).
 - Copy: "Your changes couldn't be saved because someone else updated this configuration. Their version: v{incomingVersion}."
 - Buttons: [Discard mine & reload latest] → `acceptIncoming()`. [Keep my changes] → `dismissBanner()` (returns to dirty state; user can re-save which will 409 again — they must explicitly resolve).
 - Escape key invokes `dismissBanner()` (matches the [Keep my changes] action).
@@ -2113,31 +2113,64 @@ git commit -m "feat(cart-editor): save bar + crossTabBanner-driven conflict UI"
 
 - [ ] **Step 0: Failing test** — covers all three behaviors (beforeunload, intra-app Link, sessionStorage round-trip). Per CLAUDE.md Test-First ZERO TOLERANCE.
 
+> **Why we drive `isDirty` via the draft store, not props:** Chunk 3 Task 3.3 declares `CartEditorPage` as `export default function CartEditorPage({ params }: { params: Promise<{ storeId: string }> })`. We do NOT add new props in this task — instead the test mounts the real page inside a `DraftStoreProvider` and dirties the draft by calling `setField` through `useDraft()`. This keeps the page component shape stable and tests behavior, not implementation.
+>
+> **Prerequisite for the intra-app Link assertion:** the dashboard layout's `<Link>` to `/dashboard/addons` must carry `data-testid="nav-link-addons"`. If it does not exist today, add it as a one-line change to `backend/src/app/dashboard/layout.tsx` in Step 2 below — this is the minimal layout change needed for the navigation guard to be testable.
+
 ```tsx
 import { render, fireEvent } from '@testing-library/react';
-import { CartEditorPage } from '../../src/app/dashboard/cart-editor/page';
+import CartEditorPage from '../../src/app/dashboard/cart-editor/page';
+import { DraftStoreProvider, useDraft } from '../../src/app/dashboard/cart-editor/draft-store';
 
-it('beforeunload prompt fires only when isDirty=true', () => {
-  const { rerender } = render(<CartEditorPage storeId="s1" initialIsDirty={false} />);
-  const evClean = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
-  window.dispatchEvent(evClean);
-  expect(evClean.defaultPrevented).toBe(false);
+const cleanInitial = { schemaVersion: 1, savedConfig: { editorOverrides: {}, editorOverridesVersion: 0 } };
 
-  rerender(<CartEditorPage storeId="s1" initialIsDirty={true} />);
-  const evDirty = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
-  window.dispatchEvent(evDirty);
-  expect(evDirty.defaultPrevented).toBe(true);
+function Dirtier() {
+  const d = useDraft();
+  React.useEffect(() => { d.setField('header.title', 'dirty'); }, []);
+  return null;
+}
+
+it('beforeunload prompt does NOT fire when draft is clean', () => {
+  render(
+    <DraftStoreProvider storeId="s1" initial={cleanInitial}>
+      <CartEditorPage params={Promise.resolve({ storeId: 's1' })} />
+    </DraftStoreProvider>
+  );
+  const ev = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+  window.dispatchEvent(ev);
+  expect(ev.defaultPrevented).toBe(false);
 });
 
-it('intra-app Link click while isDirty=true opens dashboard confirm modal', () => {
-  const { getByTestId, queryByRole } = render(<CartEditorPage storeId="s1" initialIsDirty={true} />);
+it('beforeunload prompt fires when draft is dirty', () => {
+  render(
+    <DraftStoreProvider storeId="s1" initial={cleanInitial}>
+      <CartEditorPage params={Promise.resolve({ storeId: 's1' })} />
+      <Dirtier />
+    </DraftStoreProvider>
+  );
+  const ev = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+  window.dispatchEvent(ev);
+  expect(ev.defaultPrevented).toBe(true);
+});
+
+it('intra-app Link click while dirty opens dashboard confirm modal', () => {
+  const { getByTestId, queryByRole } = render(
+    <DraftStoreProvider storeId="s1" initial={cleanInitial}>
+      <CartEditorPage params={Promise.resolve({ storeId: 's1' })} />
+      <Dirtier />
+    </DraftStoreProvider>
+  );
   fireEvent.click(getByTestId('nav-link-addons'));
   expect(queryByRole('dialog')).toHaveTextContent(/unsaved changes/i);
 });
 
 it('sessionStorage round-trip restores draft on mount', () => {
   sessionStorage.setItem('cart-editor:s1:draft', JSON.stringify({ header: { title: 'Restored' } }));
-  const { getByLabelText } = render(<CartEditorPage storeId="s1" />);
+  const { getByLabelText } = render(
+    <DraftStoreProvider storeId="s1" initial={cleanInitial}>
+      <CartEditorPage params={Promise.resolve({ storeId: 's1' })} />
+    </DraftStoreProvider>
+  );
   expect((getByLabelText(/title/i) as HTMLInputElement).value).toBe('Restored');
 });
 ```
@@ -2161,6 +2194,8 @@ useEffect(() => {
 - [ ] **Step 2: Intra-app Next.js Link guard**
 
 Subscribe to Next.js router events; if `isDirty`, intercept route changes with the existing dashboard custom-modal confirm pattern (used by `rich-text-editor.tsx`).
+
+Also add `data-testid="nav-link-addons"` to the existing `<Link href="/dashboard/addons">` in `backend/src/app/dashboard/layout.tsx` if it's not already present (one-line attribute addition; required for the Step 0 test to drive the intra-app Link click).
 
 - [ ] **Step 3: sessionStorage draft persistence**
 
@@ -2326,19 +2361,23 @@ git commit -m "test(cart-editor): 12 Playwright preview + cross-tab + ownership 
 
 After running the suite, parse vitest/test output and assert each section minimum from spec §8.6 individually, then assert the grand total. On any miss, print the failing section and exit non-zero.
 
-Required per-section minimums (spec §8.6):
-- Baseline contract tests in `tests/contract.test.js`: **≥ 339** (existing pre-editor)
-- Cart-editor contract additions in `tests/contract.test.js`: **≥ 60** (new field wiring)
-- Cart-editor unit tests in `backend/__tests__/cart-editor/**`: **≥ 37**
-- Cart-editor Playwright tests in `tests/cart-editor-preview.spec.js`: **≥ 12**
-- Blast-radius locks in `tests/blast-radius/cart-editor.test.js`: **= 6** (exact)
-- Grand total across all suites: **≥ 514** (399 baseline + 115 new)
+Required per-section minimums (spec §8.6 table at line 498):
+- Baseline contract tests in `tests/contract.test.js`: **>= 245**
+- Baseline behavior-shield tests in `tests/behavior-shield.test.js`: **>= 124**
+- Baseline bug-regression tests in `tests/bug-regression.test.js`: **>= 30**
+- Cart-editor contract additions in `tests/contract.test.js` (new field wiring §8.1): **>= 60**
+- Cart-editor unit tests in `backend/__tests__/cart-editor/**` (§8.3): **>= 37**
+- Cart-editor Playwright tests in `tests/cart-editor-preview.spec.js` (§8.4): **>= 12**
+- Blast-radius locks in `tests/blast-radius/cart-editor.test.js` (§8.5): **= 6** (exact)
+- Grand total across all suites: **>= 514** (399 baseline + 115 new)
 
 Pseudo-code:
 
 ```js
 const sections = {
-  contractBaseline: { pattern: /tests\/contract\.test\.js \[baseline\]/, min: 339 },
+  contractBaseline: { pattern: /tests\/contract\.test\.js \[baseline\]/, min: 245 },
+  behaviorShield:   { pattern: /tests\/behavior-shield\.test\.js/, min: 124 },
+  bugRegression:    { pattern: /tests\/bug-regression\.test\.js/, min: 30 },
   contractEditor:   { pattern: /tests\/contract\.test\.js \[cart-editor\]/, min: 60 },
   unitEditor:       { pattern: /backend\/__tests__\/cart-editor\//, min: 37 },
   playwrightEditor: { pattern: /tests\/cart-editor-preview\.spec\.js/, min: 12 },
@@ -2354,6 +2393,8 @@ for (const [name, s] of Object.entries(sections)) {
 const total = sumAllPassing();
 if (total < 514) { console.error(`Total ${total} < 514`); process.exit(1); }
 ```
+
+> **Note:** If `tests/contract.test.js` does not yet emit `[baseline]` and `[cart-editor]` tags in its test names, prefix each suite/describe block with the corresponding tag as part of Task 2.0-prep / Task 4.0-prep. The CI gate regex relies on these tags to count contract baseline vs editor additions separately.
 
 - [ ] **Step 2: Commit**
 
@@ -2394,13 +2435,15 @@ git commit -m "docs(cart-editor): settings reference + competitor parity check"
 Snapshot current production cart DOM and replay it through the editor renderer with `editorOverrides = null`. Result MUST be byte-identical to the production snapshot. This is the deploy gate for Stage 2 onward — if this fails, do NOT proceed.
 
 ```bash
-# Capture fresh production snapshot
-node tests/scripts/snapshot-production-cart.js
+# Capture fresh production snapshot (overwrites the stale Stage-2 snapshot used by LOCK 5)
+node tests/scripts/snapshot-production-cart.js > tests/snapshots/cart-prod-stage2-gate.html
 # Run only LOCK 5 against the fresh snapshot
 node tests/blast-radius/cart-editor.test.js --only=lock-5
 ```
 
 Expected: PASS with exit 0. On failure, abort deploy and investigate divergence between editor renderer and live cart.
+
+> The redirect to `tests/snapshots/cart-prod-stage2-gate.html` matches the path read by LOCK 5 in Task 2.9 Step 2. Without it, LOCK 5 would replay against a stale snapshot and the deploy gate would be meaningless.
 
 - [ ] **Step 1: Run full gate**
 
@@ -2469,7 +2512,6 @@ git push --tags
 - `backend/src/app/dashboard/cart-editor/preview-renderer.ts`
 - `backend/src/app/dashboard/cart-editor/right-panel.tsx`
 - `backend/src/app/dashboard/cart-editor/save-bar.tsx`
-- `backend/src/app/dashboard/cart-editor/cross-tab-banner.tsx`
 - `backend/src/app/dashboard/cart-editor/overlay/hotspots.ts`
 - `backend/src/app/dashboard/cart-editor/overlay/overlay.tsx`
 - `backend/src/app/dashboard/cart-editor/element-editors/{header,milestone,line-item,empty-state,footer,checkout-button,trust-line,global-style}-editor.tsx`
