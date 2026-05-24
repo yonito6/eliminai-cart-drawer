@@ -1274,7 +1274,13 @@ git commit -m "feat(cart-editor): page scaffold + nav tab (flag-gated)"
 - Create: `backend/src/app/dashboard/cart-editor/draft-store.tsx`
 - Test: `backend/__tests__/cart-editor/draft-store.test.tsx`
 
-- [ ] **Step 1: Write 8 failing tests** matching spec §8.3 `describe('draft store')` block:
+- [ ] **Step 1: Write 11 failing tests** matching spec §8.3 `describe('draft store')` block.
+
+  Banner discriminator note — there are **two distinct conflict kinds**:
+  - `incoming-while-dirty` — another tab broadcast a saved version while THIS tab has unsaved changes (BroadcastChannel/storage event path)
+  - `server-conflict-409` — our own PUT returned 409 because savedVersion drifted (rare; happens when BroadcastChannel was missed, e.g. tab was suspended)
+
+  Both expose `incomingVersion` and `incomingOverrides` so the user can `acceptIncoming()` either way, but the banner UI labels them differently. Test #7 covers `incoming-while-dirty`; test #10 covers `server-conflict-409`.
 
 ```tsx
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -1327,17 +1333,16 @@ describe('draft-store', () => {
     expect(result.current.draft.footer?.totalLabel).toBe('Total');
   });
 
-  it('BroadcastChannel saved message updates savedConfig when not dirty', () => {
+  it('BroadcastChannel saved message updates savedConfig when not dirty', async () => {
     const { result } = renderHook(() => useDraftStore(), { wrapper: wrap() });
     act(() => {
       const ch = new BroadcastChannel('cart-editor:s1');
       ch.postMessage({ kind: 'saved', version: 7, editorOverrides: { header: { title: 'From other tab' } } });
     });
-    // Allow microtask
-    return Promise.resolve().then(() => {
-      expect(result.current.savedConfig.header?.title).toBe('From other tab');
-      expect(result.current.draft.header?.title).toBe('From other tab');
-    });
+    // BroadcastChannel delivery is async via macrotask in jsdom — flush with setTimeout(0)
+    await new Promise(r => setTimeout(r, 0));
+    expect(result.current.savedConfig.header?.title).toBe('From other tab');
+    expect(result.current.draft.header?.title).toBe('From other tab');
   });
 
   it('BroadcastChannel saved shows banner when isDirty (no clobber)', async () => {
@@ -1346,9 +1351,61 @@ describe('draft-store', () => {
     act(() => {
       new BroadcastChannel('cart-editor:s1').postMessage({ kind: 'saved', version: 7, editorOverrides: { header: { title: 'Theirs' } } });
     });
-    await Promise.resolve();
+    await new Promise(r => setTimeout(r, 0));
     expect(result.current.draft.header?.title).toBe('Mine'); // not clobbered
-    expect(result.current.crossTabBanner).toEqual({ kind: 'conflict', incomingVersion: 7 });
+    // 'incoming-while-dirty' = another tab/admin saved while we have unsaved changes
+    expect(result.current.crossTabBanner).toEqual({
+      kind: 'incoming-while-dirty',
+      incomingVersion: 7,
+      incomingOverrides: { header: { title: 'Theirs' } },
+    });
+  });
+
+  it('dismissBanner clears crossTabBanner but keeps draft', async () => {
+    const { result } = renderHook(() => useDraftStore(), { wrapper: wrap() });
+    act(() => result.current.setField('header.title', 'Mine'));
+    act(() => {
+      new BroadcastChannel('cart-editor:s1').postMessage({ kind: 'saved', version: 7, editorOverrides: { header: { title: 'Theirs' } } });
+    });
+    await new Promise(r => setTimeout(r, 0));
+    expect(result.current.crossTabBanner).not.toBeNull();
+    act(() => result.current.dismissBanner());
+    expect(result.current.crossTabBanner).toBeNull();
+    expect(result.current.draft.header?.title).toBe('Mine'); // draft untouched
+    expect(result.current.isDirty).toBe(true);
+  });
+
+  it('acceptIncoming replaces draft with incoming overrides + clears dirty', async () => {
+    const { result } = renderHook(() => useDraftStore(), { wrapper: wrap() });
+    act(() => result.current.setField('header.title', 'Mine'));
+    act(() => {
+      new BroadcastChannel('cart-editor:s1').postMessage({ kind: 'saved', version: 7, editorOverrides: { header: { title: 'Theirs' } } });
+    });
+    await new Promise(r => setTimeout(r, 0));
+    act(() => result.current.acceptIncoming());
+    expect(result.current.draft.header?.title).toBe('Theirs');
+    expect(result.current.savedConfig.header?.title).toBe('Theirs');
+    expect(result.current.savedVersion).toBe(7);
+    expect(result.current.isDirty).toBe(false);
+    expect(result.current.crossTabBanner).toBeNull();
+  });
+
+  it('save 409 conflict surfaces server-conflict-409 banner (distinct from incoming-while-dirty)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ currentVersion: 5, currentOverrides: { header: { title: 'Server wins' } } }),
+    });
+    (global as any).fetch = fetchMock;
+    const { result } = renderHook(() => useDraftStore(), { wrapper: wrap() });
+    act(() => result.current.setField('header.title', 'Mine'));
+    await act(async () => { await result.current.save(); });
+    expect(result.current.crossTabBanner).toEqual({
+      kind: 'server-conflict-409',
+      incomingVersion: 5,
+      incomingOverrides: { header: { title: 'Server wins' } },
+    });
+    expect(result.current.isDirty).toBe(true); // save failed, still dirty
   });
 
   it('localStorage fallback updates when no BroadcastChannel', async () => {
@@ -1377,7 +1434,20 @@ Create `backend/src/app/dashboard/cart-editor/draft-store.tsx` with React Contex
 - `storage` event for `cart-editor:${storeId}:lastSaveVersion` key
 - `setField(path, value)` updates `draft` immutably via lodash-style path setter (write a tiny inline `setIn(obj, path, val)` to avoid the dependency)
 
-On `save()`: PUT `/api/cart-editor/${storeId}/config` with `If-Match: "ce-${savedVersion}"`. On 200, update savedConfig + savedVersion + broadcast. On 409, set crossTabBanner kind to 'conflict' with currentVersion. On other errors, surface to caller.
+`crossTabBanner` type:
+```ts
+type CrossTabBanner =
+  | null
+  | { kind: 'incoming-while-dirty'; incomingVersion: number; incomingOverrides: EditorOverrides }
+  | { kind: 'server-conflict-409';  incomingVersion: number; incomingOverrides: EditorOverrides };
+```
+
+Behavior:
+- **BroadcastChannel/storage `saved` event arrives while `isDirty === false`**: replace savedConfig + draft + savedVersion silently. No banner.
+- **BroadcastChannel/storage `saved` event arrives while `isDirty === true`**: do NOT clobber draft. Set `crossTabBanner = { kind: 'incoming-while-dirty', incomingVersion, incomingOverrides }`.
+- **`save()`**: PUT `/api/cart-editor/${storeId}/config` with `If-Match: "ce-${savedVersion}"`. On 200, update savedConfig + savedVersion + isDirty=false + post `{ kind: 'saved', version, editorOverrides }` to BroadcastChannel + write `lastSaveVersion` to localStorage. On 409, parse `{ currentVersion, currentOverrides }` from response, set `crossTabBanner = { kind: 'server-conflict-409', incomingVersion: currentVersion, incomingOverrides: currentOverrides }`, keep `isDirty = true`. On other errors, throw.
+- **`dismissBanner()`**: set `crossTabBanner = null`. Do not touch draft, savedConfig, or savedVersion.
+- **`acceptIncoming()`**: requires `crossTabBanner !== null`. Set `draft = incomingOverrides`, `savedConfig = incomingOverrides`, `savedVersion = incomingVersion`, `isDirty = false`, `crossTabBanner = null`.
 
 - [ ] **Step 4: Run, expect pass**
 
@@ -1390,29 +1460,50 @@ git commit -m "feat(cart-editor): draft store with cross-tab sync"
 
 ---
 
-### Task 3.3: Preview canvas — render real cart DOM from draft
+### Task 3.3: Preview canvas — sandboxed iframe that loads the real cart drawer in preview mode
+
+**Spec alignment (§3.3):** the editor preview MUST use the same render path as the production cart drawer. No duplicated render code. Strategy: load `v14-complete.js` inside a sandboxed iframe with two new opt-in hooks:
+
+1. **`window.__CART_EDITOR_PREVIEW__` flag** — when true, v14-complete.js boots in "preview mode": no real `/cart.js` fetches, no add-to-cart, no checkout navigation. Uses fixture cart data injected via `window.__CART_PREVIEW_FIXTURE__` keyed by previewState.
+2. **`window.__CART_EDITOR_OVERRIDES__` object** — replaces what v14 normally reads from the proxy config response. When this var is set, v14 skips the network fetch and uses these overrides directly. The parent page updates this var + dispatches `cart-editor:rerender` on every draft change.
+
+This adds ~30 lines of opt-in guards to v14-complete.js (done in Task 3.4 below) and zero render duplication.
 
 **Files:**
 - Create: `backend/src/app/dashboard/cart-editor/preview-canvas.tsx`
-- Create: `backend/src/app/dashboard/cart-editor/preview-renderer.ts`
+- Create: `backend/src/app/dashboard/cart-editor/preview-fixtures.ts` (fixture cart data — items, empty, unlocked, loading)
+- Modify: `extension/extensions/cart-drawer/assets/v14-complete.js` (added in Task 3.4)
 
-- [ ] **Step 1: Create preview renderer**
+- [ ] **Step 1: Create preview fixtures**
 
-`preview-renderer.ts` exports `renderPreviewHTML(editorOverrides, opts)` that mirrors `v14-complete.js` render path but in isolated React-friendly form. Reuses `cart-constants.ts` REAL_CART_CSS + CONTROL_HTML structure. For Stage 3a the renderer only supports `previewState ∈ { 'cart-with-items', 'empty', 'unlocked', 'loading' }` and `viewport ∈ { 'desktop', 'mobile' }`. Hotspots are added in Chunk 4.
+`preview-fixtures.ts` exports a small dictionary of `/cart.js`-shaped JSON for each previewState (cart-with-items: 2 line items with realistic price/qty; empty: `{ items: [], total_price: 0 }`; unlocked: cart at/above highest milestone; loading: same as cart-with-items but emits a loading skeleton via opts.
 
-- [ ] **Step 2: Build canvas component**
+- [ ] **Step 2: Build canvas component (iframe + postMessage)**
 
 ```tsx
 'use client';
 import { useDraftStore } from './draft-store';
-import { renderPreviewHTML } from './preview-renderer';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { PREVIEW_FIXTURES } from './preview-fixtures';
+
+const PREVIEW_ORIGIN = process.env.NEXT_PUBLIC_PROXY_ORIGIN || '';
 
 export function PreviewCanvas() {
   const { draft } = useDraftStore();
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
   const [state, setState] = useState<'cart-with-items' | 'empty' | 'unlocked' | 'loading'>('cart-with-items');
-  const html = renderPreviewHTML(draft, { viewport, previewState: state });
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Push draft + state into iframe on every change. Iframe uses these instead of network.
+  useEffect(() => {
+    const w = iframeRef.current?.contentWindow;
+    if (!w) return;
+    w.postMessage(
+      { type: 'cart-editor:apply', overrides: draft, fixture: PREVIEW_FIXTURES[state], viewport },
+      '*'
+    );
+  }, [draft, state, viewport]);
+
   return (
     <div className="p-4">
       <div className="flex gap-2 mb-4">
@@ -1425,25 +1516,46 @@ export function PreviewCanvas() {
           <option value="loading">Loading</option>
         </select>
       </div>
-      <div
+      <iframe
+        ref={iframeRef}
+        src="/cart-editor/preview-frame"
+        title="Cart drawer preview"
+        sandbox="allow-scripts allow-same-origin"
         data-cart-editor-preview-root
-        className={viewport === 'mobile' ? 'w-[375px]' : 'w-full max-w-[520px]'}
-        dangerouslySetInnerHTML={{ __html: html }}
+        className={viewport === 'mobile' ? 'w-[375px] h-[640px]' : 'w-full max-w-[520px] h-[720px]'}
       />
     </div>
   );
 }
 ```
 
-- [ ] **Step 3: Wire into page.tsx**
+`/cart-editor/preview-frame` is a tiny Next.js route (`backend/src/app/cart-editor/preview-frame/page.tsx`) that returns an HTML shell which sets `window.__CART_EDITOR_PREVIEW__ = true`, listens for the `cart-editor:apply` postMessage, then loads `v14-complete.js`. v14 reads `__CART_EDITOR_OVERRIDES__` (set from postMessage) instead of fetching the proxy.
+
+- [ ] **Step 3: Wire into page.tsx (client component — `await` is not allowed in client RSC and absolute URLs need the request origin)**
 
 ```tsx
+'use client';
+import { use, useEffect, useState } from 'react';
 import { DraftStoreProvider } from './draft-store';
 import { PreviewCanvas } from './preview-canvas';
 
-export default async function CartEditorPage({ params }: { params: { storeId?: string } }) {
-  // load initial editorOverrides from API (server component fetch)
-  const initial = await fetch(`/api/cart-editor/${storeId}/config`).then(r => r.json());
+export default function CartEditorPage({ params }: { params: Promise<{ storeId: string }> }) {
+  const { storeId } = use(params);
+  const [initial, setInitial] = useState<{ editorOverrides: any; editorOverridesVersion: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/cart-editor/${storeId}/config`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(data => { if (!cancelled) setInitial(data); })
+      .catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [storeId]);
+
+  if (error) return <div className="p-8 text-red-500">Failed to load editor: {error}</div>;
+  if (!initial) return <div className="p-8">Loading editor…</div>;
+
   return (
     <DraftStoreProvider storeId={storeId} initial={initial}>
       <div className="grid grid-cols-[55%_45%] h-[calc(100vh-64px)]">
@@ -1457,11 +1569,42 @@ export default async function CartEditorPage({ params }: { params: { storeId?: s
 }
 ```
 
+Notes:
+- `'use client'` is required because we use `useState`/`useEffect` and the page reads the storeId path param at runtime.
+- `params` is typed as `Promise<{ storeId: string }>` to match Next.js 15+ dynamic param convention; `use(params)` unwraps it. If the project is on Next 14, use `params: { storeId: string }` and skip `use()`.
+- Save URL is `/api/cart-editor/[storeId]/config` (matches Chunk 1 route per Reconciliation #4).
+
 - [ ] **Step 4: Commit**
 
 ```bash
-git add backend/src/app/dashboard/cart-editor
-git commit -m "feat(cart-editor): preview canvas + viewport/state controls"
+git add backend/src/app/dashboard/cart-editor backend/src/app/cart-editor
+git commit -m "feat(cart-editor): preview canvas iframe + viewport/state controls"
+```
+
+---
+
+### Task 3.4: v14-complete.js preview-mode hooks (~30 lines, behind opt-in flag)
+
+**Files:**
+- Modify: `extension/extensions/cart-drawer/assets/v14-complete.js`
+- Test: `tests/cart-editor/v14-preview-mode.test.js`
+
+- [ ] **Step 1: Write failing tests** — assert that when `window.__CART_EDITOR_PREVIEW__ = true`:
+  1. v14 does NOT call `fetch('/cart.js')` on init — it uses `window.__CART_PREVIEW_FIXTURE__` instead
+  2. v14 does NOT call the proxy `/apps/cart-config` — it uses `window.__CART_EDITOR_OVERRIDES__`
+  3. clicks on checkout button / qty buttons are no-ops (preventDefault + return)
+  4. listening for `message` event with `type: 'cart-editor:apply'` updates overrides + fixture and triggers re-render
+  5. when `__CART_EDITOR_PREVIEW__` is false/undefined, behavior is byte-identical to current production (LOCK)
+
+- [ ] **Step 2: Implement preview-mode guards** in v14-complete.js. Locate the init bootstrap, the proxy fetch, the `/cart.js` fetch, and the click handlers for checkout / qty / remove. Wrap each with `if (window.__CART_EDITOR_PREVIEW__) { ...preview path... } else { ...prod path... }`. Add a single message listener at the top of init: `window.addEventListener('message', (e) => { if (e.data?.type === 'cart-editor:apply') { window.__CART_EDITOR_OVERRIDES__ = e.data.overrides; window.__CART_PREVIEW_FIXTURE__ = e.data.fixture; CCD.refresh(); } });`.
+
+- [ ] **Step 3: Run preview-mode tests + run existing v14 contract tests (32) — all must pass.**
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add extension/extensions/cart-drawer/assets/v14-complete.js tests/cart-editor/v14-preview-mode.test.js
+git commit -m "feat(cart-drawer): v14 preview-mode hooks for editor iframe"
 ```
 
 ---
