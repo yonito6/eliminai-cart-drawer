@@ -868,6 +868,22 @@ git commit -m "test(cart-editor): pre-Stage-2 cart HTML baseline snapshot"
 
 For each of the 8 field groups (`header`, `milestoneBar`, `lineItem`, `emptyState`, `footer`, `checkoutButton`, `trustLine`, `global`), repeat steps below as a separate sub-task. Document below shows the `header` group; the other 7 follow the same pattern.
 
+**Ordering note:** Sub-task 2.4.h's Step 4 references `tests/blast-radius/cart-editor.test.js`, which is created in Task 2.5. For the FIRST sub-task (header), Step 4 only runs `node tests/contract.test.js` and skips the blast-radius command. After Task 2.5 ships, sub-tasks 2.4.milestoneBar through 2.4.global all run BOTH commands in Step 4.
+
+**Per-group test counts** (sum = 60 to match spec §8.6):
+- `header` ≈ 7 tests | `milestoneBar` ≈ 8 | `lineItem` ≈ 8 | `emptyState` ≈ 5 | `footer` ≈ 7 | `checkoutButton` ≈ 9 | `trustLine` ≈ 7 | `global` ≈ 9 → total 60
+
+#### Sub-tasks 2.4.* (one checkbox per group, do not collapse into one mega-commit)
+
+- [ ] **2.4.h Header** — detailed pattern below
+- [ ] **2.4.m MilestoneBar** — same 5-step pattern, paths under `editorOverrides.milestoneBar.*`
+- [ ] **2.4.l LineItem** — same
+- [ ] **2.4.e EmptyState** — same
+- [ ] **2.4.f Footer** — same
+- [ ] **2.4.b CheckoutButton** — same
+- [ ] **2.4.t TrustLine** — same
+- [ ] **2.4.g Global** — same
+
 #### Sub-task 2.4.h: Header fallback reads
 
 - [ ] **Step 1: Write failing contract tests**
@@ -981,20 +997,28 @@ test('LOCK 3: scoped change only mutates footer/button region', () => {
 });
 
 test('LOCK 4: Addon-owned values pass through unchanged', () => {
-  const addonCfg = { milestone: { tiers: [{ threshold: 50, label: 'Free' }], enabled: true } };
+  // Use sentinel values that could NOT appear from defaults — proves addonCfg path
+  const sentinelLabel = 'SENTINEL-LOCK4-' + Date.now();
+  const sentinelThreshold = 12345;
+  const addonCfg = { milestone: { tiers: [{ threshold: sentinelThreshold, label: sentinelLabel }], enabled: true } };
   const rendered = renderCart({
     addons: addonCfg,
     editorOverrides: { milestoneBar: { fillColor: '#ff0000' } },
   });
-  // Tiers still come from addons (data integrity)
-  assert.match(rendered, /threshold.*50/);
-  assert.match(rendered, /Free/);
+  // Tiers still come from addons (data integrity) — sentinel proves source
+  assert.ok(rendered.includes(sentinelLabel), 'milestone label must come from addonCfg, not defaults');
+  assert.ok(rendered.includes(String(sentinelThreshold)), 'milestone threshold must come from addonCfg');
+  // And the editorOverrides visual DID apply
+  assert.match(rendered, /#ff0000/);
 });
 
-test('LOCK 6: rendering twice is idempotent', () => {
+test('LOCK 6: rendering twice is idempotent (byte-identical + structurally-equivalent)', () => {
   const cfg = { editorOverrides: { header: { title: 'X' } } };
   const a = renderCart(cfg);
   const b = renderCart(cfg);
+  // Byte-identical — required so sessionStorage cache keys match across renders
+  assert.equal(a, b, 'renderCart must produce byte-identical output for cache correctness');
+  // Structural-equiv as a secondary check (catches whitespace-only diffs explicitly)
   assert.equal(compare(parseDom(a), parseDom(b)), null);
 });
 ```
@@ -1087,7 +1111,7 @@ const cartConfigOut = {
 headers: {
   'Cache-Control': 'public, max-age=0, s-maxage=300, stale-while-revalidate=60',
   'ETag': `"ce-${(store as any).editorOverridesVersion ?? 0}"`,
-  'Vary': 'Cookie',
+  // NOTE: deliberately omit `Vary: Cookie` — shopper proxy carries no dashboard cookie, and a per-cookie Vary would shatter the CDN cache (every shopper session has a unique cookie), defeating s-maxage. Cache key is path-based (includes storeId).
 },
 ```
 
@@ -1109,6 +1133,8 @@ git commit -m "feat(cart-editor): proxy serves editorOverrides + ETag + s-maxage
 **Files:**
 - Modify: `extensions/cart-drawer/assets/v14-complete.js`
 - Modify: `tests/contract.test.js`
+
+**Cache layer note:** Spec §6.2.1 lists three cache layers. Layer 2 — `revalidateTag('cart-config:' + storeId)` after PUT — was already wired in Chunk 1 Task 1.4 Step 3 (see plan line ~639). This Task 2.8 implements **layer 3** — runtime invalidation inside the shopper's browser via sessionStorage. Layer 1 (DB version + ETag) is in Task 2.7. All three layers must be present for cache correctness.
 
 - [ ] **Step 1: Write failing contract test**
 
@@ -1174,18 +1200,26 @@ node tests/blast-radius/cart-editor.test.js
 
 Expected: all 6 blast-radius locks pass + all contract + all unit tests.
 
-- [ ] **Step 4: Deploy v14-complete.js (extension CDN) + backend (proxy changes)**
+- [ ] **Step 4: Deploy backend + v14-complete.js with editor feature flag OFF**
+
+Backend ships first (proxy change is no-op while every store has `editorOverrides=null` and `editorOverridesVersion=0`). v14-complete.js ships next — its fallback reads are no-op when `editorOverrides` is absent.
 
 ```bash
 cd backend && npm run deploy
 # Then upload v14-complete.js to extension via existing deploy flow
 ```
 
-- [ ] **Step 5: Verify on DEMO theme**
+Safe-deploy rationale: at this point NO store has `editorOverrides` populated (Stage 1 deployed Chunk 1's API behind `CART_EDITOR_API_ENABLED=false`). So both backend and extension changes produce structurally-identical output to pre-deploy for every shopper. LOCK 1+2+5 prove this.
 
-Open DEMO theme cart → confirm structurally identical to pre-deploy. Use browser DevTools to compare snapshot.
+- [ ] **Step 5: Verify on DEMO theme BEFORE tagging**
 
-- [ ] **Step 6: Commit + tag Stage 2 release**
+Open DEMO theme cart in incognito → confirm structurally identical to pre-deploy. Use browser DevTools to compare against `tests/snapshots/cart-prod-stage2-gate.html`. If structurally different, **revert immediately** — do not tag.
+
+- [ ] **Step 6: Verify on a real LIVE store (read-only sanity check)**
+
+Open the production store's cart drawer in incognito → confirm it still renders. No structural diff expected. If issues, revert the deploy.
+
+- [ ] **Step 7: Tag Stage 2 release** (only after Steps 5+6 pass)
 
 ```bash
 git tag cart-editor-stage-2
