@@ -17,7 +17,9 @@
 1. **No `CartConfig` model exists.** Cart configuration lives in `Store.config` (Json) and `Store.demoConfig` (Json). The spec's `CartConfig` references in §4 are this plan's `Store` model. New columns go directly on `Store`.
 2. **Proxy path:** the spec uses the Shopify-facing URL `/apps/eliminai/config`. The Next.js route handler is at `src/app/api/proxy/config/route.ts`. Both names refer to the same endpoint; Shopify's app-proxy rewrites the public URL to the route handler.
 3. **Cache strategy change:** the proxy currently returns `Cache-Control: no-store, no-cache, must-revalidate`. Stage 2 changes this to `public, max-age=0, s-maxage=300, stale-while-revalidate=60` with an `ETag` so CDN edge caching works. The behavior change is gated behind `editorOverridesVersion` so old shoppers always get current content via the ETag bump.
-4. **Auth on dashboard API:** existing dashboard routes (`/api/stores/[id]/addons/route.ts` etc.) gate by `storeId` path param. Cart Editor follows the same pattern: `PUT /api/cart-editor/[storeId]/config` instead of the spec's session-only path. This matches the codebase's actual auth model.
+4. **Auth on dashboard API:** existing dashboard routes (`/api/stores/[id]/addons/route.ts`, `/api/stores/[id]/protection/*`, `/api/stores/[id]/theme-settings`, etc.) gate by `storeId` path param **with no session middleware** — they trust the caller to know the storeId. Cart Editor follows the same convention: `PUT /api/cart-editor/[storeId]/config` with no session check. This is a known codebase-wide auth pattern, not a Cart-Editor-specific decision. A future hardening pass (adding NextAuth or Shopify App Bridge session verification across ALL `/api/stores/*` and `/api/cart-editor/*` routes) is out of scope for this plan and should be tracked separately.
+
+5. **Test-count delta vs spec §8.3:** spec §8.3 lists 16 Zod schema tests; this plan adds a 17th (`rejects addon-owned paths`) that lives in the schema test file because it tests the schema's `superRefine` ownership-map check. This brings the chunk-1 contribution to **17 schema + 2 GET + 10 PUT = 29 new tests**, and the spec §8.6 grand total from 514 → 515. The 17→16 discrepancy is bookkeeping only — count this as +1 against §8.6.
 
 ---
 
@@ -475,7 +477,9 @@ describe('PUT /api/cart-editor/[storeId]/config', () => {
     expect(res.status).toBe(200);
     const after = await prisma.store.findUnique({ where: { id: storeId } });
     expect((after!.editorOverrides as any).header.title).toBe('My Cart');
-    expect((after!.config as any)).toEqual({}); // addons/config untouched
+    // schema default of config may be null OR {} depending on Prisma — accept either
+    const cfg = after!.config as any;
+    expect(cfg == null || Object.keys(cfg).length === 0).toBe(true);
   });
 
   it('bumps editorOverridesVersion by exactly 1', async () => {
