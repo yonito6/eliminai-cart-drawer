@@ -1624,58 +1624,330 @@ git commit -m "feat(cart-editor): preview canvas + renderer (same-DOM, reuses ca
 
 ## Chunk 4: Stage 3b — Overlay + element editors
 
+> Test-first reminder (CLAUDE.md Test-First Development — ZERO TOLERANCE): every task in this chunk MUST start with a failing test, referencing the test IDs in spec §8.3 (`backend/__tests__/cart-editor.test.ts`) and §8.4 (`tests/cart-editor-preview.spec.js`). Each "Step 0" below pins the exact test name. Do NOT write component code until the named test exists and fails.
+
+### Task 4.0: Wire `selected` state + previewRoot ref in page.tsx
+
+**Files:**
+- Modify: `backend/src/app/dashboard/cart-editor/page.tsx`
+
+This task closes the loose end from Chunk 3 Task 3.3 (`onPreviewRootRef`) and the placeholder right panel. It owns the two pieces of state every other Chunk 4 task depends on:
+
+1. `previewRoot: HTMLDivElement | null` — captured from PreviewCanvas via the `onPreviewRootRef` callback (declared in Chunk 3 Task 3.3 Step 4).
+2. `selected: HotspotId | null` — the currently-selected hotspot id.
+
+- [ ] **Step 1: Add state + callback ref**
+
+In `page.tsx`, inside `CartEditorPage`, after the existing `useState` for `initial`/`error`:
+
+```tsx
+import type { HotspotId } from './overlay/hotspots'; // created in Task 4.1
+const [previewRoot, setPreviewRoot] = useState<HTMLDivElement | null>(null);
+const [selected, setSelected] = useState<HotspotId | null>(null);
+```
+
+- [ ] **Step 2: Pass callback ref to PreviewCanvas**
+
+Replace `<PreviewCanvas />` with:
+
+```tsx
+<PreviewCanvas onPreviewRootRef={setPreviewRoot} />
+```
+
+Note: until Task 4.1 lands, the import of `HotspotId` will fail to resolve. Add `// eslint-disable-next-line @typescript-eslint/no-unused-vars` comments on `previewRoot` and `selected` for one commit, OR commit Task 4.0 + 4.1 sequentially in the same branch (preferred — they're tightly coupled).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/src/app/dashboard/cart-editor/page.tsx
+git commit -m "feat(cart-editor): wire previewRoot + selected state in page"
+```
+
+---
+
 ### Task 4.1: Hotspot registry + overlay layer
 
 **Files:**
 - Create: `backend/src/app/dashboard/cart-editor/overlay/hotspots.ts`
 - Create: `backend/src/app/dashboard/cart-editor/overlay/overlay.tsx`
+- Test: `backend/__tests__/cart-editor/overlay.test.tsx`
 
-- [ ] **Step 1: Hotspot registry** — copy directly from spec §5.1.
+- [ ] **Step 0: Write the failing overlay test FIRST**
+
+From spec §8.4 ("hover halo follows cursor as user moves mouse" and "selection ring stays after click, disappears on click-outside"). These are Playwright tests in the spec, but we also need a unit test that locks the hotspot-resolution logic so component refactors don't silently break it.
+
+Create `backend/__tests__/cart-editor/overlay.test.tsx` with a JSDOM render that:
+- Mounts a fake preview root containing a `<button class="ccd-checkout-btn">` and a `<div class="ccd-header">`
+- Calls `resolveHotspotFromPoint(previewRoot, { x, y })` (the pure function the overlay component delegates to)
+- Asserts: point inside `ccd-checkout-btn` → `'checkoutButton'`; point inside `ccd-header` → `'header'`; point outside both → `null`
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { resolveHotspotFromPoint } from '../../src/app/dashboard/cart-editor/overlay/hotspots';
+
+describe('resolveHotspotFromPoint', () => {
+  it('returns null when point is outside the preview root', () => {
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    expect(resolveHotspotFromPoint(root, { x: -1, y: -1 })).toBeNull();
+  });
+  it('returns checkoutButton when point is inside .ccd-checkout-btn', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<button class="ccd-checkout-btn">Checkout</button>';
+    document.body.appendChild(root);
+    const btn = root.firstElementChild as HTMLElement;
+    const rect = btn.getBoundingClientRect();
+    expect(resolveHotspotFromPoint(root, { x: rect.left + 1, y: rect.top + 1 })).toBe('checkoutButton');
+  });
+});
+```
+
+Run: `cd backend && npm test -- overlay.test`. Expected: FAIL (`Cannot find module '.../overlay/hotspots'`).
+
+- [ ] **Step 1: Hotspot registry**
+
+Copy the registry table from spec §5.1 into `overlay/hotspots.ts`:
+
+```ts
+export type HotspotId =
+  | 'header' | 'milestoneBar' | 'lineItem' | 'emptyState'
+  | 'footer' | 'checkoutButton' | 'trustLine' | 'global';
+
+// Order matters: most-specific first. Pure function so it's unit-testable
+// without a real overlay/mouse — the overlay component just calls it.
+const HOTSPOT_SELECTORS: Array<{ id: HotspotId; selector: string }> = [
+  { id: 'checkoutButton', selector: '.ccd-checkout-btn' },
+  { id: 'trustLine',      selector: '.ccd-trust-line' },
+  { id: 'footer',         selector: '.ccd-footer' },
+  { id: 'lineItem',       selector: '.ccd-line-item' },
+  { id: 'emptyState',     selector: '.ccd-empty-state' },
+  { id: 'milestoneBar',   selector: '.ccd-milestone-bar' },
+  { id: 'header',         selector: '.ccd-header' },
+  { id: 'global',         selector: '.ccd-drawer' }, // fallback — whole drawer
+];
+
+export function resolveHotspotFromPoint(
+  previewRoot: HTMLElement,
+  point: { x: number; y: number }
+): HotspotId | null {
+  const doc = previewRoot.ownerDocument;
+  // Use same-document elementsFromPoint — preview-renderer renders into the
+  // parent document (spec §3.3), so no iframe crossing is needed.
+  const stack = doc.elementsFromPoint(point.x, point.y);
+  for (const el of stack) {
+    if (!previewRoot.contains(el)) continue;
+    for (const { id, selector } of HOTSPOT_SELECTORS) {
+      if ((el as HTMLElement).closest(selector)) return id;
+    }
+  }
+  return null;
+}
+```
+
+Run the test from Step 0 — expected PASS for the `checkoutButton` case and `null` case.
 
 - [ ] **Step 2: Overlay component**
 
-Subscribes to `mousemove` and `click` on the preview root. Uses `document.elementsFromPoint(x, y)` filtered by hotspot selectors. Renders hover halo (dashed purple outline + label) and selection ring (solid purple) as absolutely positioned siblings using `getBoundingClientRect()`. Uses `ResizeObserver` to recompute on layout changes.
+Create `overlay/overlay.tsx`. Props: `{ previewRoot: HTMLElement | null; selected: HotspotId | null; onSelect: (id: HotspotId | null) => void }`.
 
-Exposes `selectedHotspotId: HotspotId | null` via callback `onSelect(id)` so the right panel can react.
+Behavior:
+- Subscribes to `mousemove` and `click` on `previewRoot` (no-op if null).
+- On `mousemove`: calls `resolveHotspotFromPoint(previewRoot, { x: e.clientX, y: e.clientY })` and stores result in local `hovered` state.
+- On `click`: same lookup, then calls `onSelect(id)`. Click outside any hotspot → `onSelect(null)`.
+- Renders two absolutely-positioned sibling divs (NOT children of the cart DOM) — one dashed purple halo over `hovered`, one solid purple ring over `selected`. Positions computed via `getBoundingClientRect()` of the resolved element (closest match for the selector).
+- Uses `ResizeObserver` on the resolved element + `window.addEventListener('scroll', …, true)` to recompute on layout changes.
+- Renders a label badge over the hover halo with the hotspot id (humanized: "Checkout Button", "Header", …).
 
-- [ ] **Step 3: Wire into PreviewCanvas**
+Note: the overlay is a **sibling div positioned via `getBoundingClientRect()`** (spec §3.3). It never inserts nodes inside the cart DOM tree. Each render of position rects is wrapped in `requestAnimationFrame` to coalesce mousemove → reposition.
 
-Add `<Overlay rootRef={previewRef} onSelect={setSelected} selected={selected} />` over the preview root.
+- [ ] **Step 3: Wire Overlay into page.tsx**
 
-- [ ] **Step 4: Commit**
+In `page.tsx`, after `<PreviewCanvas onPreviewRootRef={setPreviewRoot} />`, add:
+
+```tsx
+<Overlay previewRoot={previewRoot} selected={selected} onSelect={setSelected} />
+```
+
+(The overlay being a sibling of PreviewCanvas in the same grid cell keeps it inside the preview viewport but outside the cart DOM tree. Use `position: relative` on the parent and `position: absolute; inset: 0; pointer-events: none` on the overlay's hover/select rings, with `pointer-events: auto` only on the invisible click-catcher layer.)
+
+- [ ] **Step 4: Verify**
+
+Run `cd backend && npm test -- overlay.test`. Expected: PASS.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add backend/src/app/dashboard/cart-editor/overlay
-git commit -m "feat(cart-editor): hotspot overlay (hover halo + selection ring)"
+git add backend/src/app/dashboard/cart-editor/overlay backend/__tests__/cart-editor/overlay.test.tsx backend/src/app/dashboard/cart-editor/page.tsx
+git commit -m "feat(cart-editor): hotspot overlay (hover halo + selection ring, same-DOM)"
 ```
 
 ---
 
-### Task 4.2: Element editor components — 8 editors, one task each
+### Task 4.2: Element editor components — one task per editor
 
-For each editor (`header`, `milestoneBar`, `lineItem`, `emptyState`, `footer`, `checkoutButton`, `trustLine`, `global`) repeat the steps below. Documenting `header-editor.tsx` as the pattern:
+Each of the 8 editors gets its own sub-task with its own commit. Every sub-task follows the same shape: Step 0 = failing test, Step 1 = build form, Step 2 = addon-gated notice (only if applicable), Step 3 = commit.
 
-#### Sub-task 4.2.h: Header editor
+**Addon gating rule** (clarifies spec §4.3 — *editor-level* vs *field-level*):
+- **Editor-level gate** (notice covers entire editor): `milestoneBar`, `trustLine`. The whole element is conceptually owned by an addon — if the addon is disabled, the whole element won't render to shoppers regardless of style.
+- **Field-level gate** (notice attaches to specific field only): `footer.showGiftNote` (this single toggle is the only footer field gated by the gift-note addon — the rest of the footer renders unconditionally). Inside `footer-editor.tsx`, wrap only the `showGiftNote` toggle with the notice, NOT the whole editor.
+- **Ungated**: `header`, `lineItem`, `emptyState`, `checkoutButton`, `global`, plus all `footer.*` fields other than `showGiftNote`.
+
+The notice content comes verbatim from spec §4.3 ("This addon is currently disabled in the Addons tab…"). Reads addon-enabled state from the same config payload page.tsx already fetched (`initial.addons.milestone.enabled`, `initial.addons.trustLine.enabled`, `initial.addons.giftNote.enabled`).
+
+#### Sub-task 4.2.a: Header editor
 
 **Files:**
 - Create: `backend/src/app/dashboard/cart-editor/element-editors/header-editor.tsx`
+- Test: `backend/__tests__/cart-editor/header-editor.test.tsx`
+
+- [ ] **Step 0: Failing test** — references spec §8.4 "click Header → right panel shows Header editor" + §8.4 "change header.title → preview text updates in <500ms (no network)".
+
+```tsx
+import { render, screen, fireEvent } from '@testing-library/react';
+import { DraftStoreProvider } from '../../src/app/dashboard/cart-editor/draft-store';
+import { HeaderEditor } from '../../src/app/dashboard/cart-editor/element-editors/header-editor';
+
+it('renders header title input bound to draft.header.title', () => {
+  render(
+    <DraftStoreProvider storeId="s1" initial={{ schemaVersion: 1, savedConfig: { editorOverrides: {}, editorOverridesVersion: 0 } }}>
+      <HeaderEditor />
+    </DraftStoreProvider>
+  );
+  const input = screen.getByLabelText(/title/i) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: 'Shopping Bag' } });
+  expect(input.value).toBe('Shopping Bag');
+});
+```
+
+Run: FAIL (`Cannot find module 'header-editor'`).
 
 - [ ] **Step 1: Build form**
 
-One input per field in spec §4.1 header schema. Inputs read from `draft.header.<field>` and write via `setField('header.<field>', value)`. Hex color inputs use `<input type="color">`. Enum inputs use radio groups matching existing dashboard pattern (`backend/src/app/dashboard/addons/protection-editor.tsx`).
+One input per field in spec §4.1 `editorOverrides.header` schema (`title`, `showItemCount`, `badgeColor`, `closeIconStyle`, `bgColor`, `borderStyle`, `padding`). Inputs read from `draft.header.<field>` via `useDraft()` hook and write via `setField('header.<field>', value)`. Hex colors use `<input type="color">`. Enums use radio groups matching `backend/src/app/dashboard/addons/protection-editor.tsx` pattern.
 
-- [ ] **Step 2: Inline addon-disabled notice (spec §4.3)**
-
-Only applies to editors whose owning addon is gated: `milestoneBar`, `trustLine`, and `footer.showGiftNote` slice. For header (no addon dependency), this step is N/A.
+- [ ] **Step 2: Addon gate** — N/A (header is ungated per spec §4.3).
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add backend/src/app/dashboard/cart-editor/element-editors/header-editor.tsx
+git add backend/src/app/dashboard/cart-editor/element-editors/header-editor.tsx backend/__tests__/cart-editor/header-editor.test.tsx
 git commit -m "feat(cart-editor): header element editor"
 ```
 
-Repeat for the other 7 editors.
+#### Sub-task 4.2.b: Milestone bar editor
+
+**Files:**
+- Create: `backend/src/app/dashboard/cart-editor/element-editors/milestone-editor.tsx`
+- Test: `backend/__tests__/cart-editor/milestone-editor.test.tsx`
+
+- [ ] **Step 0: Failing test** — bind `milestoneBar.preUnlockTemplate` to a textarea. Then: render with `initial.addons.milestone.enabled = false` and assert the addon-disabled notice appears at the top of the editor. (Locks editor-level gating.)
+
+- [ ] **Step 1: Build form** — fields from spec §4.1 `editorOverrides.milestoneBar` only (NOT `addons.milestone.tiers` — that lives in the Addons tab, spec §4.3). Inputs: `preUnlockTemplate`, `unlockedTemplate`, `fillColor`, `trackColor`, `height`, `textSize`, `textWeight`, `position`, `celebrationAnim`.
+
+- [ ] **Step 2: Addon gate** — editor-level. If `initial.addons.milestone.enabled === false`, render the notice from spec §4.3 at the top of the editor (above all fields). Fields remain editable.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/src/app/dashboard/cart-editor/element-editors/milestone-editor.tsx backend/__tests__/cart-editor/milestone-editor.test.tsx
+git commit -m "feat(cart-editor): milestone bar editor (addon-gated)"
+```
+
+#### Sub-task 4.2.c: Line item editor
+
+**Files:**
+- Create: `backend/src/app/dashboard/cart-editor/element-editors/line-item-editor.tsx`
+- Test: `backend/__tests__/cart-editor/line-item-editor.test.tsx`
+
+- [ ] **Step 0: Failing test** — `lineItem.imageSize` radio group binds to draft.
+- [ ] **Step 1: Build form** — fields from spec §4.1 `editorOverrides.lineItem` (`imageSize`, `imageShape`, `showVariant`, `showSku`, `qtyControlStyle`, `removeButtonStyle`, `showCrossedOutCompareAt`, `perItemSavingsBadge`, `separator`, `titleFontSize`, `titleFontWeight`).
+- [ ] **Step 2: Addon gate** — N/A (ungated).
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/src/app/dashboard/cart-editor/element-editors/line-item-editor.tsx backend/__tests__/cart-editor/line-item-editor.test.tsx
+git commit -m "feat(cart-editor): line item editor"
+```
+
+#### Sub-task 4.2.d: Empty state editor
+
+**Files:**
+- Create: `backend/src/app/dashboard/cart-editor/element-editors/empty-state-editor.tsx`
+- Test: `backend/__tests__/cart-editor/empty-state-editor.test.tsx`
+
+- [ ] **Step 0: Failing test** — `ctaLink` validation: typing `javascript:alert(1)` shows inline error and does NOT call `setField` (locks spec §8.3 Zod test "rejects emptyState.ctaLink = 'javascript:alert(1)'" at the UI layer too).
+- [ ] **Step 1: Build form** — fields: `heading`, `subtext`, `icon`, `ctaLabel`, `ctaLink`, `ctaInheritsStyle`. Use the same Zod helper that the schema uses (spec §4.1) to validate `ctaLink` on input change.
+- [ ] **Step 2: Addon gate** — N/A.
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/src/app/dashboard/cart-editor/element-editors/empty-state-editor.tsx backend/__tests__/cart-editor/empty-state-editor.test.tsx
+git commit -m "feat(cart-editor): empty state editor (ctaLink validation)"
+```
+
+#### Sub-task 4.2.e: Footer editor
+
+**Files:**
+- Create: `backend/src/app/dashboard/cart-editor/element-editors/footer-editor.tsx`
+- Test: `backend/__tests__/cart-editor/footer-editor.test.tsx`
+
+- [ ] **Step 0: Failing test** — render with `initial.addons.giftNote.enabled = false` and assert: the `showGiftNote` toggle has the addon-disabled notice attached to that **single field**, AND the other footer fields (e.g. `showSubtotal`) do NOT show the notice. (Locks field-level gating.)
+- [ ] **Step 1: Build form** — fields from spec §4.1 `editorOverrides.footer`.
+- [ ] **Step 2: Addon gate** — field-level. Wrap only the `showGiftNote` toggle (NOT the entire editor) with the spec §4.3 notice when `initial.addons.giftNote.enabled === false`. All other footer fields render unconditionally.
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/src/app/dashboard/cart-editor/element-editors/footer-editor.tsx backend/__tests__/cart-editor/footer-editor.test.tsx
+git commit -m "feat(cart-editor): footer editor (field-level gift-note gate)"
+```
+
+#### Sub-task 4.2.f: Checkout button editor
+
+**Files:**
+- Create: `backend/src/app/dashboard/cart-editor/element-editors/checkout-button-editor.tsx`
+- Test: `backend/__tests__/cart-editor/checkout-button-editor.test.tsx`
+
+- [ ] **Step 0: Failing test** — radio group for `radius` writes `'pill'` to draft.
+- [ ] **Step 1: Build form** — fields from spec §4.1 `editorOverrides.checkoutButton`.
+- [ ] **Step 2: Addon gate** — N/A.
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/src/app/dashboard/cart-editor/element-editors/checkout-button-editor.tsx backend/__tests__/cart-editor/checkout-button-editor.test.tsx
+git commit -m "feat(cart-editor): checkout button editor"
+```
+
+#### Sub-task 4.2.g: Trust line editor
+
+**Files:**
+- Create: `backend/src/app/dashboard/cart-editor/element-editors/trust-line-editor.tsx`
+- Test: `backend/__tests__/cart-editor/trust-line-editor.test.tsx`
+
+- [ ] **Step 0: Failing test** — render with `initial.addons.trustLine.enabled = false` and assert: addon-disabled notice appears at the top of the editor. (Locks editor-level gating.)
+- [ ] **Step 1: Build form** — fields from spec §4.1 `editorOverrides.trustLine` (`paymentIcons`, `text`, `showLockIcon`, `position`, `textSize`, `textColor`). NOTE: `paymentIcons` is the per-icon visibility override; the *provider list* itself (`addons.trustLine.providers[]`) is read-only here per spec §4.3.
+- [ ] **Step 2: Addon gate** — editor-level. Same notice at top as milestone editor.
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/src/app/dashboard/cart-editor/element-editors/trust-line-editor.tsx backend/__tests__/cart-editor/trust-line-editor.test.tsx
+git commit -m "feat(cart-editor): trust line editor (addon-gated)"
+```
+
+#### Sub-task 4.2.h: Global style editor
+
+**Files:**
+- Create: `backend/src/app/dashboard/cart-editor/element-editors/global-editor.tsx`
+- Test: `backend/__tests__/cart-editor/global-editor.test.tsx`
+
+- [ ] **Step 0: Failing test** — `widthDesktop = 319` shows inline range error (matches spec §8.3 "rejects drawer width 319 (below min)").
+- [ ] **Step 1: Build form** — fields from spec §4.1 `editorOverrides.global`. **Explicitly excludes `customCss`** (per spec §8.3 "rejects body containing global.customCss (out of scope)").
+- [ ] **Step 2: Addon gate** — N/A.
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/src/app/dashboard/cart-editor/element-editors/global-editor.tsx backend/__tests__/cart-editor/global-editor.test.tsx
+git commit -m "feat(cart-editor): global style editor"
+```
 
 ---
 
@@ -1683,6 +1955,26 @@ Repeat for the other 7 editors.
 
 **Files:**
 - Create: `backend/src/app/dashboard/cart-editor/right-panel.tsx`
+- Test: `backend/__tests__/cart-editor/right-panel.test.tsx`
+
+- [ ] **Step 0: Failing test** — references spec §8.4 "click Header → right panel shows Header editor".
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import { RightPanel } from '../../src/app/dashboard/cart-editor/right-panel';
+import { DraftStoreProvider } from '../../src/app/dashboard/cart-editor/draft-store';
+
+it('shows placeholder when nothing selected', () => {
+  render(<DraftStoreProvider storeId="s1" initial={fakeInitial}><RightPanel selected={null} /></DraftStoreProvider>);
+  expect(screen.getByText(/click an element/i)).toBeInTheDocument();
+});
+it('shows Header editor when selected = "header"', () => {
+  render(<DraftStoreProvider storeId="s1" initial={fakeInitial}><RightPanel selected="header" /></DraftStoreProvider>);
+  expect(screen.getByLabelText(/title/i)).toBeInTheDocument();
+});
+```
+
+Run: FAIL.
 
 - [ ] **Step 1: Build router**
 
@@ -1709,34 +2001,94 @@ export function RightPanel({ selected }: { selected: HotspotId | null }) {
 
 Replace the placeholder right panel with `<RightPanel selected={selected} />`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Verify**
+
+Run: `cd backend && npm test -- right-panel.test`. Expected: PASS.
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add backend/src/app/dashboard/cart-editor/right-panel.tsx backend/src/app/dashboard/cart-editor/page.tsx
+git add backend/src/app/dashboard/cart-editor/right-panel.tsx backend/src/app/dashboard/cart-editor/page.tsx backend/__tests__/cart-editor/right-panel.test.tsx
 git commit -m "feat(cart-editor): right panel router"
 ```
 
 ---
 
-### Task 4.4: Save / Discard buttons + dirty indicator
+### Task 4.4: Save / Discard bar + conflict modal (consumes draft store's `crossTabBanner`)
 
 **Files:**
 - Create: `backend/src/app/dashboard/cart-editor/save-bar.tsx`
+- Test: `backend/__tests__/cart-editor/save-bar.test.tsx`
+
+**Important — single source of truth for conflicts:** The 409 conflict modal does NOT own its own state. It reads `crossTabBanner` from the draft store (declared in Chunk 3 Task 3.2). The two banner kinds drive different UI:
+
+- `crossTabBanner === null` → no banner / no modal.
+- `crossTabBanner.kind === 'incoming-while-dirty'` → inline yellow banner inside the save bar (another tab saved while we have local edits). Actions wire to `draftStore.acceptIncoming()` and `draftStore.dismissBanner()`.
+- `crossTabBanner.kind === 'server-conflict-409'` → blocking modal (we got 409 from our own PUT). Same two actions, but UI is a modal not an inline banner.
+
+This avoids the parallel-state risk the reviewer flagged.
+
+- [ ] **Step 0: Failing test** — references spec §8.3 ("test BroadcastChannel 'saved' shows banner when local isDirty") + §8.4 ("cross-tab conflict: tab B has isDirty → tab A saves → tab B shows banner with discard/keep options").
+
+```tsx
+import { render, screen, fireEvent } from '@testing-library/react';
+import { SaveBar } from '../../src/app/dashboard/cart-editor/save-bar';
+import { DraftStoreProvider, useDraft } from '../../src/app/dashboard/cart-editor/draft-store';
+
+it('renders incoming-banner when crossTabBanner.kind === incoming-while-dirty', () => {
+  const initial = { schemaVersion: 1, savedConfig: { editorOverrides: {}, editorOverridesVersion: 0 } };
+  function Harness() {
+    const draft = useDraft();
+    // simulate cross-tab incoming
+    React.useEffect(() => {
+      draft._setCrossTabBanner({ kind: 'incoming-while-dirty', incomingVersion: 5, incomingOverrides: {} });
+    }, []);
+    return <SaveBar />;
+  }
+  render(<DraftStoreProvider storeId="s1" initial={initial}><Harness /></DraftStoreProvider>);
+  expect(screen.getByText(/another tab saved/i)).toBeInTheDocument();
+});
+
+it('renders 409 modal when crossTabBanner.kind === server-conflict-409', () => {
+  // similar setup, dispatch kind: 'server-conflict-409'
+  // assert role="dialog" present
+});
+```
+
+Run: FAIL.
 
 - [ ] **Step 1: Build save bar**
 
 Sticky bottom bar inside the right panel:
 - "Discard" calls `draftStore.discard()`. Disabled when `!isDirty`.
 - "Save Changes" calls `draftStore.save()`. Disabled when `!isDirty` or `saving`.
-- On save error, toast message via existing toast system.
-- On 429, parse `Retry-After` and show countdown.
-- On 409, show modal with [Discard mine & reload latest] / [Keep my changes].
+- Error toasts go through existing toast system (`backend/src/lib/toast.ts` or equivalent — check codebase before creating new infra).
+- On 429 from save, parse `Retry-After` header, disable Save, show countdown ("Try again in Ns").
+- Reads `crossTabBanner` from `useDraft()`.
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Build incoming-while-dirty banner (inline)**
+
+When `crossTabBanner?.kind === 'incoming-while-dirty'`:
+- Render a yellow inline banner above the Discard/Save buttons.
+- Copy: "Another tab saved newer changes (v{incomingVersion}). You have unsaved edits here."
+- Buttons: [Discard mine & load latest] → `acceptIncoming()`. [Keep my changes] → `dismissBanner()`.
+
+- [ ] **Step 3: Build 409 server-conflict modal**
+
+When `crossTabBanner?.kind === 'server-conflict-409'`:
+- Render a blocking modal (`role="dialog"`, focus trap, esc-to-cancel).
+- Copy: "Your changes couldn't be saved because someone else updated this configuration. Their version: v{incomingVersion}."
+- Buttons: [Discard mine & reload latest] → `acceptIncoming()`. [Keep my changes] → `dismissBanner()` (returns to dirty state; user can re-save which will 409 again — they must explicitly resolve).
+
+- [ ] **Step 4: Verify**
+
+Run: `cd backend && npm test -- save-bar.test`. Expected: PASS.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add backend/src/app/dashboard/cart-editor/save-bar.tsx
-git commit -m "feat(cart-editor): save/discard bar with conflict modal"
+git add backend/src/app/dashboard/cart-editor/save-bar.tsx backend/__tests__/cart-editor/save-bar.test.tsx
+git commit -m "feat(cart-editor): save bar + crossTabBanner-driven conflict UI"
 ```
 
 ---
