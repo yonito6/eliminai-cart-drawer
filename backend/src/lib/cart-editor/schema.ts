@@ -1,18 +1,18 @@
 import { z } from 'zod';
 
-// Hex color: 3, 6, or 8 digits. Normalizes to 6-digit.
-const hexColor = z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/)
+// Hex color: 3 or 6 digits only. 8-digit (alpha) is rejected.
+const hexColor = z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/)
   .transform((s) => {
     const h = s.slice(1).toLowerCase();
     if (h.length === 3) return '#' + h.split('').map(c => c + c).join('');
-    if (h.length === 8) return '#' + h.slice(0, 6);
     return '#' + h;
   });
 
 const safeString = (max: number) => z.string().max(max);
 
+// Require single leading slash (not //) or https:// — rejects protocol-relative URLs.
 const ctaLink = z.string().max(500).refine(
-  (v) => v.startsWith('/') || /^https:\/\//.test(v),
+  (v) => (/^\/[^/]/.test(v) || v === '/') || /^https:\/\//.test(v),
   { message: 'ctaLink must be a relative path or https URL' }
 );
 
@@ -29,7 +29,6 @@ const headerSchema = z.object({
 }).strict();
 
 const milestoneBarSchema = z.object({
-  // tiers + enabled are addon-owned — NOT declared here
   preUnlockTemplate: safeString(200).optional(),
   unlockedTemplate: safeString(200).optional(),
   celebrationAnim: z.boolean().optional(),
@@ -94,7 +93,6 @@ const checkoutButtonSchema = z.object({
 }).strict();
 
 const trustLineSchema = z.object({
-  // enabled + providers list are addon-owned
   text: safeString(200).optional(),
   showLockIcon: z.boolean().optional(),
   paymentIcons: z.record(z.string().max(40), z.boolean()).optional(),
@@ -156,9 +154,24 @@ export const addonOwnedPaths = new Set<string>([
   'addons.giftNote.validation',
 ]);
 
-/** Recursively walks a body and returns first addon-owned path found, or null. */
+/**
+ * Recursively walks a body (objects and arrays) and returns the first addon-owned
+ * path found, or null.
+ *
+ * Arrays are path-transparent: elements are walked with the same prefix as the
+ * containing property. This prevents the array-bypass attack where addon-owned
+ * paths are wrapped in an array to evade the dotted-path check.
+ * e.g. { addons: [{ milestone: { tiers: [] } }] } still yields 'addons.milestone.tiers'.
+ */
 export function findAddonOwnedConflict(body: unknown, prefix = ''): string | null {
   if (!body || typeof body !== 'object') return null;
+  if (Array.isArray(body)) {
+    for (const element of body) {
+      const inner = findAddonOwnedConflict(element, prefix);
+      if (inner) return inner;
+    }
+    return null;
+  }
   for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
     const path = prefix ? `${prefix}.${k}` : k;
     if (addonOwnedPaths.has(path)) return path;
