@@ -1,7 +1,7 @@
 # Cart Editor — Design Spec
 
 **Date:** 2026-05-24
-**Status:** Design approved, spec revised after first review (rev 2)
+**Status:** Design approved, spec revised after second review (rev 3) — test-count math reconciled, Zod/TS schemaVersion clarified, blast-radius lock tests enumerated
 **Owner:** Yoni
 
 ## 1. Problem & goal
@@ -98,9 +98,11 @@ Why one nested JSON column:
 
 ### 4.1 Shape (Zod-validated)
 
+**Zod schema reconciliation:** The TypeScript type below shows `schemaVersion` as required because that is what every current dashboard client is expected to send. The Zod schema on the server, however, declares it as `z.literal(1).default(1)` — so a payload from an older deployed client that omits the field is migrated to `{ schemaVersion: 1, ...rest }` BEFORE the rest of the schema runs. New clients are always required to send `1`. There is no contradiction; the TS type describes the post-parse shape, and Zod handles the missing-field migration on input.
+
 ```ts
 type EditorOverrides = {
-  schemaVersion: 1;  // bumped on breaking shape changes; backend migrates older versions on read
+  schemaVersion: 1;  // post-parse shape; Zod uses z.literal(1).default(1) — see note above
   header?: {
     title?: string;
     showItemCountBadge?: boolean;
@@ -211,6 +213,15 @@ The Addons tab and the Cart Editor must never write to overlapping fields. Each 
 - Milestone *copy* uses `editorOverrides.milestoneBar.preUnlockTemplate` if set, else the addon default
 - Milestone *visual style* uses `editorOverrides.milestoneBar.{fillColor,...}` if set, else CSS defaults
 - If Addons disables milestone (`addons.milestone.enabled = false`), Cart Editor's milestone settings render nothing (Addon ownership wins on visibility of the whole feature)
+- `trustLine.paymentIcons` keys that are NOT in `addons.trustLine.providers[]` are silently ignored at render time (graceful degradation when a provider is removed in Addons)
+
+**Cart Editor UI behavior when an Addon is disabled:**
+
+The Cart Editor settings panel remains fully editable for Cart Editor-owned visual fields even when the matching Addon is disabled — merchants can prepare visual styling for later enablement. The preview canvas reflects shopper-side reality (the addon is off, nothing renders) but adds a non-blocking inline notice in the settings panel:
+
+> "This addon is currently disabled in the Addons tab. Your visual changes are saved but won't show to shoppers until you enable it. [Go to Addons]"
+
+The notice appears in any element editor whose owning addon is disabled (milestone bar, trust line, gift note).
 
 ### 4.2 Render contract
 
@@ -277,7 +288,10 @@ const HOTSPOTS = [
         │ on fail → toast + auto-open offending element editor
         │ on pass → continue
         ▼
-[PUT /api/cart-editor/config  body: { editorOverrides: draft }]
+[PUT /api/cart-editor/config
+  headers: { 'If-Match': 'ce-<savedConfig.editorOverridesVersion>' }
+  body:    { editorOverrides: { schemaVersion: 1, ...draft } }
+  (on first save when savedConfig is null, send 'If-Match: ce-0')]
         │
         ▼
 [Backend: prisma.cartConfig.update({ data: { editorOverrides, editorOverridesVersion: prev+1, updatedAt: now } })]
@@ -301,7 +315,7 @@ const HOTSPOTS = [
 `/apps/eliminai/config` (the proxy v14-complete.js polls/reads) must serve the latest `editorOverrides` after a save. Three layers:
 
 1. **Database-derived version.** Each save bumps `CartConfig.editorOverridesVersion` (integer). The proxy response includes this version in its JSON body and in an `ETag: "ce-<version>"` header.
-2. **CDN/edge cache key.** The Next.js route uses `revalidateTag('cart-config:' + storeId)` after PUT. Proxy response sets `Cache-Control: public, max-age=0, s-maxage=300, stale-while-revalidate=60` and lists `ce-<version>` as part of the cache key via the `Vary` strategy on the storeId.
+2. **CDN/edge cache key.** The Next.js route uses `revalidateTag('cart-config:' + storeId)` after PUT. Proxy response sets `Cache-Control: public, max-age=0, s-maxage=300, stale-while-revalidate=60`. The cache key is composed from the request path INCLUDING the storeId path segment (`/apps/eliminai/config?shop=<storeId>`) — not via `Vary` headers (Vary doesn't work on path params; this corrects an earlier draft).
 3. **Runtime invalidation in v14-complete.js.** On every cart open the script compares the response version with the cached one in `sessionStorage` (`ccd:cfgVersion`). If they differ, it discards cached HTML and re-renders. Implementation note: the polling cadence is unchanged — opens are the natural sync point.
 
 This satisfies `feedback_dashboard_config_must_render.md` (proxy config flows through to live DOM, never stale).
@@ -313,6 +327,9 @@ If a merchant has two dashboard tabs open and saves in tab A, tab B must reflect
 - **Primary channel:** `BroadcastChannel('cart-editor:' + storeId)`. On `saved` message, every listening tab refetches `editorOverrides` and updates `draftStore.savedConfig`. If the listening tab has its own `isDirty === true`, it does NOT clobber the user's draft — it shows a non-blocking banner: "Settings updated in another tab. [Discard mine & reload] [Keep my changes]".
 - **Fallback channel:** `localStorage` event `cart-editor:<storeId>:lastSaveVersion` (covers browsers/contexts without BroadcastChannel — same merge rules).
 - **Stale draft on save:** the PUT carries the `If-Match: ce-<version>` header (the version the user started editing from). Server compares with current; on mismatch returns 409 — see §7.
+- **Discards are local-only and never broadcast.** Only `saved` events cross tabs. A discard in tab A has no effect on tab B's state. This is intentional — discards are private state cleanup.
+- **localStorage payload shape:** `localStorage.setItem('cart-editor:<storeId>:lastSaveVersion', String(newVersion))`. The version is the entire payload; listening tabs MUST issue a fresh GET on `storage` event to fetch the new `editorOverrides`. (Storing the whole JSON in localStorage is rejected — quota limits and stale-data risk.)
+- **Relationship to `feedback_preview_instant_update.md`:** that rule applies *within a single tab* (every keystroke in the settings panel updates the preview, no network). Cross-tab merge applies only when two tabs both have draft state; it is a separate concern and does not contradict instant-update.
 
 ### 6.3 Discard
 
@@ -320,12 +337,14 @@ If a merchant has two dashboard tabs open and saves in tab A, tab B must reflect
 
 ### 6.4 Navigation guard
 
-If `isDirty === true` and user clicks another tab / closes browser → confirm modal "You have unsaved changes — discard?" (matches existing dashboard pattern used by rich-text-editor and scarcity-timer-editor).
+If `isDirty === true`:
+- **Intra-dashboard navigation** (click another tab in the same app, Next.js Link click) → styled custom confirm modal "You have unsaved changes — discard?" (matches existing dashboard pattern used by rich-text-editor and scarcity-timer-editor).
+- **Hard navigation** (address-bar change, browser back/forward, tab close) → `window.beforeunload` listener. Browser shows its default (un-styled) dialog. This is a browser-imposed limitation — we cannot show our styled modal here. The Cart Editor still preserves the draft in `sessionStorage` so a reload restores work-in-progress (`draft` and `isDirty`).
 
 ### 6.5 Validation rules
 
-- `schemaVersion` required, must equal current (1) — older versions are migrated server-side before validation
-- Hex colors: `/^#[0-9a-f]{6}$/i`
+- `schemaVersion`: client MUST send `schemaVersion: 1`. Server treats a missing `schemaVersion` as 1 for forward-compatibility with older deployed dashboard clients, then re-validates against the current schema. If the migration step fails (e.g., unknown legacy version >1), server returns 400 with explicit migration error.
+- Hex colors: `/^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i` — accepts 3-digit shorthand, 6-digit, and 8-digit (RGB+alpha). Normalized to 6-digit before persistence.
 - Drawer width desktop: 320–800
 - Drawer width mobile (percent): 50–100
 - Backdrop opacity: 0–1
@@ -341,9 +360,13 @@ If `isDirty === true` and user clicks another tab / closes browser → confirm m
 
 ### 6.6 Rate limiting and auth
 
-- PUT `/api/cart-editor/config`: authenticated session required (existing dashboard middleware)
-- Rate limit per `storeId`: 10 saves per minute, 60 per hour (in-memory + edge KV). Exceeding returns 429 with `Retry-After`. Save button shows a countdown when throttled.
-- GET `/api/cart-editor/config`: rate limit 60/min/storeId (much higher — used for cross-tab refresh + page mount).
+Rate limits below apply ONLY to the dashboard API endpoints (`/api/cart-editor/*`). The shopper proxy `/apps/eliminai/config` has its own separate rate-limit policy (CDN-fronted, shop-domain-based, NOT subject to these limits — applying dashboard limits there would cripple live carts).
+
+| Endpoint | Auth | Limit | On exceed |
+|---|---|---|---|
+| `PUT /api/cart-editor/config` | Dashboard session required | 10/min, 60/hour per `storeId` | 429 + `Retry-After`. Save button shows countdown. Draft preserved. |
+| `GET /api/cart-editor/config` | Dashboard session required | 60/min per `storeId` (covers cross-tab refresh + page mounts) | 429 + `Retry-After`. Cross-tab refresh retries with jitter. |
+| `GET /apps/eliminai/config` (shopper) | Shop domain only (no session) | Separate policy — CDN edge cache + per-IP throttling; NOT covered by this spec | N/A here |
 
 ## 7. Error handling
 
@@ -384,8 +407,9 @@ ALL 245 existing contract tests + 124 behavior-shield tests + 30 bug-regression 
 ### 8.3 Editor unit tests (`backend/__tests__/cart-editor.test.ts`)
 
 ```
-describe('draft store')
+describe('draft store')                                                      // 8 tests
   test setField updates path and marks dirty
+  test setField on same path twice — last write wins within same tab
   test discard reverts to savedConfig
   test save clears dirty
   test concurrent setField on different paths merges correctly
@@ -393,11 +417,12 @@ describe('draft store')
   test BroadcastChannel 'saved' shows banner when local isDirty (does not clobber)
   test localStorage fallback when BroadcastChannel unavailable
 
-describe('Zod schema')
+describe('Zod schema')                                                        // 16 tests
   test rejects invalid hex
+  test accepts #fff (3-digit), #ffffff (6), #ffffffaa (8) — normalizes to 6
   test rejects drawer width 319 (below min)
   test rejects drawer width 1200 (above max)
-  test accepts drawer width 100 ONLY for widthMobilePct (percent)
+  test accepts widthMobilePct = 100 (percent, valid)
   test rejects widthDesktop = 100 (below 320 min)
   test rejects emptyState.ctaLink = 'javascript:alert(1)'
   test rejects emptyState.ctaLink = 'http://example.com' (http not allowed)
@@ -409,9 +434,8 @@ describe('Zod schema')
   test allows empty object {} (with schemaVersion: 1)
   test rejects body containing global.customCss (out of scope)
   test rejects body containing Addon-owned paths (e.g. addons.milestone.tiers)
-  test missing schemaVersion → server-side defaulted then validated
 
-describe('PUT /api/cart-editor/config')
+describe('PUT /api/cart-editor/config')                                       // 10 tests
   test writes editorOverrides only
   test bumps editorOverridesVersion by exactly 1
   test does not touch addons or abTests fields
@@ -421,14 +445,15 @@ describe('PUT /api/cart-editor/config')
   test response includes new editorOverridesVersion
   test triggers revalidateTag('cart-config:'+storeId)
   test ETag header is "ce-<version>"
+  test missing schemaVersion → server-side defaulted to 1 then validated
 
-describe('GET /apps/eliminai/config (shopper proxy)')
+describe('GET /apps/eliminai/config (shopper proxy)')                         // 3 tests
   test returns editorOverridesVersion in body and ETag header
   test serves stale-while-revalidate within s-maxage
   test after PUT, next GET reflects new editorOverrides (no stale cache)
 ```
 
-Estimate: ~38 new editor tests.
+**Count: 8 + 16 + 10 + 3 = 37 new editor tests.**
 
 ### 8.4 Preview integration tests (`tests/cart-editor-preview.spec.js` via Playwright)
 
@@ -447,27 +472,48 @@ test cache bust: PUT save → shopper-side /apps/eliminai/config returns new edi
 test ownership: PUT body with addons.milestone.tiers → 400 with explicit conflict message
 ```
 
-Estimate: ~14 Playwright tests.
+**Count: 12 new Playwright tests.** (cross-tab + cache-bust + ownership scenarios are included above; no separate group.)
 
 ### 8.5 Blast-radius lock tests
 
-Per CLAUDE.md blast-radius-shield rule. The drawer cannot be **byte-identical** after we add fallback reads — we must add code paths and (for newly editable elements like `showCrossedOutSubtotal`) empty wrapper elements that render nothing when the toggle is false. The assertion is therefore **structural equivalence**, not byte equality:
+Per CLAUDE.md blast-radius-shield rule. The drawer cannot be **byte-identical** after we add fallback reads — we must add code paths and (for newly editable elements like `showCrossedOutSubtotal`) empty wrapper elements that render nothing when the toggle is false. The assertion is therefore **structural equivalence**, not byte equality.
 
-- v14-complete.js with `editorOverrides = null` → drawer is **structurally equivalent** to current production: same visible text, same visible elements, same computed styles. New empty placeholder elements (e.g. `<div class="ccd-savings-row" hidden>`) are allowed.
-- v14-complete.js with `editorOverrides = {}` → same as above.
-- DOM diff helper (`tests/helpers/structural-equiv.js`) ignores: hidden elements (`hidden` attribute or `display:none`), data-attributes added for editor instrumentation, whitespace-only text node changes.
-- Adding `editorOverrides = { footer: { totalOutsideButton: true } }` → only footer/button visible DOM changes; visible text/computed styles of all other elements unchanged.
-- All addon code paths still inject correctly and Cart Editor overrides do NOT modify Addon-owned values (see §4.3 Ownership map).
-- Production smoke: snapshot the current live cart HTML before Stage 2 deploy, replay against the new v14-complete.js with `editorOverrides = null`, assert structural equivalence.
+**Helper:** `tests/helpers/structural-equiv.js` — a DOM diff helper used by every lock test. It ignores: hidden elements (`hidden` attribute or `display:none`), `data-cart-editor-*` instrumentation attributes added by the editor overlay, and whitespace-only text node changes. This helper is **not** itself a test; it is shared infrastructure.
+
+Lock tests (added to `tests/blast-radius/cart-editor.test.js`):
+
+1. **`editorOverrides = null` is structurally equivalent to current production** — load v14-complete.js against a fixture cart with no overrides, assert structural-equiv vs the pre-Stage-2 production snapshot.
+2. **`editorOverrides = {}` (empty object, with `schemaVersion: 1`) is structurally equivalent to `null`** — guarantees the empty-object case takes the same defaults path as null.
+3. **Scoped change isolation** — `editorOverrides = { footer: { totalOutsideButton: true } }`: only footer/button visible DOM changes; structural-equiv on every OTHER region (header, milestone, line items, empty state, trust line, global) must pass.
+4. **Addon code paths unaffected by Cart Editor overrides** — with Addons enabled (milestone, trust badges, upsells) and `editorOverrides` setting visual fields, the Addon-owned values (tiers, enabled flags, payment-provider list) match exactly what the Addon panel wrote. No cross-write.
+5. **Production smoke replay** — snapshot the live cart HTML before Stage 2 deploy, replay against the new v14-complete.js with `editorOverrides = null`, assert structural equivalence. This is the deploy gate for Stage 2.
+6. **Idempotent re-render** — re-running the cart render twice with the same overrides produces structurally-equivalent DOM (guards against accidental cumulative state in addon code paths).
+
+**Count: 6 new blast-radius lock tests.**
 
 ### 8.6 CI gate
 
-Pre-commit + pre-deploy:
-1. `npm test` — full suite. Existing baseline (245 contract + 124 behavior-shield + 30 bug-regression = 399) + new additions (~60 contract + ~38 unit + ~10 Playwright + ~6 blast-radius locks + ~8 ownership/cache-bust = ~122) → total target **~521 tests**.
+Pre-commit + pre-deploy. The per-section counts below MUST sum exactly to the stated total — any future spec edits that add/remove tests must update this section in the same change.
+
+| Layer | Section | Count |
+|---|---|---|
+| Baseline contract | existing `tests/contract.test.js` | 245 |
+| Baseline behavior-shield | existing `tests/behavior-shield.test.js` | 124 |
+| Baseline bug-regression | existing `tests/bug-regression.test.js` | 30 |
+| **Baseline total** | | **399** |
+| New contract (editor field wiring) | §8.1 | 60 |
+| New editor unit | §8.3 | 37 |
+| New Playwright (preview + cross-tab + cache-bust + ownership) | §8.4 | 12 |
+| New blast-radius locks | §8.5 | 6 |
+| **New additions total** | | **115** |
+| **Grand total target** | | **514** |
+
+Gate steps:
+1. `npm test` — full suite. MUST report ≥ 514 passing tests (399 baseline + 115 new). Any number below this means a test was deleted without updating §8.1/§8.3/§8.4/§8.5 — block deploy and reconcile counts.
 2. `tsc --noEmit`
-3. `node tests/contract.test.js` — static analysis on v14-complete.js
-4. Playwright suite on cart-editor-preview
-5. Structural-equivalence snapshot diff against pre-deploy production drawer HTML
+3. `node tests/contract.test.js` — static analysis on v14-complete.js (subset of step 1, but run standalone for fast pre-commit signal).
+4. Playwright suite on cart-editor-preview (12 tests).
+5. Structural-equivalence snapshot diff against pre-deploy production drawer HTML (§8.5 lock #5).
 
 ## 9. Rollout plan
 
