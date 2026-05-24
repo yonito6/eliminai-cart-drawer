@@ -1460,78 +1460,112 @@ git commit -m "feat(cart-editor): draft store with cross-tab sync"
 
 ---
 
-### Task 3.3: Preview canvas — sandboxed iframe that loads the real cart drawer in preview mode
+### Task 3.3: Preview canvas — same-DOM renderer driven by editorOverrides (spec §3.3 compliant)
 
-**Spec alignment (§3.3):** the editor preview MUST use the same render path as the production cart drawer. No duplicated render code. Strategy: load `v14-complete.js` inside a sandboxed iframe with two new opt-in hooks:
+**Spec alignment (§3.3):** "No iframe. No mock. Same DOM. The overlay is a sibling div positioned via `getBoundingClientRect()`." The preview canvas mounts the cart drawer HTML **directly inside the editor page**, not in an iframe. A new `preview-renderer.ts` module walks `editorOverrides` and emits the same HTML structure v14-complete.js produces in the browser, **reusing `cart-constants.ts` (REAL_CART_CSS + CONTROL_HTML)** — no inline styles, no duplicated CSS.
 
-1. **`window.__CART_EDITOR_PREVIEW__` flag** — when true, v14-complete.js boots in "preview mode": no real `/cart.js` fetches, no add-to-cart, no checkout navigation. Uses fixture cart data injected via `window.__CART_PREVIEW_FIXTURE__` keyed by previewState.
-2. **`window.__CART_EDITOR_OVERRIDES__` object** — replaces what v14 normally reads from the proxy config response. When this var is set, v14 skips the network fetch and uses these overrides directly. The parent page updates this var + dispatches `cart-editor:rerender` on every draft change.
+The "60 contract tests" in Chunk 2 are exactly what protects against drift between v14's runtime render and the preview-renderer's output: both must read the same fields from `editorOverrides`, and the contract tests assert the field→DOM mapping. If preview-renderer.ts and v14-complete.js disagree on any field, a contract test fails.
 
-This adds ~30 lines of opt-in guards to v14-complete.js (done in Task 3.4 below) and zero render duplication.
+Note on iframe alternative: an earlier draft of this task used an iframe to load v14-complete.js directly. That violated spec §3.3 and broke the overlay (Chunk 4) because the parent's `elementsFromPoint` cannot pierce iframe boundaries. The same-DOM approach is the spec contract.
 
 **Files:**
 - Create: `backend/src/app/dashboard/cart-editor/preview-canvas.tsx`
-- Create: `backend/src/app/dashboard/cart-editor/preview-fixtures.ts` (fixture cart data — items, empty, unlocked, loading)
-- Modify: `extension/extensions/cart-drawer/assets/v14-complete.js` (added in Task 3.4)
+- Create: `backend/src/app/dashboard/cart-editor/preview-renderer.ts`
+- Create: `backend/src/app/dashboard/cart-editor/preview-fixtures.ts` (fixture cart data — items, empty, unlocked)
+- Test:   `backend/__tests__/cart-editor/preview-renderer.test.ts`
 
-- [ ] **Step 1: Create preview fixtures**
+- [ ] **Step 1: Write failing test for preview-renderer**
 
-`preview-fixtures.ts` exports a small dictionary of `/cart.js`-shaped JSON for each previewState (cart-with-items: 2 line items with realistic price/qty; empty: `{ items: [], total_price: 0 }`; unlocked: cart at/above highest milestone; loading: same as cart-with-items but emits a loading skeleton via opts.
+```ts
+import { describe, it, expect } from 'vitest';
+import { renderPreviewHTML } from '@/app/dashboard/cart-editor/preview-renderer';
+import { PREVIEW_FIXTURES } from '@/app/dashboard/cart-editor/preview-fixtures';
 
-- [ ] **Step 2: Build canvas component (iframe + postMessage)**
+describe('preview-renderer', () => {
+  it('uses REAL_CART_CSS from cart-constants (no inline styles)', () => {
+    const html = renderPreviewHTML({}, { viewport: 'desktop', previewState: 'cart-with-items', cart: PREVIEW_FIXTURES['cart-with-items'] });
+    // The renderer must reference our shared CSS classes, not duplicate styles inline
+    expect(html).toMatch(/class="ccd-/);
+    expect(html).not.toMatch(/style="background-color: #/i);
+  });
+
+  it('header.title override appears in output', () => {
+    const html = renderPreviewHTML({ header: { title: 'My Cart' } }, { viewport: 'desktop', previewState: 'cart-with-items', cart: PREVIEW_FIXTURES['cart-with-items'] });
+    expect(html).toContain('My Cart');
+  });
+
+  it('empty previewState renders empty-state CTA, not line items', () => {
+    const html = renderPreviewHTML({}, { viewport: 'desktop', previewState: 'empty', cart: PREVIEW_FIXTURES['empty'] });
+    expect(html).toContain('data-ccd-empty-state');
+    expect(html).not.toContain('data-ccd-line-item');
+  });
+
+  it('mobile viewport sets mobile-width class', () => {
+    const html = renderPreviewHTML({}, { viewport: 'mobile', previewState: 'cart-with-items', cart: PREVIEW_FIXTURES['cart-with-items'] });
+    expect(html).toMatch(/data-ccd-viewport="mobile"/);
+  });
+});
+```
+
+- [ ] **Step 2: Run test, expect failure.**
+
+- [ ] **Step 3: Implement preview-renderer.ts**
+
+`renderPreviewHTML(overrides, opts)` returns a single HTML string. Internally:
+- Resolve effective config: deep-merge `BASELINE_CONFIG` ← addonsLiveConfig (passed via opts) ← `overrides`. (For Stage 3a we only need the overrides path; addons defaults come from the existing `addon-definitions.ts`.)
+- Reuse `cart-constants.ts` REAL_CART_CSS once at the top of the output (wrapped in `<style data-ccd-preview-css>`).
+- Walk the section tree (header → milestoneBar → items → emptyState → footer → trustLine) in the same order v14 does.
+- Each section is a small template function (e.g. `renderHeader(cfg)`, `renderFooter(cfg, cart)`) that emits the same class names + `data-ccd-*` hooks v14 uses.
+- For Stage 3a, support `previewState ∈ { 'cart-with-items', 'empty', 'unlocked' }` and `viewport ∈ { 'desktop', 'mobile' }`. Hotspot data attributes are added in Chunk 4 Task 4.1.
+
+- [ ] **Step 4: Implement preview-fixtures.ts**
+
+Exports `PREVIEW_FIXTURES: Record<PreviewState, CartJson>`:
+- `'cart-with-items'`: 2 line items with realistic price/qty/variant
+- `'empty'`: `{ items: [], total_price: 0 }`
+- `'unlocked'`: 1 line item with total_price ≥ highest milestone threshold
+
+- [ ] **Step 5: Run tests, expect pass.**
+
+- [ ] **Step 6: Build canvas component**
 
 ```tsx
 'use client';
 import { useDraftStore } from './draft-store';
-import { useEffect, useRef, useState } from 'react';
+import { renderPreviewHTML } from './preview-renderer';
 import { PREVIEW_FIXTURES } from './preview-fixtures';
+import { useState } from 'react';
 
-const PREVIEW_ORIGIN = process.env.NEXT_PUBLIC_PROXY_ORIGIN || '';
-
-export function PreviewCanvas() {
+export function PreviewCanvas({ onPreviewRootRef }: { onPreviewRootRef?: (el: HTMLDivElement | null) => void }) {
   const { draft } = useDraftStore();
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
-  const [state, setState] = useState<'cart-with-items' | 'empty' | 'unlocked' | 'loading'>('cart-with-items');
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  // Push draft + state into iframe on every change. Iframe uses these instead of network.
-  useEffect(() => {
-    const w = iframeRef.current?.contentWindow;
-    if (!w) return;
-    w.postMessage(
-      { type: 'cart-editor:apply', overrides: draft, fixture: PREVIEW_FIXTURES[state], viewport },
-      '*'
-    );
-  }, [draft, state, viewport]);
-
+  const [previewState, setPreviewState] = useState<'cart-with-items' | 'empty' | 'unlocked'>('cart-with-items');
+  const html = renderPreviewHTML(draft, { viewport, previewState, cart: PREVIEW_FIXTURES[previewState] });
   return (
-    <div className="p-4">
+    <div className="p-4 relative">
       <div className="flex gap-2 mb-4">
         <button onClick={() => setViewport('desktop')} aria-pressed={viewport === 'desktop'}>Desktop</button>
         <button onClick={() => setViewport('mobile')} aria-pressed={viewport === 'mobile'}>Mobile</button>
-        <select value={state} onChange={(e) => setState(e.target.value as any)}>
+        <select value={previewState} onChange={(e) => setPreviewState(e.target.value as any)}>
           <option value="cart-with-items">Cart with items</option>
           <option value="empty">Empty</option>
           <option value="unlocked">Unlocked</option>
-          <option value="loading">Loading</option>
         </select>
       </div>
-      <iframe
-        ref={iframeRef}
-        src="/cart-editor/preview-frame"
-        title="Cart drawer preview"
-        sandbox="allow-scripts allow-same-origin"
+      <div
+        ref={onPreviewRootRef}
         data-cart-editor-preview-root
-        className={viewport === 'mobile' ? 'w-[375px] h-[640px]' : 'w-full max-w-[520px] h-[720px]'}
+        className={viewport === 'mobile' ? 'w-[375px] mx-auto' : 'w-full max-w-[520px]'}
+        dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
   );
 }
 ```
 
-`/cart-editor/preview-frame` is a tiny Next.js route (`backend/src/app/cart-editor/preview-frame/page.tsx`) that returns an HTML shell which sets `window.__CART_EDITOR_PREVIEW__ = true`, listens for the `cart-editor:apply` postMessage, then loads `v14-complete.js`. v14 reads `__CART_EDITOR_OVERRIDES__` (set from postMessage) instead of fetching the proxy.
+The `onPreviewRootRef` callback lets the parent page hand the preview root DOM node to the overlay (Chunk 4) so `elementsFromPoint` queries work against the same document.
 
-- [ ] **Step 3: Wire into page.tsx (client component — `await` is not allowed in client RSC and absolute URLs need the request origin)**
+- [ ] **Step 7: Wire into page.tsx (client component)**
 
 ```tsx
 'use client';
@@ -1570,41 +1604,16 @@ export default function CartEditorPage({ params }: { params: Promise<{ storeId: 
 ```
 
 Notes:
-- `'use client'` is required because we use `useState`/`useEffect` and the page reads the storeId path param at runtime.
-- `params` is typed as `Promise<{ storeId: string }>` to match Next.js 15+ dynamic param convention; `use(params)` unwraps it. If the project is on Next 14, use `params: { storeId: string }` and skip `use()`.
+- `'use client'` required for hooks + runtime fetch.
+- `params` typed as `Promise<…>` for Next 15; on Next 14, use `params: { storeId: string }` and drop `use()`.
 - Save URL is `/api/cart-editor/[storeId]/config` (matches Chunk 1 route per Reconciliation #4).
+- The `selected` state for the overlay (Chunk 4) will be added here later — Chunk 4 Task 4.0.
 
-- [ ] **Step 4: Commit**
-
-```bash
-git add backend/src/app/dashboard/cart-editor backend/src/app/cart-editor
-git commit -m "feat(cart-editor): preview canvas iframe + viewport/state controls"
-```
-
----
-
-### Task 3.4: v14-complete.js preview-mode hooks (~30 lines, behind opt-in flag)
-
-**Files:**
-- Modify: `extension/extensions/cart-drawer/assets/v14-complete.js`
-- Test: `tests/cart-editor/v14-preview-mode.test.js`
-
-- [ ] **Step 1: Write failing tests** — assert that when `window.__CART_EDITOR_PREVIEW__ = true`:
-  1. v14 does NOT call `fetch('/cart.js')` on init — it uses `window.__CART_PREVIEW_FIXTURE__` instead
-  2. v14 does NOT call the proxy `/apps/cart-config` — it uses `window.__CART_EDITOR_OVERRIDES__`
-  3. clicks on checkout button / qty buttons are no-ops (preventDefault + return)
-  4. listening for `message` event with `type: 'cart-editor:apply'` updates overrides + fixture and triggers re-render
-  5. when `__CART_EDITOR_PREVIEW__` is false/undefined, behavior is byte-identical to current production (LOCK)
-
-- [ ] **Step 2: Implement preview-mode guards** in v14-complete.js. Locate the init bootstrap, the proxy fetch, the `/cart.js` fetch, and the click handlers for checkout / qty / remove. Wrap each with `if (window.__CART_EDITOR_PREVIEW__) { ...preview path... } else { ...prod path... }`. Add a single message listener at the top of init: `window.addEventListener('message', (e) => { if (e.data?.type === 'cart-editor:apply') { window.__CART_EDITOR_OVERRIDES__ = e.data.overrides; window.__CART_PREVIEW_FIXTURE__ = e.data.fixture; CCD.refresh(); } });`.
-
-- [ ] **Step 3: Run preview-mode tests + run existing v14 contract tests (32) — all must pass.**
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add extension/extensions/cart-drawer/assets/v14-complete.js tests/cart-editor/v14-preview-mode.test.js
-git commit -m "feat(cart-drawer): v14 preview-mode hooks for editor iframe"
+git add backend/src/app/dashboard/cart-editor backend/__tests__/cart-editor/preview-renderer.test.ts
+git commit -m "feat(cart-editor): preview canvas + renderer (same-DOM, reuses cart-constants)"
 ```
 
 ---
