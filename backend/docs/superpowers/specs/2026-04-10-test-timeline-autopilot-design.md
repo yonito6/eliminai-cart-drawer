@@ -6,7 +6,7 @@
 
 ## Goal
 
-Extend the existing A/B testing system (Thompson Sampling, 2-variant tests, per-addon experiments) with time estimates, autopilot mode, a results history page, post-winner decision flow, edit-triggers-test functionality, custom variant tournaments with bracket-style testing, and mid-test change protection with tiered warnings. The system is NOT addon-specific — it will expand to test checkout buttons, fonts, layouts, colors, and any other cart element.
+Extend the existing A/B testing system (Thompson Sampling, 2-variant tests, per-addon experiments) with time estimates, autopilot mode, a results history page, post-winner decision flow, edit-triggers-test functionality, custom variant tournaments with bracket-style testing, mid-test change protection with tiered warnings, and external factor awareness with anomaly detection. The system is NOT addon-specific — it will expand to test checkout buttons, fonts, layouts, colors, and any other cart element.
 
 ---
 
@@ -246,6 +246,86 @@ Add a `notes` JSON array to experiments for tracking mid-test events:
 notes: Array<{ timestamp: string, type: 'paused' | 'resumed' | 'settings_changed' | 'invalidated', detail: string }>
 ```
 
+
+## Part 8: External Factor Awareness
+
+**What:** Detect and surface external changes that could affect A/B test interpretation, without blocking tests. A/B tests are naturally resistant to external factors (both variants see the same conditions), but users need context when reviewing results.
+
+### Layer 1: Anomaly Detection (automated, nightly cron)
+
+Three checks run every night for each RUNNING experiment:
+
+**Traffic anomaly:**
+- Compare today's cart opens to 7-day rolling average
+- Flag if deviation > 2x or < 0.5x
+- Note: "Traffic anomaly: +240% vs 7-day average (Apr 15)"
+
+**Conversion shift:**
+- Compare today's checkout rate for BOTH variants vs their 7-day averages
+- Flag if both variants shift > 30% in the same direction
+- Note: "Both variants saw +45% conversion shift. External factor likely. Results still valid — relative comparison holds."
+
+**Segment drift:**
+- Compare new vs returning visitor ratio to 7-day average
+- Flag if ratio shifts > 20 percentage points
+- Note: "Visitor mix changed: 72% new visitors today vs 51% average. New ad campaign?"
+
+**Implementation:** Add to nightly cron after Thompson Sampling calculation. Each detection adds to the experiment's `notes` JSON array. These are informational only — never auto-pause or invalidate.
+
+### Layer 2: Shopify Event Tracking (automated, webhooks)
+
+Listen to Shopify webhooks for events that could affect tests:
+
+| Webhook | What We Log |
+|---|---|
+| `products/create` | "New product added: [title]" |
+| `products/update` (price change) | "Price changed: [product] $X → $Y" |
+| `price_rules/create` | "Discount code created: [code]" |
+| `themes/update` | "Theme modified" |
+
+These are logged as experiment notes with type `external_event`.
+
+**Webhook registration:** During Shopify OAuth install, subscribe to these additional webhook topics. Events are matched to running experiments by storeId.
+
+### Layer 3: User Event Log (manual)
+
+A button in Track Results view: **"Log an Event"**
+
+Opens a simple input:
+> "Note something that happened during this test (e.g., 'Started Facebook ads', 'Black Friday sale')
+> [text input] [Save]"
+
+Saved to experiment `notes` with type `user_event`.
+
+### Display in Track Results
+
+Below the confidence bar, show a timeline of notes:
+```
+📊 Test Timeline
+────────────────────────────────
+Apr 10  Test started
+Apr 12  ⚠️ Traffic anomaly: +180% vs average
+Apr 12  📝 User note: "Started Instagram ad campaign"
+Apr 14  🛒 Shopify: Discount code SPRING20 created
+Apr 17  ✅ Winner found: Variant A (+8.3% lift)
+```
+
+Each note has an icon by type:
+- ⚠️ Anomaly detection
+- 📝 User note
+- 🛒 Shopify event
+- ⏸ Test paused/resumed
+- ✅ Winner found
+
+### What This Does NOT Do
+
+- Does NOT auto-pause tests (external factors affect both variants equally)
+- Does NOT "correct" results for external factors (introduces bias)
+- Does NOT require users to stop marketing during tests (unrealistic)
+- Does NOT segment results by pre/post-change (weakens sample size)
+
+The purpose is **context for human decision-making**, not automated intervention. When a user sees "Winner found with +8.3% lift" AND "traffic spiked 3x during the test from an ad campaign," they can judge whether to trust the result or re-run with organic traffic.
+
 ---
 
 ## Architecture Notes
@@ -292,3 +372,6 @@ All state is per-store (via `storeId`). Autopilot config lives in `store.config`
 10. Same-slot edits during active test trigger hard block modal
 11. Different-slot edits show soft warning with option to continue
 12. Paused tests track pre/post-pause data segments separately
+13. Nightly cron detects traffic anomalies, conversion shifts, and segment drift
+14. Users can log external events on running tests
+15. Test timeline shows all notes (anomalies, Shopify events, user notes) chronologically
