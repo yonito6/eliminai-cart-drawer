@@ -6,7 +6,7 @@
 export interface AddonDimension {
   key: string;
   label: string;
-  type: 'select' | 'text' | 'number' | 'checkboxes' | 'toggle';
+  type: 'select' | 'text' | 'number' | 'checkboxes' | 'toggle' | 'color';
   testable: boolean;
   options?: { value: string; label: string }[];
   checkboxOptions?: { value: string; label: string }[];
@@ -144,14 +144,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       'Display payment provider icons and security badges to reduce purchase anxiety.',
     estimatedImpact: '+2-10% conversion',
     impactMetric: 'conversion',
-    dimensions: [      {
-        key: 'text',
-        label: 'Badge Text',
-        type: 'text',
-        testable: true,
-        default: '',
-        placeholder: 'e.g. ',
-      },
+    dimensions: [
       {
         key: 'position',
         label: 'Position',
@@ -185,7 +178,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
         default: ['visa', 'mastercard', 'amex', 'discover', 'paypal', 'apple-pay', 'google-pay'],
       },
     ],
-    defaultConfig: { text: '', position: 'below-checkout', icons: ['visa', 'mastercard', 'amex', 'discover', 'paypal', 'apple-pay', 'google-pay'] },
+    defaultConfig: { position: 'below-checkout', icons: ['visa', 'mastercard', 'amex', 'discover', 'paypal', 'apple-pay', 'google-pay'] },
   },
 
   {
@@ -198,40 +191,32 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
     impactMetric: 'conversion',
     dimensions: [
       {
-        key: 'textTemplate',
+        key: 'text',
         label: 'Timer Text',
-        type: 'select',
+        type: 'text',
         testable: true,
-        options: [
-          { value: 'reserve-expires', label: 'Your cart is reserved for {time}' },
-          { value: 'demand-warning', label: 'High demand! Complete checkout in {time}' },
-          { value: 'offer-expires', label: 'This offer expires in {time}' },
-        ],
-        default: 'reserve-expires',
+        default: '<span style="color:#d32f2f">Your cart is reserved for <strong>{time}</strong></span>',
+        placeholder: 'Use {time} for the countdown',
       },
       {
         key: 'duration',
-        label: 'Timer Duration',
-        type: 'select',
+        label: 'Duration (minutes)',
+        type: 'number',
         testable: true,
-        options: [
-          { value: '10', label: '10 minutes' },
-          { value: '15', label: '15 minutes' },
-          { value: '20', label: '20 minutes' },
-        ],
-        default: '15',
+        min: 1,
+        max: 60,
+        default: 10,
       },
       {
-        key: 'style',
-        label: 'Timer Style',
+        key: 'onComplete',
+        label: 'When timer reaches 0',
         type: 'select',
-        testable: true,
+        testable: false,
         options: [
-          { value: 'subtle-text', label: 'Subtle Text' },
-          { value: 'bold-banner', label: 'Bold Banner' },
-          { value: 'animated-pulse', label: 'Animated Pulse' },
+          { value: 'hide', label: 'Hide timer' },
+          { value: 'reset', label: 'Reset and start over' },
         ],
-        default: 'subtle-text',
+        default: 'hide',
       },
       {
         key: 'position',
@@ -245,8 +230,15 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
         ],
         default: 'below-header',
       },
+      { key: 'pulseAnimation', label: 'Pulse Animation', type: 'toggle', testable: false, default: true },
     ],
-    defaultConfig: { textTemplate: 'reserve-expires', duration: '15', style: 'subtle-text', position: 'below-header' },
+    defaultConfig: {
+      text: '<span style="color:#d32f2f">Your cart is reserved for <strong>{time}</strong></span>',
+      duration: 10,
+      onComplete: 'hide',
+      position: 'below-header',
+      pulseAnimation: true,
+    },
   },
 
   {
@@ -349,14 +341,10 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       {
         key: 'headline',
         label: 'Section Headline',
-        type: 'select',
+        type: 'text',
         testable: true,
-        options: [
-          { value: 'you-may-also-like', label: 'You may also like' },
-          { value: 'complete-your-order', label: 'Complete your order' },
-          { value: 'customers-also-bought', label: 'Customers also bought' },
-        ],
-        default: 'you-may-also-like',
+        placeholder: 'You may also like',
+        default: '<div style="text-align:center"><strong>You may also like</strong></div>',
       },
       {
         key: 'layout',
@@ -371,6 +359,15 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
         default: 'horizontal-scroll',
       },
       {
+        key: 'maxProducts',
+        label: 'Max Products',
+        type: 'number',
+        testable: true,
+        min: 1,
+        max: 6,
+        default: 3,
+      },
+      {
         key: 'position',
         label: 'Position',
         type: 'select',
@@ -383,7 +380,14 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
         default: 'below-items',
       },
     ],
-    defaultConfig: { source: 'shopify-recommendations', headline: 'you-may-also-like', layout: 'horizontal-scroll', position: 'below-items' },
+    defaultConfig: {
+      source: 'shopify-recommendations',
+      headline: '<div style="text-align:center"><strong>You may also like</strong></div>',
+      layout: 'horizontal-scroll',
+      maxProducts: 3,
+      position: 'below-items',
+      manualProducts: [], // [{ handle, variantId, title, image, price }]
+    },
   },
 
   {

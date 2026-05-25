@@ -829,16 +829,6 @@ export default function RewardsTierEditor({ config, onConfigChange, storeId, suc
                         {config.giftBadgeEnabled !== false && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <div>
-                              <span style={labelStyle}>Badge Text</span>
-                              <input
-                                type="text"
-                                value={config.giftBadgeText ?? 'Bonus gift'}
-                                onChange={e => onConfigChange({ giftBadgeText: e.target.value })}
-                                placeholder="Bonus gift"
-                                style={{ ...inputStyle }}
-                              />
-                            </div>
-                            <div>
                               <span style={labelStyle}>Badge Icon</span>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                                 {Object.entries(REWARD_ICONS).map(([key, icon]) => (

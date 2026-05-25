@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { REAL_CART_CSS, CONTROL_HTML } from '../cart-constants';
 import { REWARD_ICONS, RewardTier } from '@/lib/addon-definitions';
 import { getProtectionIconSvg } from '@/lib/protection-icons';
+import { normalizeBlockColorWrap, applyDefaultColor } from './rich-text-editor';
 
 const FOCUS_AREAS: Record<string, { scrollTo: string; height: number }> = {
   trustBadges: { scrollTo: 'ccd-trust-badges', height: 220 },
@@ -70,19 +71,17 @@ interface AddonPreviewProps {
 
 function buildTrustBadgesHtml(config: Record<string, any> | undefined): string {
   const c = config ?? {};
-  const text = c.text ?? '';
-  const icons: string[] = c.icons || ['visa', 'mastercard', 'amex', 'paypal'];
+  // Default must match addon-definitions.ts dim.default + v14-complete.js injectTrustBadges
+  const icons: string[] = c.icons || ['visa', 'mastercard', 'amex', 'discover', 'paypal', 'apple-pay', 'google-pay'];
 
   const iconEntries = icons.map((id: string) => {
     const svg = PAYMENT_SVGS[id] || '';
-    const label = id.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
     return svg;
   }).join('');
 
   return '<div id="ccd-trust-badges" class="ccd-trust-badges">' +
     '<div class="ccd-trust-icons" style="gap:6px">' + iconEntries + '</div>' +
-    '<div class="ccd-trust-text">' +
-    text + '</div></div>';
+    '</div>';
 }
 
 export default function AddonPreview({ addonKey, addonConfig, mode, themeSettings, stagingHint, storeId }: AddonPreviewProps) {
@@ -215,51 +214,70 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     }
   }
 
-  // ── Scarcity Timer: dynamic text, duration, style, position ────────
+  // ── Scarcity Timer: rich text (alignment lives inside HTML) + duration + position ────
   if (addonKey === 'scarcityTimer') {
-    const textTemplate = addonConfig.textTemplate || 'reserve-expires';
-    const duration = addonConfig.duration || '15';
-    const timerStyle = addonConfig.style || 'subtle-text';
+    // Migrate from legacy fields if present.
+    // normalizeBlockColorWrap fixes the broken <span color><div>...</div></span> pattern from older
+    // save logic — HTML5 auto-closes the span around the block, which silently drops the color.
+    const rawTextRaw = addonConfig.text != null
+      ? String(addonConfig.text)
+      : '<span style="color:#d32f2f">Your cart is reserved for <strong>{time}</strong></span>';
+    // 1) Migrate the legacy <span color><div></div></span> broken pattern (HTML5 auto-close).
+    // 2) Apply default red if the saved HTML has no foreground color at all — without this, the
+    //    preview iframe's CSS (#CartDrawer.custom-cart-drawer { color:#111 }) makes the timer black.
+    const themeColor = typeof addonConfig.themeColor === 'string' ? addonConfig.themeColor : '#d32f2f';
+    const rawText = applyDefaultColor(normalizeBlockColorWrap(rawTextRaw), themeColor);
+    const durationRaw = addonConfig.duration;
+    const durationMin = typeof durationRaw === 'number'
+      ? durationRaw
+      : (Number(durationRaw) || 10);
+    const safeDuration = Math.max(1, Math.min(60, durationMin));
     const position = addonConfig.position || 'below-header';
 
-    const textMap: Record<string, string> = {
-      'reserve-expires': 'Your cart is reserved for <strong>' + duration + ':00</strong>',
-      'demand-warning': 'High demand! Complete checkout in <strong>' + duration + ':00</strong>',
-      'offer-expires': 'This offer expires in <strong>' + duration + ':00</strong>',
-    };
-    const timerText = textMap[textTemplate] || textMap['reserve-expires'];
+    // Visual styling (background, text color, font size, font weight, padding,
+    // border radius) is controlled inline via the rich text editor toolbar in
+    // rawText — no separate fields. Only pulse animation is a wrapper-level toggle.
+    const pulseAnimation = addonConfig.pulseAnimation !== false;
 
-    let bgColor = 'transparent', textColor = 'var(--ccd-scarcity-color)', padding = '8px 0', fontSize = '12px', fontWeight = '500', borderRadius = '0';
-    if (timerStyle === 'bold-banner') {
-      bgColor = '#fef2f2'; textColor = '#dc2626'; padding = '10px 16px'; fontSize = '13px'; fontWeight = '700'; borderRadius = '8px';
-    } else if (timerStyle === 'animated-pulse') {
-      bgColor = '#fff7ed'; textColor = '#ea580c'; padding = '10px 16px'; fontSize = '13px'; fontWeight = '600'; borderRadius = '8px';
-    }
+    // Render preview at the START of the countdown (mm:ss).
+    // Alignment lives inside rawText (text-align inline styles set via the rich text editor).
+    const mm = String(safeDuration).padStart(2, '0');
+    const timeDisplay = mm + ':00';
+    const timerInner = rawText.replace(/\{time\}/g, '<span class="ccd-scarcity-time">' + timeDisplay + '</span>');
 
-    const timerHtml = '<div id="ccd-scarcity-timer" class="ccd-scarcity-badge" style="text-align:center;padding:' + padding + ';background:' + bgColor + ';color:' + textColor + ';font-size:' + fontSize + ';font-weight:' + fontWeight + ';border-radius:' + borderRadius + (timerStyle === 'animated-pulse' ? ';animation:pulse 2s ease-in-out infinite' : '') + '">⏱ ' + timerText + '</div>';
+    // NOTE: NOT using .ccd-scarcity-badge class — that class has !important rules
+    // that override inline styles and is reserved for the per-item "only X left" badge.
+    // All visuals come from inline styles driven by the dashboard config.
+    const timerStyle =
+      'display:block;width:auto;box-sizing:border-box;' +
+      'padding:8px 16px;border-radius:6px;' +
+      (pulseAnimation ? 'animation:ccdScarcityPulse 2s ease-in-out infinite;' : '');
 
-    const pulseCSS = timerStyle === 'animated-pulse' ? '<style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}</style>' : '';
+    const timerHtml =
+      '<div id="ccd-scarcity-timer" style="' + timerStyle + '">' +
+      timerInner +
+      '</div>';
 
     if (position === 'above-checkout') {
       cartHtml = cartHtml.replace(
         '<button type="button" class="ccd-checkout-btn">',
-        pulseCSS + timerHtml + '<button type="button" class="ccd-checkout-btn">'
+        timerHtml + '<button type="button" class="ccd-checkout-btn">'
       );
     } else if (position === 'floating-top') {
       cartHtml = cartHtml.replace(
         '<div class="drawer__fixed-header">',
-        pulseCSS + timerHtml + '<div class="drawer__fixed-header">'
+        timerHtml + '<div class="drawer__fixed-header">'
       );
     } else {
       // below-header (default)
       cartHtml = cartHtml.replace(
         '</div>\n    </div>\n    <div class="drawer__inner"',
-        '</div>' + pulseCSS + timerHtml + '</div><div class="drawer__inner"'
+        '</div>' + timerHtml + '</div><div class="drawer__inner"'
       );
       if (!cartHtml.includes('ccd-scarcity-timer')) {
         cartHtml = cartHtml.replace(
           '<div class="drawer__inner"',
-          pulseCSS + timerHtml + '<div class="drawer__inner"'
+          timerHtml + '<div class="drawer__inner"'
         );
       }
     }
@@ -577,16 +595,21 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
 
   // ── Upsell Recommendations: dynamic headline, layout, position ─────
   if (addonKey === 'upsellRecommendations') {
-    const headline = addonConfig.headline || 'you-may-also-like';
+    // Legacy slugs from when headline was a preset dropdown — map to bold+centered HTML.
+    const LEGACY_HEADLINES: Record<string, string> = {
+      'you-may-also-like': '<div style="text-align:center"><strong>You may also like</strong></div>',
+      'complete-your-order': '<div style="text-align:center"><strong>Complete your order</strong></div>',
+      'customers-also-bought': '<div style="text-align:center"><strong>Customers also bought</strong></div>',
+    };
+    let rawHeadline = (typeof addonConfig.headline === 'string') ? addonConfig.headline.trim() : '';
+    if (LEGACY_HEADLINES[rawHeadline]) rawHeadline = LEGACY_HEADLINES[rawHeadline];
+    const headlineHtml = rawHeadline || '<div style="text-align:center"><strong>You may also like</strong></div>';
     const layout = addonConfig.layout || 'horizontal-scroll';
     const position = addonConfig.position || 'below-items';
-
-    const headlineMap: Record<string, string> = {
-      'you-may-also-like': 'You may also like',
-      'complete-your-order': 'Complete your order',
-      'customers-also-bought': 'Customers also bought',
-    };
-    const headlineText = headlineMap[headline] || 'You may also like';
+    const source = addonConfig.source || 'shopify-recommendations';
+    const maxProducts = Math.max(1, Math.min(6, Number(addonConfig.maxProducts) || 3));
+    const manualProducts: Array<{ title?: string; price?: string | number; image?: string }> =
+      Array.isArray(addonConfig.manualProducts) ? addonConfig.manualProducts : [];
 
     const productCard = (name: string, price: string, img: string) => {
       const imgHtml = img
@@ -595,20 +618,33 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
       return '<div style="min-width:120px;flex-shrink:0;text-align:center"><div style="width:80px;height:80px;background:#f5f5f5;border-radius:8px;margin:0 auto 6px;overflow:hidden;display:flex;align-items:center;justify-content:center">' + imgHtml + '</div><div style="font-size:11px;font-weight:600;margin-bottom:2px">' + name + '</div><div style="font-size:12px;color:#666">' + price + '</div><button style="margin-top:4px;padding:4px 12px;font-size:11px;background:var(--ccd-primary);color:#fff;border:none;border-radius:4px;cursor:pointer">Add</button></div>';
     };
 
-    const products = previewProducts.length >= 3
-      ? previewProducts.slice(0, 3).map(p => productCard(p.title, '$' + p.price, p.image))
-      : [
-          productCard('Product A', '$29.99', ''),
-          productCard('Product B', '$49.99', ''),
-          productCard('Product C', '$19.99', ''),
-        ];
+    // Build preview product list. Manual source uses the merchant's picks; others use a sample.
+    let productList: string[] = [];
+    if (source === 'manual' && manualProducts.length > 0) {
+      productList = manualProducts.slice(0, maxProducts).map(p =>
+        productCard(p.title || 'Product', '$' + (p.price ?? '0.00'), p.image || '')
+      );
+    } else if (previewProducts.length > 0) {
+      productList = previewProducts.slice(0, maxProducts).map(p =>
+        productCard(p.title, '$' + p.price, p.image)
+      );
+    }
+    // Top up with placeholder cards so the layout always shows `maxProducts` slots in preview.
+    while (productList.length < maxProducts) {
+      const i = productList.length;
+      productList.push(productCard(
+        ['Product A', 'Product B', 'Product C', 'Product D', 'Product E', 'Product F'][i],
+        ['$29.99', '$49.99', '$19.99', '$39.99', '$24.99', '$59.99'][i],
+        ''
+      ));
+    }
 
-    let layoutStyle = 'display:flex;gap:12px;overflow-x:auto;padding:8px 0';
-    if (layout === 'single-card') layoutStyle = 'display:flex;justify-content:center;padding:8px 0';
-    if (layout === 'stacked-list') layoutStyle = 'display:flex;flex-direction:column;gap:10px;padding:8px 0';
+    let layoutStyle = 'display:flex;justify-content:center;gap:12px;overflow-x:auto;padding:4px 0 0 0';
+    if (layout === 'single-card') layoutStyle = 'display:flex;justify-content:center;padding:4px 0 0 0';
+    if (layout === 'stacked-list') layoutStyle = 'display:flex;flex-direction:column;align-items:center;gap:10px;padding:4px 0 0 0';
 
-    const itemsToShow = layout === 'single-card' ? products.slice(0, 1) : products;
-    const upsellHtml = '<div id="ccd-upsell" style="padding:12px 0"><div style="font-size:13px;font-weight:700;margin-bottom:8px">' + headlineText + '</div><div style="' + layoutStyle + '">' + itemsToShow.join('') + '</div></div>';
+    const itemsToShow = layout === 'single-card' ? productList.slice(0, 1) : productList;
+    const upsellHtml = '<div id="ccd-upsell" style="padding:4px 0 8px 0"><div class="ccd-upsell-headline" style="font-size:13px;margin-bottom:4px">' + headlineHtml + '</div><div style="' + layoutStyle + '">' + itemsToShow.join('') + '</div></div>';
 
     if (position === 'above-footer') {
       cartHtml = cartHtml.replace(

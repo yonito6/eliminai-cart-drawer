@@ -870,11 +870,16 @@ async function run() {
     assert(routeFile.includes('_eliminai-cart-protection') || routeFile.includes('eliminai') || routeFile.includes('cart-protection'), 'Must tag with cart-protection identifier');
   });
 
-  test('Contract 37: Protection create route unpublishes from Online Store', () => {
+  test('Contract 37: Protection create route hides product from storefront', () => {
+    // Updated 2026-05-05 per commit 5d4fd08: product MUST stay published so /cart/add.js works.
+    // Customer-visibility is hidden via _eliminai-hidden tag + theme patch + noindex metafield,
+    // NOT via unpublishing (unpublishing breaks add-to-cart).
     const routePath = path.join(__dirname, '..', 'backend', 'src', 'app', 'api', 'stores', '[id]', 'protection', 'create', 'route.ts');
     let routeFile;
     try { routeFile = fs.readFileSync(routePath, 'utf8'); } catch(e) { throw new Error('Cannot read protection create route: ' + e.message); }
-    assert(routeFile.includes('publishableUnpublish') || routeFile.includes('unpublish') || routeFile.includes('UNPUBLISH'), 'Must unpublish from storefront');
+    assert(routeFile.includes('_eliminai-hidden'), 'Must tag product with _eliminai-hidden so theme excludes it from recommendations');
+    assert(routeFile.includes('patchThemeRecommendations'), 'Must patch themes to exclude _eliminai-hidden products');
+    assert(routeFile.includes("namespace: 'seo'") && routeFile.includes("key: 'hidden'"), 'Must set seo.hidden noindex metafield');
   });
 
   // ================================================================
@@ -1152,9 +1157,11 @@ async function run() {
   });
 
   test('Contract 73: checkOverflow also called in refreshLight via rAF', () => {
+    // Window expanded from 5000 → 8000 as refreshLight grew (added cart-aware addon syncs).
+    // The assertion is "rAF + checkOverflow exist inside refreshLight" — window is just impl detail.
     var refreshLightSection = code.substring(
       code.indexOf('refreshLight: function'),
-      code.indexOf('refreshLight: function') + 5000
+      code.indexOf('refreshLight: function') + 8000
     );
     assert(refreshLightSection.includes('requestAnimationFrame') && refreshLightSection.includes('checkOverflow'),
       'refreshLight must call checkOverflow via requestAnimationFrame');
@@ -1778,14 +1785,634 @@ async function run() {
     assert(rule.includes('transition: none'), '--loading must set transition:none for instant opacity/spinner');
   });
 
-  test('Debug button is visible in cart header (no display:none)', () => {
-    const dbgBtn = code.indexOf('_ccdShowDebug()');
-    assert(dbgBtn !== -1, 'debug button onclick must exist');
-    // Check the button tag surrounding it does NOT have display:none
-    const btnStart = code.lastIndexOf('<button', dbgBtn);
-    const btnEnd = code.indexOf('>', dbgBtn);
-    const btnTag = code.substring(btnStart, btnEnd);
-    assert(!btnTag.includes('display:none') && !btnTag.includes('display: none'), 'debug button must NOT have display:none');
+  test('Debug button is visible (floating FAB always rendered, calls _ccdShowDebug)', () => {
+    // Floating debug button should be created via _ccdAddDebugButton with id ccd-debug-fab
+    assert(code.includes("id = 'ccd-debug-fab'") || code.includes('id="ccd-debug-fab"'),
+      'floating debug button must have id ccd-debug-fab');
+    assert(code.includes('_ccdShowDebug()'),
+      'debug button must call _ccdShowDebug()');
+    // Floating FAB must NOT be display:none (must be visible on storefront)
+    const fabSection = code.substring(code.indexOf('ccd-debug-fab'), code.indexOf('ccd-debug-fab') + 800);
+    assert(!fabSection.includes('display:none') && !fabSection.includes('display: none'),
+      'floating debug button must NOT have display:none');
+  });
+
+  // ================================================================
+  // Contract: Trust Badges (parity with dashboard preview)
+  // ================================================================
+
+  test('Trust badges: injectTrustBadges has 7-icon default matching dim.default', () => {
+    const fn = code.indexOf('injectTrustBadges: function');
+    assert(fn !== -1, 'injectTrustBadges function definition must exist');
+    // Locate the icons fallback array within the function body (next ~3000 chars)
+    const body = code.substring(fn, fn + 3000);
+    const iconsMatch = body.match(/icons\s*=\s*[^[]*\[([^\]]+)\]/);
+    assert(iconsMatch, 'injectTrustBadges must define a default icons array');
+    const list = iconsMatch[1];
+    ['visa', 'mastercard', 'amex', 'discover', 'paypal', 'apple-pay', 'google-pay'].forEach((id) => {
+      assert(list.includes(id), `default icons must include "${id}" (parity with addon-definitions.ts dim.default)`);
+    });
+  });
+
+  test('Trust badges: no hardcoded green padlock SVG (#22c55e regression guard)', () => {
+    const fn = code.indexOf('injectTrustBadges: function');
+    if (fn === -1) return; // covered by previous test
+    const body = code.substring(fn, fn + 5000);
+    assert(!body.includes('#22c55e'), 'injectTrustBadges must NOT hardcode the green padlock color (#22c55e) — caused orphan green sliver bug');
+  });
+
+  test('Trust badges: empty/<br>-only text must not render text div (orphan sliver fix)', () => {
+    const fn = code.indexOf('injectTrustBadges: function');
+    assert(fn !== -1, 'injectTrustBadges function definition must exist');
+    const body = code.substring(fn, fn + 5000);
+    // Must sanitize <br>/whitespace-only text so empty ccd-trust-text div is never emitted
+    assert(
+      body.includes('<br'),
+      'injectTrustBadges must reference <br> in its text sanitization (treat <br>-only text as empty)'
+    );
+    // Must guard the text div behind a truthy check
+    const hasTextGuard = /if\s*\(\s*text\s*\)/.test(body) || /text\s*\?\s*['"`]<div class=["']ccd-trust-text/.test(body);
+    assert(hasTextGuard, 'injectTrustBadges must only emit ccd-trust-text div when text is truthy');
+  });
+
+  // ================================================================
+  // FEATURE FLAGS (FF) SYSTEM
+  // ================================================================
+
+  test('FF: CCD.FF helper exists and is a function', () => {
+    assert(/FF:\s*function\s*\(name\)/.test(code), 'CCD.FF must be defined as a function');
+  });
+
+  test('FF: helper reads from window.CCD_CONFIG.featureFlags', () => {
+    const fnIdx = code.indexOf('FF: function');
+    assert(fnIdx !== -1);
+    const body = code.substring(fnIdx, fnIdx + 500);
+    assert(body.includes('window.CCD_CONFIG'), 'FF must read from window.CCD_CONFIG');
+    assert(body.includes('featureFlags'), 'FF must read featureFlags property');
+  });
+
+  test('FF: helper returns false safely for missing/non-boolean flags (default OFF)', () => {
+    const fnIdx = code.indexOf('FF: function');
+    const body = code.substring(fnIdx, fnIdx + 500);
+    assert(body.includes('=== true'), 'FF must use strict === true comparison so undefined/string/null all return false');
+    assert(body.includes('try') && body.includes('catch'), 'FF must wrap access in try/catch — never throw if CCD_CONFIG is missing');
+  });
+
+  // ================================================================
+  // FF gate: trustBadgesV2 (gates legacy injectTrustBadges)
+  // ----------------------------------------------------------------
+  // FF off (default): legacy renderer runs as today — Eleganto unchanged.
+  // FF on (eliminai-test): legacy renderer is fully suppressed (returns before any
+  //                         DOM creation) so the new BEM renderer (which reads
+  //                         config.badges and config.text) can take over.
+  // ================================================================
+
+  // ----- LOCK tests (must keep passing — preserve current Eleganto behavior with FF off) -----
+
+  test('LOCK: injectTrustBadges still defines the 7-icon default array (FF off path)', () => {
+    const fn = code.indexOf('injectTrustBadges: function');
+    const body = code.substring(fn, fn + 3000);
+    // FF-off branch must still have the legacy default array literal
+    const legacyDefault = /\['visa'\s*,\s*'mastercard'\s*,\s*'amex'\s*,\s*'discover'\s*,\s*'paypal'\s*,\s*'apple-pay'\s*,\s*'google-pay'\]/;
+    assert(legacyDefault.test(body), 'legacy 7-icon default array must remain untouched so Eleganto (FF off) renders identically');
+  });
+
+  test('LOCK: injectTrustBadges still falls back to cfg.icons when no other source (FF off path)', () => {
+    const fn = code.indexOf('injectTrustBadges: function');
+    const body = code.substring(fn, fn + 3000);
+    assert(body.includes('cfg.icons'), 'cfg.icons fallback must remain so legacy callers (FF off) still work');
+  });
+
+  test('LOCK: applyExperimentFeatures still reads addons[k].config (legacy path preserved)', () => {
+    const fn = code.indexOf('applyExperimentFeatures: function');
+    assert(fn !== -1, 'applyExperimentFeatures must exist');
+    const body = code.substring(fn, fn + 2500);
+    assert(/addons\[\w+\]\.config/.test(body), 'applyExperimentFeatures must keep reading addons[k].config so non-FF stores get unchanged behavior');
+  });
+
+  test('LOCK: applyExperimentFeatures keeps the auto-optimize branch passing config to inject', () => {
+    const fn = code.indexOf('applyExperimentFeatures: function');
+    const body = code.substring(fn, fn + 2500);
+    // The two assignments to show[k]/show[ak] must still happen — not gated entirely behind FF
+    const matches = body.match(/show\[(\w+)\]\s*=/g) || [];
+    assert(matches.length >= 2, 'applyExperimentFeatures must keep both show[k] = ... assignments (always-on + auto-optimize)');
+  });
+
+  // ----- RED tests (must pass after FF gate is implemented) -----
+
+  test('RED: injectTrustBadges reads CCD.FF("trustBadgesV2") to gate new behavior', () => {
+    const fn = code.indexOf('injectTrustBadges: function');
+    const body = code.substring(fn, fn + 3000);
+    assert(/CCD\.FF\(\s*['"]trustBadgesV2['"]\s*\)/.test(body), 'injectTrustBadges must check CCD.FF("trustBadgesV2") so we can flip behavior per-store');
+  });
+
+  test('RED: when FF on, injectTrustBadges returns BEFORE creating any DOM (legacy fully suppressed)', () => {
+    const fn = code.indexOf('injectTrustBadges: function');
+    const body = code.substring(fn, fn + 3000);
+    // The FF check must appear BEFORE the document.createElement('div') call so
+    // the legacy renderer cannot inject #ccd-trust-badges when the new BEM
+    // renderer is supposed to own that slot.
+    const ffIdx = body.search(/if\s*\(\s*CCD\.FF\(\s*['"]trustBadgesV2['"]\s*\)\s*\)\s*return\s*;/);
+    const createIdx = body.indexOf("document.createElement('div')");
+    assert(ffIdx !== -1, 'must early-return when CCD.FF("trustBadgesV2") is on');
+    assert(createIdx !== -1, 'function must still create the row element on FF-off path');
+    assert(ffIdx < createIdx, 'FF-on early-return must come BEFORE any DOM creation so legacy is fully suppressed');
+  });
+
+  test('RED: FF-off path no longer carries adapter branching (cfg.icons is read once)', () => {
+    const fn = code.indexOf('injectTrustBadges: function');
+    const body = code.substring(fn, fn + 3000);
+    // After full suppression, the function should not contain the adapter
+    // ffV2 && Array.isArray(...) branch — it returns early or runs legacy as-is.
+    assert(!/ffV2\s*&&\s*Array\.isArray/.test(body),
+      'adapter branch must be removed — gate is now suppression-only');
+    assert(!/ffV2\s*&&\s*icons\.length\s*===\s*0/.test(body),
+      'FF-on empty-array guard must be removed — gate is now suppression-only');
+  });
+
+  // ================================================================
+  // SCARCITY TIMER ADDON (rebuild)
+  // Distinct from the Scarcity BADGE — this is the countdown timer addon.
+  // ================================================================
+  console.log('\n--- Scarcity Timer Addon ---');
+
+  test('Scarcity Timer: injectScarcityTimer is no longer a TODO stub', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    assert(fn !== -1, 'CCD.injectScarcityTimer must be defined on root');
+    const body = code.substring(fn, fn + 8000);
+    assert(!/TODO: implement scarcity countdown timer/.test(body),
+      'injectScarcityTimer must no longer be a TODO stub');
+    assert(body.includes('setInterval'), 'must drive a 1-second tick via setInterval');
+  });
+
+  test('Scarcity Timer: replaces {time} token with a span we can update', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    assert(/\{time\}/.test(body), 'must reference the {time} token in the renderer');
+    assert(body.includes('ccd-scarcity-time'),
+      'must wrap {time} in a .ccd-scarcity-time span so tick() can update only the time text');
+  });
+
+  test('Scarcity Timer: countdown uses sessionStorage so it survives navigation', () => {
+    // The storage key is defined as a module-level constant so the inject AND
+    // remove paths share the same key. Verify both: the constant value, and that
+    // the inject function references the constant (not a hardcoded string).
+    assert(/CCD\._SCARCITY_STORAGE_KEY\s*=\s*['"]ccd_scarcity_start['"]/.test(code),
+      'CCD._SCARCITY_STORAGE_KEY must be defined as "ccd_scarcity_start"');
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    assert(/CCD\._SCARCITY_STORAGE_KEY/.test(body),
+      'inject must reference the shared CCD._SCARCITY_STORAGE_KEY constant');
+    assert(body.includes('sessionStorage'),
+      'must use sessionStorage (not localStorage) so a new session resets the timer');
+  });
+
+  test('Scarcity Timer: empty cart prevents the timer from starting and clears stored start', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    // Must consult the cart-empty helper at the top and bail before creating any element
+    assert(/_cartIsEmptyForScarcity\(\)/.test(body),
+      'inject must call CCD._cartIsEmptyForScarcity() to gate on cart state');
+    // Must clear stored start time on the empty path so the next add-to-cart is fresh
+    assert(/sessionStorage\.removeItem\(CCD\._SCARCITY_STORAGE_KEY\)/.test(body),
+      'inject must clear sessionStorage when bailing on empty cart');
+    // The cart-empty helper itself must check _lastRealCount === 0 (not item_count, which
+    // counts excluded handles like Protection)
+    assert(/_cartIsEmptyForScarcity[\s\S]*?_lastRealCount[\s\S]*?===\s*0/.test(code),
+      '_cartIsEmptyForScarcity must derive emptiness from _lastRealCount === 0');
+  });
+
+  test('Scarcity Timer: inject defers when _lastRealCount is unknown (-1) to prevent flash on empty cart open', () => {
+    // BUG (2026-05-01, reported by Yoni): Opening an empty cart for the first time briefly
+    // showed the timer before it was hidden. Cause: applyExperimentFeatures runs at drawer-open
+    // and calls injectScarcityTimer BEFORE the cart fetch resolves. At that moment _lastRealCount
+    // is -1 ("unknown"), so the existing _cartIsEmptyForScarcity() guard (=== 0) didn't fire and
+    // the timer was injected. Then the post-fetch _syncScarcityTimer removed it for the empty
+    // cart — visible flash. inject must bail when count is unknown; sync re-injects post-fetch.
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    assert(/_lastRealCount\s*===\s*-1/.test(body),
+      'inject must bail when _lastRealCount === -1 to avoid timer flash on empty cart open');
+  });
+
+  test('Scarcity Timer: cart-state sync removes timer + clears storage when cart goes empty', () => {
+    // The remove handler must also clear sessionStorage so the next non-empty cart starts fresh
+    assert(/scarcityTimer:[\s\S]*?remove:[\s\S]*?sessionStorage\.removeItem\(CCD\._SCARCITY_STORAGE_KEY\)/.test(code),
+      'scarcityTimer.remove handler must clear sessionStorage');
+    // The sync helper must exist and be wired up
+    assert(/_syncScarcityTimer\s*:\s*function/.test(code),
+      'CCD._syncScarcityTimer helper must exist');
+    // It must short-circuit when addon is disabled, then check rc===0 vs rc>0
+    const syncIdx = code.indexOf('_syncScarcityTimer: function');
+    const syncBody = code.substring(syncIdx, syncIdx + 1500);
+    assert(/_scarcityCfg/.test(syncBody),
+      '_syncScarcityTimer must check _scarcityCfg (no-op when addon disabled)');
+    assert(/rc\s*===\s*0/.test(syncBody) && /rc\s*>\s*0/.test(syncBody),
+      '_syncScarcityTimer must branch on rc===0 (remove) and rc>0 (inject)');
+    // Must be called from both refresh paths so cart updates flow through
+    assert(/refreshLight[\s\S]{0,3000}_syncScarcityTimer\(\)/.test(code),
+      'refreshLight must call _syncScarcityTimer after rc is updated');
+    // applyExperimentFeatures must remember the resolved scarcity cfg for re-injection
+    assert(/_scarcityCfg\s*=\s*show\.scarcityTimer/.test(code),
+      'applyExperimentFeatures must remember show.scarcityTimer in CCD._scarcityCfg');
+  });
+
+  test('Upsell: injectUpsells bails + removes existing element when cart is empty (_lastRealCount === 0)', () => {
+    // BUG (2026-05-23, reported by Yoni): "You may also like" stayed visible after the user
+    // removed the last item from the cart. Two failure modes:
+    //   (a) source='manual' never checks cart state at all — it resolved manualProducts and
+    //       rendered regardless of whether the cart had items.
+    //   (b) source='shopify-recommendations'/'ai-selected' only handled empty on first inject
+    //       via the no-anchor path. On a subsequent cart refresh that empties the cart,
+    //       applyExperimentFeatures is NOT called again, so the stale #ccd-upsells element
+    //       just remains in the DOM.
+    // Fix: bake an empty-cart guard into injectUpsells itself (early return + remove existing
+    // #ccd-upsells when _lastRealCount === 0) AND add a _syncUpsells helper called from the
+    // refresh paths — exactly mirroring the proven _syncScarcityTimer pattern.
+    const fn = code.indexOf('CCD.injectUpsells = function');
+    assert(fn !== -1, 'CCD.injectUpsells must exist');
+    const body = code.substring(fn, fn + 6000);
+    // Must check _lastRealCount === 0 as early guard
+    assert(/_lastRealCount\s*===\s*0/.test(body),
+      'injectUpsells must early-return when _lastRealCount === 0 (empty cart)');
+    // Must remove any existing #ccd-upsells when bailing on empty cart (no stale element left)
+    assert(/getElementById\(['"]ccd-upsells['"]\)/.test(body) && /\.remove\(\)|removeChild/.test(body),
+      'injectUpsells empty-cart bail must remove any existing #ccd-upsells element');
+  });
+
+  test('Upsell: _syncUpsells helper removes element when cart goes empty + re-injects when cart has items', () => {
+    // Mirrors _syncScarcityTimer — required because applyExperimentFeatures is NOT called
+    // on item removal, so the inject pipeline does not naturally re-run.
+    assert(/_syncUpsells\s*:\s*function/.test(code),
+      'CCD._syncUpsells helper must exist');
+    const syncIdx = code.indexOf('_syncUpsells: function');
+    const syncBody = code.substring(syncIdx, syncIdx + 1500);
+    // Short-circuit when addon is disabled for this tenant
+    assert(/_upsellsCfg/.test(syncBody),
+      '_syncUpsells must check _upsellsCfg (no-op when addon disabled)');
+    // Must branch on rc===0 (remove) and rc>0 (inject) — exactly like scarcity timer
+    assert(/rc\s*===\s*0/.test(syncBody) && /rc\s*>\s*0/.test(syncBody),
+      '_syncUpsells must branch on rc===0 (remove) and rc>0 (inject)');
+    // Must be called from refreshLight so cart-state changes flow through
+    assert(/refreshLight[\s\S]{0,3000}_syncUpsells\(\)/.test(code),
+      'refreshLight must call _syncUpsells after rc is updated');
+    // applyExperimentFeatures must remember the resolved upsells cfg for re-injection
+    assert(/_upsellsCfg\s*=\s*show\.upsellRecommendations/.test(code),
+      'applyExperimentFeatures must remember show.upsellRecommendations in CCD._upsellsCfg');
+  });
+
+  test('Scarcity Timer: duration is clamped to [1, 60] minutes', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    assert(/durationMin\s*<\s*1/.test(body) || /<\s*1\)\s*durationMin\s*=\s*1/.test(body),
+      'must clamp durationMin >= 1');
+    assert(/durationMin\s*>\s*60/.test(body) || />\s*60\)\s*durationMin\s*=\s*60/.test(body),
+      'must clamp durationMin <= 60');
+  });
+
+  test('Scarcity Timer: onComplete=hide removes the element AND clears the interval', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 8000);
+    // Must check onComplete config, must clearInterval, and must remove the node.
+    assert(body.includes("onComplete === 'reset'") || body.includes('cfg.onComplete') ,
+      'must branch on cfg.onComplete');
+    assert(body.includes('clearInterval'), 'must clearInterval when timer ends or element gone');
+    assert(body.includes('removeChild') || body.includes('.remove()'),
+      'must remove the timer element on hide');
+  });
+
+  test('Scarcity Timer: onComplete=reset restarts the countdown without removing element', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 8000);
+    // Reset path: re-set startMs, write back to sessionStorage, do NOT clear interval, do NOT remove node.
+    // Use lastIndexOf — the first 'reset' literal is in the cfg parsing ternary near the top
+    // of the function; the actual reset branch in the tick loop is the LAST occurrence.
+    const resetIdx = body.lastIndexOf("'reset'");
+    assert(resetIdx !== -1, 'must have a reset branch');
+    const resetBlock = body.substring(resetIdx, resetIdx + 600);
+    assert(/startMs\s*=\s*Date\.now\(\)/.test(resetBlock),
+      'reset branch must restart startMs');
+  });
+
+  test('Scarcity Timer: alignment is NOT injected via CSS — lives in rich-text HTML instead', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    // Old (pre-2026-04-29) behavior injected alignment via text-align CSS — this is now wrong.
+    // Alignment is controlled inline by the user via the RichTextEditor toolbar (justifyLeft/Center/Right),
+    // so the runtime must NOT prepend a text-align: CSS rule to the timer container.
+    assert(!/text-align:\s*['"]?\s*\+\s*alignment/.test(body) &&
+           !/'text-align:'\s*\+\s*alignment/.test(body),
+      'alignment must NOT be injected as text-align CSS — alignment now lives inside rawText HTML');
+    assert(!/var\s+alignment\s*=/.test(body),
+      'must not declare an alignment variable — alignment is no longer a config dim');
+  });
+
+  test('Scarcity Timer: position select supports below-header / above-checkout / floating-top', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    assert(body.includes("'above-checkout'"), 'must handle above-checkout position');
+    assert(body.includes("'floating-top'"), 'must handle floating-top position');
+    assert(body.includes('.ccd-checkout-btn'),
+      'above-checkout must insert before the checkout button');
+    // below-header (default): self-rendered shell only — never reference theme-specific
+    // classes (BUG-009 rule). The drawer is always our own ccd-* shell now.
+    assert(body.includes('.ccd-inner'),
+      'below-header must use self-rendered shell .ccd-inner');
+    assert(!body.includes('.drawer__inner'),
+      'must NOT reference theme-specific .drawer__inner (BUG-009 theme-independence rule)');
+    // floating-top: same self-shell-only rule for the fixed header.
+    assert(body.includes('.ccd-fixed-header'),
+      'floating-top must use self-rendered shell .ccd-fixed-header');
+    assert(!body.includes('.drawer__fixed-header'),
+      'must NOT reference theme-specific .drawer__fixed-header (BUG-009 theme-independence rule)');
+  });
+
+  test('Scarcity Timer: registry remove() clears the running interval', () => {
+    // Element id #ccd-scarcity-timer is shared with the badge feature, but the
+    // interval CCD._scarcityTick belongs to the addon and MUST be cleared on remove
+    // so disabling the addon stops the ticking.
+    // Find the scarcityTimer registry entry and extract its remove() body.
+    // Can't use [^}]+ here because the remove body contains nested braces.
+    const entryIdx = code.indexOf('scarcityTimer:');
+    assert(entryIdx !== -1, 'scarcityTimer entry must exist in addon registry');
+    const removeStart = code.indexOf('remove: function()', entryIdx);
+    assert(removeStart !== -1 && removeStart - entryIdx < 800,
+      'scarcityTimer entry must declare a remove: function()');
+    // Slice a generous window covering the whole registry entry.
+    const registryBlock = code.substring(entryIdx, removeStart + 600);
+    assert(/clearInterval\(CCD\._scarcityTick\)/.test(registryBlock),
+      'remove() must clearInterval(CCD._scarcityTick) so disabling the addon stops the tick');
+  });
+
+  test('Scarcity Timer: wrapper does NOT use .ccd-scarcity-badge class (avoids !important conflict)', () => {
+    // .ccd-scarcity-badge has !important rules and is reserved for the per-item
+    // "only X left" badge. Using it on the timer wrapper would override the
+    // tenant-editable inline styles with hardcoded badge styling.
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    assert(!/el\.className\s*=\s*['"]ccd-scarcity-badge['"]/.test(body),
+      'timer wrapper must NOT set className = "ccd-scarcity-badge"');
+    assert(!/el\.classList\.add\(['"]ccd-scarcity-badge['"]\)/.test(body),
+      'timer wrapper must NOT add the .ccd-scarcity-badge class');
+  });
+
+  test('Scarcity Timer: per-item badge still uses .ccd-scarcity-badge class (lock test)', () => {
+    // The per-item "Only X left" badge MUST keep the class for its CSS styling.
+    // Different code path from injectScarcityTimer — verify both still work.
+    assert(code.indexOf("badge.className = 'ccd-scarcity-badge'") !== -1
+        || code.indexOf('badge.className = "ccd-scarcity-badge"') !== -1,
+      'per-item scarcity badge must still set className = "ccd-scarcity-badge"');
+  });
+
+  test('Scarcity Timer: only pulseAnimation is read from cfg as a wrapper-level toggle', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    // All visual styling (background, text color, font size, font weight, padding,
+    // border radius) is controlled inline via the rich text editor toolbar in
+    // cfg.text — NOT as standalone cfg fields. Only pulseAnimation is wrapper-level.
+    assert(/cfg\.pulseAnimation/.test(body), 'must read pulseAnimation from cfg');
+    // Negative: ensure removed fields are NOT read from cfg as standalone values
+    assert(!/cfg\.bgColor/.test(body), 'bgColor was removed — must not be read from cfg');
+    assert(!/cfg\.textColor/.test(body), 'textColor was removed — must not be read from cfg');
+    assert(!/cfg\.fontSize/.test(body), 'fontSize was removed — must not be read from cfg');
+    assert(!/cfg\.fontWeight/.test(body), 'fontWeight was removed — must not be read from cfg');
+    assert(!/cfg\.paddingY/.test(body), 'paddingY was removed — must not be read from cfg');
+    assert(!/cfg\.paddingX/.test(body), 'paddingX was removed — must not be read from cfg');
+    assert(!/cfg\.borderRadius/.test(body), 'borderRadius was removed — must not be read from cfg');
+  });
+
+  test('Scarcity Timer: only pulseAnimation is applied via inline styles (rest comes from rawText)', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    // The inline style string must still set the wrapper baseline (display, sizing).
+    assert(/style\.cssText\s*=/.test(body), 'must set el.style.cssText');
+    assert(/animation:ccdScarcityPulse/.test(body),
+      'inline style must conditionally include the ccdScarcityPulse animation');
+    // Negative: removed wrapper-level properties should NOT appear in cssText
+    assert(!/bgColor/.test(body), 'bgColor was removed — must not appear in injection');
+    assert(!/textColor/.test(body), 'textColor was removed — must not appear in injection');
+    assert(!/fontSize/.test(body), 'fontSize was removed — must not appear in injection');
+    assert(!/fontWeight/.test(body), 'fontWeight was removed — must not appear in injection');
+    assert(!/paddingY/.test(body), 'paddingY was removed — must not appear in injection');
+    assert(!/paddingX/.test(body), 'paddingX was removed — must not appear in injection');
+    assert(!/borderRadius/.test(body), 'borderRadius was removed — must not appear in injection');
+  });
+
+  test('Scarcity Timer: pulseAnimation toggle controls the animation', () => {
+    const fn = code.indexOf('CCD.injectScarcityTimer = function');
+    const body = code.substring(fn, fn + 5000);
+    // Conditional emission of the animation rule based on pulseAnimation
+    assert(/pulseAnimation\s*[?!]/.test(body) || /pulseAnimation\s*\?/.test(body),
+      'pulseAnimation must gate whether the animation CSS is included');
+  });
+
+  // ================================================================
+  // RICH TEXT EDITOR — themeColor wiring (NO HARDCODED COLORS)
+  // ================================================================
+  console.log('\n--- Rich Text Editor themeColor wiring ---');
+
+  test('RichTextEditor: contentStyle.color uses themeColor (not hardcoded)', () => {
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rich-text-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+    // contentStyle block must use themeColor as the text color (with fallback)
+    assert(/contentStyle[\s\S]*?color:\s*themeColor/.test(src),
+      'contentStyle must derive color from themeColor prop, not hardcode it');
+    // Negative: no naked hardcoded #1f2937 inside contentStyle
+    const csMatch = src.match(/const\s+contentStyle[\s\S]*?\};/);
+    assert(csMatch, 'contentStyle declaration must exist');
+    assert(!/color:\s*['"]#1f2937['"]/.test(csMatch[0]),
+      'contentStyle must NOT hardcode color: \'#1f2937\' — use themeColor || fallback');
+  });
+
+  test('RichTextEditor: HTML view textarea color uses themeColor (not hardcoded)', () => {
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rich-text-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+    // The textarea (HTML mode) must also reflect themeColor visually
+    const taMatch = src.match(/<textarea[\s\S]*?\/>/);
+    assert(taMatch, 'textarea element must exist in rich-text-editor.tsx');
+    assert(/color:\s*themeColor/.test(taMatch[0]),
+      'HTML-mode textarea must derive color from themeColor, not hardcode it');
+  });
+
+  test('Scarcity Timer Editor: does not declare standalone bgColor/textColor/fontSize/fontWeight controls', () => {
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'scarcity-timer-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+    // These four properties are controlled via the rich text editor toolbar,
+    // not as separate fields on the addon config. Verify there is no React
+    // state hook for any of them and no config field reference.
+    assert(!/setBgColor\b|config\.bgColor\b/.test(src),
+      'bgColor must not have a standalone state/config field in scarcity-timer-editor');
+    assert(!/setTextColor\b|config\.textColor\b/.test(src),
+      'textColor must not have a standalone state/config field in scarcity-timer-editor');
+    assert(!/setFontSize\b|config\.fontSize\b/.test(src),
+      'fontSize must not have a standalone state/config field in scarcity-timer-editor');
+    assert(!/setFontWeight\b|config\.fontWeight\b/.test(src),
+      'fontWeight must not have a standalone state/config field in scarcity-timer-editor');
+  });
+
+  test('RichTextEditor: syncFromEditor wraps plain HTML with themeColor span', () => {
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rich-text-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+    // syncFromEditor must call applyDefaultColor with themeColor so the saved
+    // HTML contains the color span (visible in HTML view).
+    const sfeMatch = src.match(/const\s+syncFromEditor\s*=\s*useCallback\([\s\S]*?\}\s*,\s*\[[^\]]*\]\s*\);/);
+    assert(sfeMatch, 'syncFromEditor declaration must exist');
+    assert(/applyDefaultColor\s*\([^)]*themeColor/.test(sfeMatch[0]),
+      'syncFromEditor must call applyDefaultColor(html, themeColor) so saved HTML carries the color');
+    // Dependency array must include themeColor so the callback re-binds when color changes
+    assert(/syncFromEditor[\s\S]*?\[[^\]]*themeColor[^\]]*\]/.test(src),
+      'syncFromEditor useCallback deps must include themeColor');
+  });
+
+  test('RichTextEditor: focusRestoreExec also wraps with themeColor', () => {
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rich-text-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+    const freMatch = src.match(/const\s+focusRestoreExec\s*=\s*useCallback\([\s\S]*?\}\s*,\s*\[[^\]]*\]\s*\);/);
+    assert(freMatch, 'focusRestoreExec declaration must exist');
+    assert(/applyDefaultColor\s*\([^)]*themeColor/.test(freMatch[0]),
+      'focusRestoreExec must call applyDefaultColor(html, themeColor) after exec command');
+  });
+
+  test('RichTextEditor: focusRestoreExec wraps justify commands in text-align div (alignment persists in saved HTML)', () => {
+    // Bug (2026-04-30): execCommand('justifyCenter') on inline-only content (e.g. the default
+    // scarcity timer text "<span style='color:#d32f2f'>Your cart is reserved for <strong>{time}</strong></span>")
+    // sets text-align on the contenteditable element ITSELF, not inside its innerHTML.
+    // When editor.innerHTML is captured for save, the alignment is lost — so the dashboard
+    // editor + preview iframe appeared centered (because their live DOM had editor.style.textAlign),
+    // but the live cart on the storefront showed left-aligned (because the saved cfg.text had no align).
+    // Fix: special-case justifyLeft/justifyCenter/justifyRight in focusRestoreExec — bypass execCommand
+    // and directly wrap editor.innerHTML in <div style="text-align: X;">...</div> so alignment becomes
+    // part of the saved rawText HTML and renders identically in editor, preview, and live cart.
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rich-text-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+    const freMatch = src.match(/const\s+focusRestoreExec\s*=\s*useCallback\([\s\S]*?\}\s*,\s*\[[^\]]*\]\s*\);/);
+    assert(freMatch, 'focusRestoreExec declaration must exist');
+    // Must reference justifyCenter (and friends) by name to special-case them
+    assert(/justifyCenter/.test(freMatch[0]),
+      'focusRestoreExec must special-case justifyCenter (not pass it through execCommand)');
+    assert(/justifyLeft/.test(freMatch[0]) && /justifyRight/.test(freMatch[0]),
+      'focusRestoreExec must special-case justifyLeft and justifyRight as well');
+    // Must produce text-align CSS in the saved HTML (not on the editor element)
+    assert(/text-align/.test(freMatch[0]),
+      'focusRestoreExec must wrap inner HTML in <div style="text-align: ..."> for justify commands');
+  });
+
+  test('RichTextEditor: switchToHtml shows wrapped HTML so color code is visible', () => {
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rich-text-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+    const sthMatch = src.match(/const\s+switchToHtml\s*=\s*useCallback\([\s\S]*?\}\s*,\s*\[[^\]]*\]\s*\);/);
+    assert(sthMatch, 'switchToHtml declaration must exist');
+    assert(/applyDefaultColor\s*\([^)]*themeColor/.test(sthMatch[0]),
+      'switchToHtml must call applyDefaultColor(html, themeColor) before showing HTML view');
+  });
+
+  test('RichTextEditor: applyDefaultColor must inject color INSIDE block-level wrappers (HTML5 span auto-close trap)', () => {
+    // Bug (2026-04-30 deeper root cause): HTML5 parsers auto-close <span> when a block-level
+    // <div>/<p>/<h1-6>/<ul>/<ol>/etc. appears inside it. So `<span style="color">...<div>X</div>...</span>`
+    // ends up parsed as `<span style="color"></span><div>X</div>` — the color is silently dropped.
+    // This is why preview iframe rendered black when the editor wrapped innerHTML in a text-align div
+    // (then applyDefaultColor wrapped THAT in a color span — span auto-closed → color lost).
+    //
+    // Fix: applyDefaultColor must detect top-level block elements and inject the color span INSIDE
+    // them (not around them) so the color survives HTML5 parsing.
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rich-text-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+    const adcMatch = src.match(/export\s+function\s+applyDefaultColor\s*\([^)]*\)\s*:\s*string\s*\{[\s\S]*?\n\}/);
+    assert(adcMatch, 'applyDefaultColor function must exist');
+    // Must reference a list of block-level tags (div/p/h1-6/ul/ol/etc.) to detect the pattern
+    assert(/div\|p\|h\[1-6\]|blockTags|blockMatch/i.test(adcMatch[0]),
+      'applyDefaultColor must detect top-level block elements (div, p, h1-6, ul, ol, etc.) to handle the HTML5 span auto-close trap');
+    // Must wrap CHILDREN of block tag in span, not the block itself
+    assert(/<\$\{tag\}|<\$\{1\}|<(?:div|p|h[1-6])[^>]*><span/.test(adcMatch[0]),
+      'applyDefaultColor must wrap the inner content of block tags in a color span (not wrap the block tag itself)');
+  });
+
+  test('RichTextEditor: focusRestoreExec applies color INSIDE align div for justify commands', () => {
+    // Companion to the auto-close-span fix: when wrapping innerHTML in a text-align div, color
+    // must be applied INSIDE the div BEFORE the wrap, otherwise applyDefaultColor downstream would
+    // wrap the whole div in a span and the parser would auto-close it.
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rich-text-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+    const freMatch = src.match(/const\s+focusRestoreExec\s*=\s*useCallback\([\s\S]*?\}\s*,\s*\[[^\]]*\]\s*\);/);
+    assert(freMatch, 'focusRestoreExec declaration must exist');
+    // Inside the justify branch, must call hasInlineColor on inner BEFORE wrapping in align div
+    const justifyBranch = freMatch[0].match(/justifyLeft[\s\S]*?editor\.innerHTML\s*=\s*`<div\s+style="text-align/);
+    assert(justifyBranch, 'justify branch in focusRestoreExec must exist');
+    assert(/hasInlineColor\s*\(\s*inner\s*\)/.test(justifyBranch[0]),
+      'focusRestoreExec must call hasInlineColor(inner) inside the justify branch BEFORE wrapping in align div');
+    assert(/inner\s*=\s*`<span[^`]*color:\s*\$\{themeColor\}/.test(justifyBranch[0]),
+      'focusRestoreExec must wrap inner in <span style="color: ${themeColor}"> when no inline color present, INSIDE the align div');
+  });
+
+  test('RichTextEditor: hasInlineColor must NOT match background-color/border-color (foreground only)', () => {
+    // Bug (2026-04-30): hasInlineColor regex /color\s*[:=]/i had false positives — it matched
+    // background-color:, border-color:, outline-color:, bgcolor=, etc. So if a user's saved HTML
+    // had ANY background-color in it, applyDefaultColor would skip wrapping with the foreground
+    // <span style="color: #d32f2f">, and the preview iframe (which has no editor contentStyle.color
+    // override) would render the text in the drawer's default base color (#111 = near-black) instead
+    // of the configured red. The contentEditable in the dashboard editor still rendered red because
+    // contentStyle.color = themeColor || '#1f2937' is applied to the editor element directly,
+    // masking the missing inline color span. So editor + live cart looked red (live cart got
+    // applyDefaultColor at runtime via cfg.text), but preview iframe looked black.
+    //
+    // Fix: use lookbehind /(?<![a-zA-Z-])color\s*[:=]/i so 'color' must not be preceded by a
+    // letter or hyphen — preventing match on background-color, border-color, bgcolor, etc.
+    const editorPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'rich-text-editor.tsx');
+    const src = fs.readFileSync(editorPath, 'utf8');
+
+    // Static contract: regex must use lookbehind to exclude letter/hyphen prefixes
+    const hicMatch = src.match(/export\s+function\s+hasInlineColor\s*\([^)]*\)\s*:\s*boolean\s*\{[\s\S]*?\}/);
+    assert(hicMatch, 'hasInlineColor function must exist');
+    assert(/\(\?<!\[a-zA-Z-?\]\)|\(\?<![^)]*[a-zA-Z][^)]*-[^)]*\)/.test(hicMatch[0]) ||
+           /\(\?<!\[a-zA-Z-\]\)/.test(hicMatch[0]),
+      'hasInlineColor must use a lookbehind that excludes letter/hyphen prefixes (e.g. /(?<![a-zA-Z-])color\\s*[:=]/i) — otherwise it matches background-color, border-color, bgcolor, etc.');
+
+    // Behavioral contract: evaluate the regex against known-bad inputs to catch regressions
+    // even if someone changes the regex to a different shape.
+    const regexMatch = hicMatch[0].match(/\/[^\/]+\/[gimuy]*/);
+    assert(regexMatch, 'hasInlineColor must use a regex literal');
+    // eslint-disable-next-line no-eval
+    const re = eval(regexMatch[0]);
+    assert(!re.test('<div style="background-color: red">x</div>'),
+      'hasInlineColor must NOT match background-color');
+    assert(!re.test('<div style="border-color: red">x</div>'),
+      'hasInlineColor must NOT match border-color');
+    assert(!re.test('<div style="outline-color: red">x</div>'),
+      'hasInlineColor must NOT match outline-color');
+    assert(!re.test('<table bgcolor="red">x</table>'),
+      'hasInlineColor must NOT match bgcolor attribute');
+    // True positives (must still match)
+    assert(re.test('<span style="color: red">x</span>'),
+      'hasInlineColor MUST match style="color: red"');
+    assert(re.test('<font color="red">x</font>'),
+      'hasInlineColor MUST match font color attribute');
+    assert(re.test('<span style="background:red;color:blue">x</span>'),
+      'hasInlineColor MUST match color when alongside background');
+  });
+
+  test('addon-preview scarcityTimer must apply default color via applyDefaultColor', () => {
+    // Bug (2026-05-01): Saved cfg.text from earlier sessions had `text-align: center` on a wrapping
+    // div but NO foreground color anywhere (only `background-color: transparent` and
+    // `font-family: inherit`). The preview iframe's CSS sets #CartDrawer.custom-cart-drawer { color:#111 }
+    // so without an explicit foreground color span, the timer text rendered black instead of red.
+    // normalizeBlockColorWrap can't help here because the broken pattern (<span color><div></div></span>)
+    // isn't present — the data has no color span at all.
+    //
+    // Fix: addon-preview must call applyDefaultColor(rawText, themeColor) so any saved HTML missing
+    // a foreground color gets the default red injected before render.
+    const previewPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'addon-preview.tsx');
+    const src = fs.readFileSync(previewPath, 'utf8');
+
+    // Must import applyDefaultColor from rich-text-editor
+    assert(/import\s*\{[^}]*\bapplyDefaultColor\b[^}]*\}\s*from\s*['"]\.\/rich-text-editor['"]/.test(src),
+      'addon-preview must import applyDefaultColor from ./rich-text-editor');
+
+    // The scarcityTimer block (between `if (addonKey === 'scarcityTimer')` and the closing of that block)
+    // must call applyDefaultColor on the raw text before rendering.
+    const blockMatch = src.match(/if\s*\(\s*addonKey\s*===\s*['"]scarcityTimer['"]\s*\)\s*\{[\s\S]*?\n\s{2}\}/);
+    assert(blockMatch, 'scarcityTimer block must exist in addon-preview');
+    assert(/applyDefaultColor\s*\(/.test(blockMatch[0]),
+      'scarcityTimer block must call applyDefaultColor — otherwise saved text without inline color renders in drawer base color (#111) instead of theme red');
   });
 
   // ================================================================

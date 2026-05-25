@@ -46,6 +46,7 @@ model Store {
   config                Json      @default("{}")
   demoConfig            Json      @default("{}")
   demoThemeId           String?
+  featureFlags          Json      @default("{}")
   baselineCheckoutRate  Float?
   baselineCartOpens     Int       @default(0)
   isActive              Boolean   @default(true)

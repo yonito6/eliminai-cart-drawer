@@ -1,17 +1,16 @@
 const { PrismaClient } = require('./backend/node_modules/@prisma/client');
 const p = new PrismaClient();
-(async () => {
+async function main() {
   const store = await p.store.findFirst({
-    where: { shopDomain: 'eliminai-test.myshopify.com' },
-    select: { id: true, shopDomain: true, config: true }
+    where: { shopDomain: 'eleganto-3011.myshopify.com' },
+    select: { id: true, config: true, demoConfig: true }
   });
-  if (!store) { console.log('Store not found'); await p.$disconnect(); return; }
   const cfg = store.config || {};
-  const addons = cfg.addons || {};
-  console.log('Store ID:', store.id);
-  console.log('Addons keys:', Object.keys(addons));
-  console.log('\nShipping Protection:', JSON.stringify(addons.shippingProtection || 'NOT SET', null, 2));
-  console.log('\nFull addons config:');
-  console.log(JSON.stringify(addons, null, 2));
+  const demo = store.demoConfig || {};
+  console.log('=== LIVE config.addons.shippingProtection ===');
+  console.log(JSON.stringify(cfg?.addons?.shippingProtection, null, 2));
+  console.log('\n=== DEMO config.addons.shippingProtection ===');
+  console.log(JSON.stringify(demo?.addons?.shippingProtection, null, 2));
   await p.$disconnect();
-})();
+}
+main();

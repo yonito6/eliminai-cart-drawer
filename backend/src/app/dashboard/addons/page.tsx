@@ -6,8 +6,10 @@ import AddonPreview from './addon-preview';
 import type { StagingHint } from './addon-preview';
 import { RewardsTierEditorWithSave } from './rewards-tier-editor';
 import ProtectionEditor from './protection-editor';
+import ScarcityTimerEditor from './scarcity-timer-editor';
 import { useStore } from '@/lib/hooks/use-store';
 import RichTextEditor from './rich-text-editor';
+import UpsellManualProducts from './upsell-manual-products';
 
 // ─── Daily Performance Chart (inline View Results) ──────────────────────────
 const VC = ['#7c3aed', '#f59e0b', '#10b981', '#ef4444', '#3b82f6', '#ec4899'];
@@ -373,6 +375,10 @@ function AddonsPage() {
   const [addons, setAddons] = useState<Record<string, AddonState>>({});
   // Track which addon has unsaved draft config so polling refresh doesn't overwrite it
   const draftAddonKeyRef = useRef<string | null>(null);
+  // Pending dim patches per addon — Save/Discard pattern (no auto-save).
+  const [pendingDimPatches, setPendingDimPatches] = useState<Record<string, Record<string, any>>>({});
+  // Snapshot of saved config taken on first edit, used to restore on Discard.
+  const dimSnapshotsRef = useRef<Record<string, Record<string, any>>>({});
   const [definitions, setDefinitions] = useState<AddonDefinition[]>([]);
   const [optimizeQueue, setOptimizeQueue] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -462,6 +468,22 @@ function AddonsPage() {
       if (res.ok) {
         const json = await res.json();
         const serverAddons = json.addons ?? {};
+        // Migrate legacy upsell headline slugs → bold+centered HTML on read.
+        // Old presets stored values like "you-may-also-like"; now headline is free text.
+        if (serverAddons.upsellRecommendations?.config) {
+          const LEGACY_HEADLINES: Record<string, string> = {
+            'you-may-also-like': '<div style="text-align:center"><strong>You may also like</strong></div>',
+            'complete-your-order': '<div style="text-align:center"><strong>Complete your order</strong></div>',
+            'customers-also-bought': '<div style="text-align:center"><strong>Customers also bought</strong></div>',
+          };
+          const h = serverAddons.upsellRecommendations.config.headline;
+          if (typeof h === 'string' && LEGACY_HEADLINES[h.trim()]) {
+            serverAddons.upsellRecommendations.config = {
+              ...serverAddons.upsellRecommendations.config,
+              headline: LEGACY_HEADLINES[h.trim()],
+            };
+          }
+        }
         // Preserve draft config for the addon being edited (unsaved changes)
         const draftKey = draftAddonKeyRef.current;
         if (draftKey && serverAddons[draftKey]) {
@@ -1018,6 +1040,7 @@ function AddonsPage() {
     addonKey: string,
     dim: AddonDimension,
     config: Record<string, any> | undefined,
+    onDimChange: (patch: Record<string, any>) => void,
   ) {
     const safeConfig = config ?? {};
     const val = safeConfig[dim.key] ?? dim.default;
@@ -1037,9 +1060,7 @@ function AddonsPage() {
         return (
           <select
             value={val}
-            onChange={(e) =>
-              updateAddonConfig(addonKey, { [dim.key]: e.target.value })
-            }
+            onChange={(e) => onDimChange({ [dim.key]: e.target.value })}
             style={inputStyle}
           >
             {(dim.options ?? []).map((opt) => (
@@ -1055,7 +1076,7 @@ function AddonsPage() {
           <RichTextEditor
             value={val ?? ''}
             placeholder={dim.placeholder}
-            onChange={(v) => updateAddonConfig(addonKey, { [dim.key]: v })}
+            onChange={(v) => onDimChange({ [dim.key]: v })}
             themeFont={themeSettings?.ccd_font_family}
           />
         );
@@ -1068,9 +1089,7 @@ function AddonsPage() {
             min={dim.min}
             max={dim.max}
             placeholder={dim.placeholder}
-            onChange={(e) =>
-              updateAddonConfig(addonKey, { [dim.key]: Number(e.target.value) })
-            }
+            onChange={(e) => onDimChange({ [dim.key]: Number(e.target.value) })}
             style={inputStyle}
           />
         );
@@ -1088,9 +1107,7 @@ function AddonsPage() {
             <input
               type="checkbox"
               checked={!!val}
-              onChange={(e) =>
-                updateAddonConfig(addonKey, { [dim.key]: e.target.checked })
-              }
+              onChange={(e) => onDimChange({ [dim.key]: e.target.checked })}
               style={{ width: 16, height: 16 }}
             />
             <span style={{ fontSize: 13, color: '#374151' }}>
@@ -1138,7 +1155,7 @@ function AddonsPage() {
             const toI = reordered.indexOf(target.value);
             reordered.splice(fromI, 1);
             reordered.splice(toI, 0, item.value);
-            updateAddonConfig(addonKey, { [dim.key]: reordered });
+            onDimChange({ [dim.key]: reordered });
             setDragIdx(null);
             setDragOverIdx(null);
           }
@@ -1197,7 +1214,7 @@ function AddonsPage() {
                         const next = checked
                           ? current.filter((v) => v !== opt.value)
                           : [...current, opt.value];
-                        updateAddonConfig(addonKey, { [dim.key]: next });
+                        onDimChange({ [dim.key]: next });
                       }}
                       style={{
                         display: 'flex',
@@ -1950,57 +1967,178 @@ function AddonsPage() {
                         />
                       )}
 
-                      {/* Standard dimensions — skip for shippingProtection (has its own editor) */}
-                      {def.key !== 'shippingProtection' && <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column' as const,
-                          gap: 14,
-                          marginTop: def.key === 'freeShippingBar' ? 16 : 0,
-                        }}
-                      >
-                        {def.dimensions.map((dim) => (
-                          <div key={dim.key}>
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                marginBottom: 4,
-                              }}
-                            >
-                              <label
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: 500,
-                                  color: '#374151',
-                                }}
-                              >
-                                {dim.label}
-                              </label>
-                              {!dim.testable && (
-                                <span
+                      {/* Scarcity timer gets the dedicated editor (RichText + number + Save/Discard) */}
+                      {def.key === 'scarcityTimer' && (
+                        <ScarcityTimerEditor
+                          config={addon.config ?? {}}
+                          themeFont={themeSettings?.ccd_font_family}
+                          onPreviewChange={(patch) => {
+                            // Preview-only — update local state without persisting
+                            draftAddonKeyRef.current = def.key;
+                            setAddons(prev => {
+                              const current = prev[def.key];
+                              if (!current) return prev;
+                              return { ...prev, [def.key]: { ...current, config: { ...current.config, ...patch } } };
+                            });
+                          }}
+                          onSave={(fullConfig) => {
+                            draftAddonKeyRef.current = null;
+                            updateAddonConfig(def.key, fullConfig);
+                          }}
+                        />
+                      )}
+
+                      {/* Standard dimensions — skip for addons with dedicated editors */}
+                      {def.key !== 'shippingProtection' && def.key !== 'scarcityTimer' && (() => {
+                        const savedConfig = addon.config ?? {};
+                        const pending = pendingDimPatches[def.key] ?? {};
+                        const mergedConfig = { ...savedConfig, ...pending };
+                        const isDirty = Object.keys(pending).length > 0;
+                        const handleDimChange = (patch: Record<string, any>) => {
+                          if (!dimSnapshotsRef.current[def.key]) {
+                            dimSnapshotsRef.current[def.key] = { ...savedConfig };
+                          }
+                          setPendingDimPatches((prev) => ({
+                            ...prev,
+                            [def.key]: { ...(prev[def.key] ?? {}), ...patch },
+                          }));
+                          draftAddonKeyRef.current = def.key;
+                          setAddons((prev) => {
+                            const cur = prev[def.key];
+                            if (!cur) return prev;
+                            return {
+                              ...prev,
+                              [def.key]: { ...cur, config: { ...cur.config, ...patch } },
+                            };
+                          });
+                        };
+                        const handleDimSave = () => {
+                          updateAddonConfig(def.key, pending);
+                          setPendingDimPatches((prev) => {
+                            const next = { ...prev };
+                            delete next[def.key];
+                            return next;
+                          });
+                          delete dimSnapshotsRef.current[def.key];
+                          draftAddonKeyRef.current = null;
+                        };
+                        const handleDimDiscard = () => {
+                          const snap = dimSnapshotsRef.current[def.key];
+                          if (snap) {
+                            setAddons((prev) => {
+                              const cur = prev[def.key];
+                              if (!cur) return prev;
+                              return { ...prev, [def.key]: { ...cur, config: { ...snap } } };
+                            });
+                          }
+                          setPendingDimPatches((prev) => {
+                            const next = { ...prev };
+                            delete next[def.key];
+                            return next;
+                          });
+                          delete dimSnapshotsRef.current[def.key];
+                          draftAddonKeyRef.current = null;
+                        };
+                        return (
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column' as const,
+                              gap: 14,
+                              marginTop: def.key === 'freeShippingBar' ? 16 : 0,
+                            }}
+                          >
+                            {def.dimensions.map((dim) => (
+                              <div key={dim.key}>
+                                <div
                                   style={{
-                                    fontSize: 10,
-                                    padding: '1px 6px',
-                                    borderRadius: 8,
-                                    background: '#fef3c7',
-                                    color: '#92400e',
-                                    fontWeight: 500,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    marginBottom: 4,
                                   }}
                                 >
-                                  Never optimized
-                                </span>
+                                  <label
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: 500,
+                                      color: '#374151',
+                                    }}
+                                  >
+                                    {dim.label}
+                                  </label>
+                                  {!dim.testable && (
+                                    <span
+                                      style={{
+                                        fontSize: 10,
+                                        padding: '1px 6px',
+                                        borderRadius: 8,
+                                        background: '#fef3c7',
+                                        color: '#92400e',
+                                        fontWeight: 500,
+                                      }}
+                                    >
+                                      Never optimized
+                                    </span>
+                                  )}
+                                </div>
+                                {renderDimensionControl(
+                                  def.key,
+                                  dim,
+                                  mergedConfig,
+                                  handleDimChange,
+                                )}
+                              </div>
+                            ))}
+                            {def.key === 'upsellRecommendations' && mergedConfig.source === 'manual' && (
+                              <UpsellManualProducts
+                                storeId={STORE_ID}
+                                value={Array.isArray(mergedConfig.manualProducts) ? mergedConfig.manualProducts : []}
+                                maxProducts={Number(mergedConfig.maxProducts) || 3}
+                                onChange={(next) => handleDimChange({ manualProducts: next })}
+                              />
+                            )}
+                            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                              <button
+                                onClick={handleDimSave}
+                                disabled={!isDirty}
+                                style={{
+                                  padding: '8px 20px',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  borderRadius: 8,
+                                  border: 'none',
+                                  background: !isDirty ? '#d1d5db' : '#7c3aed',
+                                  color: '#fff',
+                                  cursor: !isDirty ? 'default' : 'pointer',
+                                  transition: 'all 0.25s cubic-bezier(0.4,0,0.2,1)',
+                                  boxShadow: !isDirty ? 'none' : '0 2px 8px #7c3aed40',
+                                }}
+                              >
+                                Save
+                              </button>
+                              {isDirty && (
+                                <button
+                                  onClick={handleDimDiscard}
+                                  style={{
+                                    padding: '8px 16px',
+                                    fontSize: 12,
+                                    fontWeight: 500,
+                                    borderRadius: 8,
+                                    border: '1px solid #e5e7eb',
+                                    background: '#fff',
+                                    color: '#374151',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.25s cubic-bezier(0.4,0,0.2,1)',
+                                  }}
+                                >
+                                  Discard
+                                </button>
                               )}
                             </div>
-                            {renderDimensionControl(
-                              def.key,
-                              dim,
-                              addon.config ?? {},
-                            )}
                           </div>
-                        ))}
-                      </div>}
+                        );
+                      })()}
 
                       {/* Start Optimize button — with clear description */}
                       {addon.enabled && !experiments[def.key]?.status && def.dimensions.some(d => d.testable) && (

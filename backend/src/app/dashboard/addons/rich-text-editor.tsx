@@ -11,14 +11,53 @@ interface RichTextEditorProps {
   themeBg?: string;
 }
 
-/** Check if HTML already contains inline color (font color, style="color:", etc.) */
+/** Check if HTML already contains inline FOREGROUND color.
+ *  Must NOT match background-color, border-color, outline-color, bgcolor, etc.
+ *  Uses lookbehind to ensure 'color' is not preceded by a hyphen or letter
+ *  (which would indicate a compound property like background-color/bordercolor).
+ */
 export function hasInlineColor(html: string): boolean {
-  return /color\s*[:=]/i.test(html);
+  return /(?<![a-zA-Z-])color\s*[:=]/i.test(html);
 }
 
-/** Wrap plain text with a color span if it has no inline color yet */
+/** Migration helper — fixes the broken `<span style="color: X"><BLOCK>…</BLOCK></span>` pattern
+ *  produced by older save logic. HTML5 parsers auto-close <span> around block-level children, which
+ *  silently drops the color when the saved HTML is rendered. This swaps the wrap to put color INSIDE
+ *  the block element so it survives parsing.
+ *
+ *  Idempotent: returns html unchanged if the broken pattern isn't present. Safe to call on any HTML.
+ */
+export function normalizeBlockColorWrap(html: string): string {
+  if (!html) return html;
+  const blockTags = 'div|p|h[1-6]|ul|ol|li|table|blockquote|pre';
+  const re = new RegExp(
+    `^\\s*<span\\s+style="([^"]*color:[^"]*)"\\s*>\\s*<(${blockTags})([^>]*)>([\\s\\S]*)</\\2>\\s*</span>\\s*$`,
+    'i'
+  );
+  const match = html.match(re);
+  if (!match) return html;
+  const [, spanStyle, tag, blockAttrs, inner] = match;
+  return `<${tag}${blockAttrs}><span style="${spanStyle}">${inner}</span></${tag}>`;
+}
+
+/** Wrap plain text with a color span if it has no inline color yet.
+ *  IMPORTANT: HTML5 parsers auto-close <span> when a block-level child (<div>, <p>, <h1-6>, <ul>,
+ *  <ol>, <li>, <table>, <blockquote>, <pre>, <hr>) appears inside it. Wrapping such html in a span
+ *  would silently drop the color. So when the html starts with a top-level block element, we inject
+ *  the color INSIDE that element's children rather than wrapping it in a span.
+ */
 export function applyDefaultColor(html: string, color: string): string {
-  if (!html || hasInlineColor(html)) return html;
+  if (!html) return html;
+  // Auto-migrate the legacy broken pattern first (idempotent, safe on already-correct HTML)
+  html = normalizeBlockColorWrap(html);
+  if (hasInlineColor(html)) return html;
+  // Detect top-level block element with optional attributes — if present, recurse into its children.
+  const blockTags = 'div|p|h[1-6]|ul|ol|li|table|blockquote|pre';
+  const blockMatch = html.match(new RegExp(`^\\s*<(${blockTags})([^>]*)>([\\s\\S]*)</\\1>\\s*$`, 'i'));
+  if (blockMatch) {
+    const [, tag, attrs, inner] = blockMatch;
+    return `<${tag}${attrs}><span style="color: ${color}">${inner}</span></${tag}>`;
+  }
   return `<span style="color: ${color}">${html}</span>`;
 }
 
@@ -89,38 +128,83 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
       sel.removeAllRanges();
       sel.addRange(savedSelectionRef.current);
     }
-    document.execCommand(cmd, false, val);
-    // Re-save selection after command (so subsequent commands work)
-    const sel2 = window.getSelection();
-    if (sel2 && sel2.rangeCount > 0) {
-      savedSelectionRef.current = sel2.getRangeAt(0).cloneRange();
+    // Special-case alignment commands: execCommand('justifyCenter') on inline-only content sets
+    // text-align on the contentEditable element ITSELF rather than inside innerHTML, so the saved
+    // HTML loses the alignment and the live cart renders left-aligned even though the editor and
+    // preview iframe (which share the live editor element's style) appear centered. Instead, bake
+    // the alignment into the saved HTML by wrapping innerHTML in a <div style="text-align: X"> so
+    // the alignment travels with cfg.text into the live runtime.
+    if (cmd === 'justifyLeft' || cmd === 'justifyCenter' || cmd === 'justifyRight') {
+      const align = cmd === 'justifyCenter' ? 'center' : cmd === 'justifyRight' ? 'right' : 'left';
+      // Clear any prior inline alignment on the editor element (left over from an earlier execCommand path)
+      editor.style.textAlign = '';
+      // Strip an existing top-level align wrapper before re-wrapping (idempotent across multiple clicks)
+      let inner = editor.innerHTML;
+      const wrap = inner.match(/^\s*<div\s+style="text-align:\s*(?:left|center|right);?\s*">([\s\S]*)<\/div>\s*$/i);
+      if (wrap) inner = wrap[1];
+      // Apply default color INSIDE the align div (not around it). HTML5 parsers auto-close <span>
+      // when a block-level <div> appears inside it, which would strip the color span away from the
+      // alignment div, leaving text uncolored in the preview iframe (no inherited override there).
+      // By baking the color span inside the div, both alignment and color survive the round-trip.
+      if (themeColor && !hasInlineColor(inner)) {
+        inner = `<span style="color: ${themeColor}">${inner}</span>`;
+      }
+      editor.innerHTML = `<div style="text-align: ${align};">${inner}</div>`;
+      // Restore caret to end of new content (selection range was inside old DOM, now stale)
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const sel3 = window.getSelection();
+      if (sel3) {
+        sel3.removeAllRanges();
+        sel3.addRange(range);
+        savedSelectionRef.current = range.cloneRange();
+      }
+    } else {
+      document.execCommand(cmd, false, val);
+      // Re-save selection after command (so subsequent commands work)
+      const sel2 = window.getSelection();
+      if (sel2 && sel2.rangeCount > 0) {
+        savedSelectionRef.current = sel2.getRangeAt(0).cloneRange();
+      }
     }
-    const html = editor.innerHTML;
+    const raw = editor.innerHTML;
+    const html = themeColor ? applyDefaultColor(raw, themeColor) : raw;
     if (html !== lastValueRef.current) {
       lastValueRef.current = html;
       setHtmlSource(html);
       onChange(html);
     }
-  }, [onChange]);
+  }, [onChange, themeColor]);
 
   const syncFromEditor = useCallback(() => {
     if (editorRef.current) {
-      const html = editorRef.current.innerHTML;
+      const raw = editorRef.current.innerHTML;
+      const html = themeColor ? applyDefaultColor(raw, themeColor) : raw;
       if (html === lastValueRef.current) return;
       lastValueRef.current = html;
       setHtmlSource(html);
       onChange(html);
     }
-  }, [onChange]);
+  }, [onChange, themeColor]);
 
   const exec = useCallback((cmd: string, val?: string) => {
     focusRestoreExec(cmd, val);
   }, [focusRestoreExec]);
 
   const switchToHtml = useCallback(() => {
-    if (editorRef.current) setHtmlSource(editorRef.current.innerHTML);
+    if (editorRef.current) {
+      const raw = editorRef.current.innerHTML;
+      const html = themeColor ? applyDefaultColor(raw, themeColor) : raw;
+      setHtmlSource(html);
+      // Also propagate the wrapped version so the saved value carries the color
+      if (html !== lastValueRef.current) {
+        lastValueRef.current = html;
+        onChange(html);
+      }
+    }
     setShowHtml(true);
-  }, []);
+  }, [themeColor, onChange]);
 
   const switchToVisual = useCallback(() => {
     setShowHtml(false);
@@ -244,7 +328,7 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
     outline: 'none',
     fontSize: 13,
     lineHeight: 1.5,
-    color: '#1f2937',
+    color: themeColor || '#1f2937',
     fontFamily: themeFont || 'inherit',
     background: themeBg || 'transparent',
   };
@@ -392,6 +476,17 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
         <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('removeFormat')} title="Clear Formatting">
           <span style={{ fontSize: 11 }}>T<span style={{ textDecoration: 'line-through', color: '#dc2626' }}>x</span></span>
         </button>
+        <div style={{ width: 1, height: 16, background: '#d1d5db', margin: '0 4px' }} />
+        {/* Alignment */}
+        <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('justifyLeft')} title="Align Left">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="2" rx="0.5"/><rect x="1" y="6" width="9" height="2" rx="0.5"/><rect x="1" y="10" width="14" height="2" rx="0.5"/><rect x="1" y="14" width="9" height="1.5" rx="0.5"/></svg>
+        </button>
+        <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('justifyCenter')} title="Align Center">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="2" rx="0.5"/><rect x="3.5" y="6" width="9" height="2" rx="0.5"/><rect x="1" y="10" width="14" height="2" rx="0.5"/><rect x="3.5" y="14" width="9" height="1.5" rx="0.5"/></svg>
+        </button>
+        <button type="button" style={btnS()} onMouseDown={preventFocusLoss} onClick={() => exec('justifyRight')} title="Align Right">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="2" rx="0.5"/><rect x="6" y="6" width="9" height="2" rx="0.5"/><rect x="1" y="10" width="14" height="2" rx="0.5"/><rect x="6" y="14" width="9" height="1.5" rx="0.5"/></svg>
+        </button>
         <div style={{ flex: 1 }} />
         <button type="button" style={{
           ...btnS(showHtml), fontSize: 10, fontFamily: 'monospace', padding: '3px 8px',
@@ -408,7 +503,7 @@ export default function RichTextEditor({ value, onChange, placeholder, themeColo
             onChange={(e) => { setHtmlSource(e.target.value); lastValueRef.current = e.target.value; onChange(e.target.value); }}
             style={{
               width: '100%', minHeight: 80, padding: '8px 10px', border: 'none', outline: 'none',
-              fontFamily: 'monospace', fontSize: 12, color: '#1f2937', resize: 'vertical',
+              fontFamily: 'monospace', fontSize: 12, color: themeColor || '#1f2937', resize: 'vertical',
               background: '#f8fafc', boxSizing: 'border-box',
             }}
             spellCheck={false}

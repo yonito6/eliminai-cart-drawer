@@ -25,6 +25,34 @@
     if (msg.indexOf('[CCD') !== -1 || msg.indexOf('changeQty') !== -1 || msg.indexOf('cart') !== -1) { _ccdLogs.push('[ERR] ' + new Date().toISOString().slice(11,23) + ' ' + msg); if (_ccdLogs.length > 200) _ccdLogs.shift(); }
   };
   window._ccdLogs = _ccdLogs;
+  // === EARLY ATC CLICK / SUBMIT TRACING — runs before init() so we catch first-click race ===
+  _ccdLogs.push('[BOOT] ' + new Date().toISOString().slice(11,23) + ' v14 script executing | readyState=' + document.readyState + ' | url=' + location.pathname);
+  try {
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var btn = t.closest && (t.closest('[name=add],button[name=add],[type=submit],.product-form__submit,.product-form__cart-submit,.add-to-cart,[data-add-to-cart],form[action*="/cart/add"] button'));
+      if (btn) {
+        var form = btn.closest('form');
+        var action = form && form.action ? form.action : '(no form)';
+        _ccdLogs.push('[BOOT-ATC-CLICK] ' + new Date().toISOString().slice(11,23) +
+          ' | tag=' + (btn.tagName||'') + ' | name=' + (btn.name||'') +
+          ' | type=' + (btn.type||'') + ' | form-action=' + action +
+          ' | CCD-init=' + (typeof CCD !== 'undefined' && CCD._isInited ? 'YES' : 'NO') +
+          ' | fetch-overridden=' + (typeof CCD !== 'undefined' && CCD._origFetch ? 'YES' : 'NO'));
+      }
+    }, true);
+    document.addEventListener('submit', function(e) {
+      var f = e.target;
+      if (!f || !f.action || f.action.indexOf('/cart/add') === -1) return;
+      _ccdLogs.push('[BOOT-ATC-SUBMIT] ' + new Date().toISOString().slice(11,23) +
+        ' | action=' + f.action +
+        ' | CCD-init=' + (typeof CCD !== 'undefined' && CCD._isInited ? 'YES' : 'NO') +
+        ' | fetch-overridden=' + (typeof CCD !== 'undefined' && CCD._origFetch ? 'YES' : 'NO') +
+        ' | defaultPrevented=' + e.defaultPrevented);
+    }, true);
+  } catch(e) {}
+
   window._ccdShowDebug = function() {
     var el = document.getElementById('ccd-debug-overlay');
     if (el) { el.remove(); return; }
@@ -33,6 +61,29 @@
     el.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);color:#0f0;font:11px/1.4 monospace;z-index:99999;overflow:auto;padding:10px;white-space:pre-wrap;word-break:break-all;';
     var _cartInfo = '';
     var _giftInfo = '';
+    var _themeInfo = '';
+    try {
+      _themeInfo = '\n=== THEME / OVERRIDE STATE ===\n';
+      _themeInfo += 'window.theme: ' + (typeof window.theme !== 'undefined' ? 'EXISTS' : 'undefined') + '\n';
+      _themeInfo += 'window.theme.CartForm: ' + (window.theme && window.theme.CartForm ? 'EXISTS' : 'undefined') + '\n';
+      var _cfPrototype = window.theme && window.theme.CartForm && window.theme.CartForm.prototype;
+      _themeInfo += 'theme.CartForm.prototype.open._ccdOverridden: ' + (_cfPrototype && _cfPrototype.open && _cfPrototype.open._ccdOverridden ? 'YES' : 'NO') + '\n';
+      _themeInfo += 'window.theme.cart: ' + (window.theme && window.theme.cart ? 'EXISTS' : 'undefined') + '\n';
+      var _cdEl = document.querySelector('cart-drawer');
+      _themeInfo += '<cart-drawer> element: ' + (_cdEl ? 'EXISTS' : 'NONE') + '\n';
+      if (_cdEl) {
+        _themeInfo += '  cart-drawer.open._ccdOverridden: ' + (_cdEl.open && _cdEl.open._ccdOverridden ? 'YES' : 'NO') + '\n';
+        _themeInfo += '  cart-drawer display: ' + getComputedStyle(_cdEl).display + '\n';
+      }
+      var _cnEl = document.querySelector('cart-notification');
+      _themeInfo += '<cart-notification> element: ' + (_cnEl ? 'EXISTS' : 'NONE') + '\n';
+      _themeInfo += 'CCD._isInited: ' + (typeof CCD !== 'undefined' && CCD._isInited ? 'YES' : 'NO') + '\n';
+      _themeInfo += 'CCD._origFetch (fetch override installed): ' + (typeof CCD !== 'undefined' && CCD._origFetch ? 'YES' : 'NO') + '\n';
+      _themeInfo += 'window.fetch === CCD._origFetch: ' + (typeof CCD !== 'undefined' && window.fetch === CCD._origFetch ? 'YES (NOT overridden!)' : 'NO (overridden)') + '\n';
+      _themeInfo += '#CCD-Drawer in DOM: ' + (document.getElementById('CCD-Drawer') ? 'YES' : 'NO') + '\n';
+      _themeInfo += '__ccd_version: ' + (window.__ccd_version || 'undefined') + '\n';
+      _themeInfo += '================\n';
+    } catch(e) { _themeInfo = '\n[theme info error: ' + e.message + ']\n'; }
     try {
       _giftInfo = '\n=== GIFT CONFIG ===\n';
       _giftInfo += 'GIFT_CUSTOMER_CHOICE: ' + (typeof GIFT_CUSTOMER_CHOICE !== 'undefined' ? GIFT_CUSTOMER_CHOICE : 'undefined') + '\n';
@@ -57,9 +108,31 @@
       (_lc.items||[]).forEach(function(it,i){ _cartInfo += i + ': vid=' + it.variant_id + ' key=' + (it.key||'?').substring(0,20) + '.. qty=' + it.quantity + ' $' + (it.final_line_price/100) + ' ' + it.title + '\n'; });
       _cartInfo += '================\n';
     } catch(e) { _cartInfo = '\n[cart state error]\n'; }
-    el.innerHTML = '<div style="position:sticky;top:0;background:#000;padding:5px;display:flex;gap:10px;flex-wrap:wrap"><b>CCD Debug (' + _ccdLogs.length + ')</b><button onclick="this.parentElement.parentElement.remove()" style="margin-left:auto;color:#fff;background:#c00;border:none;padding:4px 12px;cursor:pointer">CLOSE</button><button onclick="navigator.clipboard.writeText(window._ccdLogs.join(\'\\n\'))" style="color:#fff;background:#06c;border:none;padding:4px 12px;cursor:pointer">COPY ALL</button></div>\n' + _giftInfo + _cartInfo + _ccdLogs.join('\n');
+    var _fullDump = _themeInfo + _giftInfo + _cartInfo + _ccdLogs.join('\n');
+    window._ccdLastDump = _fullDump;
+    el.innerHTML = '<div style="position:sticky;top:0;background:#000;padding:5px;display:flex;gap:10px;flex-wrap:wrap"><b>CCD Debug (' + _ccdLogs.length + ' logs)</b><button onclick="this.parentElement.parentElement.remove()" style="margin-left:auto;color:#fff;background:#c00;border:none;padding:4px 12px;cursor:pointer">CLOSE</button><button onclick="navigator.clipboard.writeText(window._ccdLastDump).then(function(){alert(\'Copied\')})" style="color:#fff;background:#06c;border:none;padding:4px 12px;cursor:pointer">COPY ALL</button></div>\n' + _fullDump;
     document.body.appendChild(el);
   };
+
+  // === FLOATING DEBUG BUTTON — always visible, bottom-left corner ===
+  function _ccdAddDebugButton() {
+    if (document.getElementById('ccd-debug-fab')) return;
+    if (!document.body) { setTimeout(_ccdAddDebugButton, 100); return; }
+    var fab = document.createElement('button');
+    fab.id = 'ccd-debug-fab';
+    fab.textContent = 'Debug';
+    fab.style.cssText = 'position:fixed;bottom:12px;left:12px;z-index:99998;background:#7c3aed;color:#fff;border:none;border-radius:20px;padding:8px 14px;font:600 12px system-ui,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.25);opacity:0.9;';
+    fab.addEventListener('click', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      window._ccdShowDebug();
+    }, true);
+    document.body.appendChild(fab);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _ccdAddDebugButton);
+  } else {
+    _ccdAddDebugButton();
+  }
 
   // === INJECT EMBEDDED CSS (standalone — no external stylesheet needed) ===
   (function() {
@@ -506,6 +579,16 @@
   };
 
   var CCD = {
+
+    // Per-store feature flag check. Reads from window.CCD_CONFIG.featureFlags injected by proxy/config.
+    // Returns true only if the named flag is explicitly true. Unset/missing/non-boolean → false (safe default).
+    // Usage: if (CCD.FF('myFeatureV2')) { newBehavior() } else { legacyBehavior() }
+    FF: function(name) {
+      try {
+        var flags = (window.CCD_CONFIG && window.CCD_CONFIG.featureFlags) || {};
+        return flags[name] === true;
+      } catch (e) { return false; }
+    },
 
     fixMobileWidth: function() {
       // Mobile width controlled by --ccd-mobile-width CSS var (default 85%, configurable in dashboard)
@@ -1089,6 +1172,8 @@
           tglInput.removeEventListener("change", onFirstToggle);
         });
       }
+      CCD._isInited = true;
+      try { window._ccdLogs && window._ccdLogs.push('[INIT-DONE] ' + new Date().toISOString().slice(11,23) + ' v14 init() finished | fetch-overridden=' + (CCD._origFetch ? 'YES' : 'NO')); } catch(e) {}
     },
 
 
@@ -1132,6 +1217,55 @@
         if (m.duplicateHandle && m.originalUrl) GIFT_URL_MAP[m.duplicateHandle] = m.originalUrl;
       });
       console.log('[CCD] Loaded tiers from backend:', REWARD_TIERS.length, 'tiers, GIFT_HANDLES=', JSON.stringify(GIFT_HANDLES), 'GIFT_CODES=', GIFT_DISCOUNT_CODES.length, 'GIFT_URL_MAP=', JSON.stringify(GIFT_URL_MAP));
+      try {
+        var sp = config.cartConfig.addons.shippingProtection;
+        if (sp && sp.enabled && sp.config) {
+          var spCfg = sp.config;
+          PROT = spCfg.handle || PROT;
+          PROT_ENABLED = true;
+          PROT_COLOR = spCfg.iconColor || PROT_COLOR;
+          if (spCfg.productName) {
+            CFG.protectionTitle = spCfg.productName;
+            var _ptEl = document.querySelector('.ccd-shipping-protection__title');
+            if (_ptEl) _ptEl.textContent = spCfg.productName;
+          }
+          if (spCfg.description) {
+            CFG.protectionDesc = spCfg.description;
+            var _pdEl = document.querySelector('.ccd-shipping-protection__desc');
+            if (_pdEl) _pdEl.textContent = spCfg.description;
+          }
+          var newTiers = spCfg.tiers || [];
+          if (newTiers.length > 0) {
+            PROT_TIERS = newTiers.map(function(t) {
+              var priceCents = Math.round((parseFloat(t.price) || 0) * 100);
+              return { vid: t.vid, price: priceCents, maxValue: t.maxValue };
+            });
+            PROT_VID = PROT_TIERS[0].vid;
+            PROT_VID_SINGLE = PROT_TIERS[0].vid;
+          } else if (spCfg.variantId) {
+            PROT_VID_SINGLE = parseInt(spCfg.variantId) || PROT_VID_SINGLE;
+            PROT_VID = PROT_VID_SINGLE;
+            var pCents = Math.round((parseFloat(spCfg.price) || 0) * 100) || 499;
+            PROT_TIERS = [{ vid: PROT_VID_SINGLE, price: pCents, maxValue: null }];
+          }
+          if ('defaultOn' in spCfg) {
+            CFG.protectionDefaultOn = spCfg.defaultOn;
+            var _tgl = document.getElementById('ccd-shipping-toggle');
+            if (_tgl) _tgl.checked = !!spCfg.defaultOn;
+          }
+          // Update protection price in DOM (HTML was built before proxy responded)
+          if (PROT_TIERS.length > 0) {
+            var _mergedPrice = PROT_TIERS[0].price;
+            CFG.protectionPrice = _mergedPrice;
+            var _ppEl = document.querySelector('.ccd-shipping-protection__price');
+            if (_ppEl) {
+              _ppEl.textContent = CCD.fmt(_mergedPrice);
+              _ppEl.setAttribute('data-prot-price', String(_mergedPrice));
+            }
+          }
+          console.log('[CCD] Protection merged from backend: handle=' + PROT + ' vid=' + PROT_VID + ' price=' + (PROT_TIERS[0] ? PROT_TIERS[0].price : 'none') + ' defaultOn=' + CFG.protectionDefaultOn);
+        }
+      } catch(e) {}
     },
 
     _isExcludedHandle: function(handle) {
@@ -1989,7 +2123,7 @@
                           var sp = config.cartConfig.addons.shippingProtection;
                           if (sp && sp.config) {
                             if ('defaultOn' in sp.config) CFG.protectionDefaultOn = sp.config.defaultOn;
-                            if ('price' in sp.config) CFG.protectionPrice = sp.config.price;
+                            if ('price' in sp.config) CFG.protectionPrice = Math.round((parseFloat(sp.config.price) || 0) * 100) || 499;
                           }
                           CCD._mergeTiersFromConfig(config);
                         }
@@ -2695,6 +2829,26 @@
       giftItems.forEach(function(giftCartItem) {
         var giftKey = giftCartItem.key;
 
+        // BUG-024: Compute compare price from REWARD_TIERS config early.
+        // Gift products are $0 duplicates, so giftCartItem.price is always 0.
+        // Display label is always 'Free'; compare price is looked up from tier config.
+        // Iterate REWARD_TIERS and parseFloat the price string ("49.99") * 100 for fmt() cents.
+        var _GIFT_PRICE_LABEL = 'Free';
+        var _giftOrigPrice = 0;
+        var _giftHandle = giftCartItem.handle;
+        for (var _ti = 0; _ti < REWARD_TIERS.length && _giftOrigPrice === 0; _ti++) {
+          var _tGifts = tierGifts(REWARD_TIERS[_ti]);
+          for (var _gi = 0; _gi < _tGifts.length; _gi++) {
+            if (_tGifts[_gi].handle === _giftHandle && _tGifts[_gi].price) {
+              _giftOrigPrice = parseFloat(_tGifts[_gi].price) * 100;
+              break;
+            }
+          }
+        }
+        if (_giftOrigPrice === 0) {
+          _giftOrigPrice = giftCartItem.original_price || giftCartItem.compare_at_price || giftCartItem.price || 0;
+        }
+
         // Find the gift rendered as a regular .ccd-item
         var giftEl = null;
         container.querySelectorAll('.ccd-item').forEach(function(el) {
@@ -2829,22 +2983,9 @@
           priceEl.textContent = 'Free';
           priceEl.classList.add('ccd-item__price--free');
         }
-        // Gift products are $0 duplicates, so cart price is 0.
-        // Look up the ORIGINAL price from tier config (gift.price stored as string like "49.99")
-        var origPrice = 0;
-        var _gHandle = giftCartItem.handle;
-        for (var _ti = 0; _ti < REWARD_TIERS.length && origPrice === 0; _ti++) {
-          var _tGifts = tierGifts(REWARD_TIERS[_ti]);
-          for (var _gi = 0; _gi < _tGifts.length; _gi++) {
-            if (_tGifts[_gi].handle === _gHandle && _tGifts[_gi].price) {
-              origPrice = parseFloat(_tGifts[_gi].price) * 100; // convert dollars to cents for fmt()
-              break;
-            }
-          }
-        }
-        // Fallback: check giftMappings for original product price via compare_at_price from cart
-        if (origPrice === 0) origPrice = giftCartItem.original_price || giftCartItem.compare_at_price || giftCartItem.price || 0;
-        console.log('[CCD GIFT] comparePrice: handle=' + _gHandle + ' origPrice=' + origPrice + ' REWARD_TIERS=' + REWARD_TIERS.length + ' SHOW=' + GIFT_SHOW_COMPARE_PRICE);
+        // Gift compare price was computed at top of forEach (see BUG-024 block above)
+        var origPrice = _giftOrigPrice;
+        console.log('[CCD GIFT] comparePrice: handle=' + _giftHandle + ' origPrice=' + origPrice + ' REWARD_TIERS=' + REWARD_TIERS.length + ' SHOW=' + GIFT_SHOW_COMPARE_PRICE);
         var priceRow = giftEl.querySelector('.ccd-item__price-row') || (priceEl ? priceEl.parentElement : null);
         if (GIFT_SHOW_COMPARE_PRICE && priceRow && origPrice > 0) {
           var existingCompare = priceRow.querySelector('.ccd-item__compare-price');
@@ -3002,6 +3143,10 @@
         if (pb) pb.style.display = 'block';
         if (ft) ft.style.display = 'block';
       }
+      // Cart-aware scarcity timer: empty → remove + clear; items → inject (lightweight path)
+      CCD._syncScarcityTimer();
+      // Cart-aware upsells: empty → remove "You may also like"; items → re-inject if missing
+      CCD._syncUpsells();
       // BUG-3: Ensure loading overlay hidden after refreshLight
       CCD.hideLoading();
       // Delay overflow check until browser has completed layout paint
@@ -3204,6 +3349,10 @@
       }
 
       CCD.checkWatchCase(cart);
+      // Cart-aware scarcity timer: empty → remove + clear; items → inject
+      CCD._syncScarcityTimer();
+      // Cart-aware upsells: empty → remove "You may also like"; items → re-inject if missing
+      CCD._syncUpsells();
       // Delay overflow check until browser has completed layout paint
       requestAnimationFrame(function() { CCD.checkOverflow(); CCD.setupScrollIndicator(); });
     },
@@ -3518,7 +3667,7 @@
             var sp = config.cartConfig.addons.shippingProtection;
             if (sp && sp.config) {
               if ('defaultOn' in sp.config) CFG.protectionDefaultOn = sp.config.defaultOn;
-              if ('price' in sp.config) CFG.protectionPrice = sp.config.price;
+              if ('price' in sp.config) CFG.protectionPrice = Math.round((parseFloat(sp.config.price) || 0) * 100) || 499;
             }
             // ── Merge reward tiers from backend config ──
             CCD._mergeTiersFromConfig(config);
@@ -3752,7 +3901,7 @@
     // Addon key → inject/remove handlers. Add new addons here — everything else is automatic.
     _addonHandlers: {
       trustBadges:          { inject: function(c) { CCD.injectTrustBadges(c); },    remove: function() { var e = document.getElementById('ccd-trust-badges'); if (e) e.remove(); } },
-      scarcityTimer:        { inject: function(c) { CCD.injectScarcityTimer(c); },  remove: function() { var e = document.getElementById('ccd-scarcity-timer'); if (e) e.remove(); } },
+      scarcityTimer:        { inject: function(c) { CCD.injectScarcityTimer(c); },  remove: function() { if (CCD._scarcityTick) { clearInterval(CCD._scarcityTick); CCD._scarcityTick = null; } var e = document.getElementById('ccd-scarcity-timer'); if (e) e.remove(); try { sessionStorage.removeItem(CCD._SCARCITY_STORAGE_KEY); } catch (err) {} } },
       freeShippingBar:      { inject: function(c) { CCD.injectFreeShippingBar(c); },remove: function() { var e = document.getElementById('ccd-free-shipping-bar'); if (e) e.remove(); } },
       socialProof:          { inject: function(c) { CCD.injectSocialProof(c); },    remove: function() { var e = document.getElementById('ccd-social-proof'); if (e) e.remove(); } },
       upsellRecommendations:{ inject: function(c) { CCD.injectUpsells(c); },        remove: function() { var e = document.getElementById('ccd-upsells'); if (e) e.remove(); } }
@@ -3780,18 +3929,67 @@
             else { delete show[ak]; }
           }
         }
-        // Legacy feature flags
-        if (feat.showTrustBadges) show.trustBadges = {};
-        if (feat.showScarcityTimer) show.scarcityTimer = {};
-        if (feat.showProgressBar) show.freeShippingBar = {};
-        if (feat.showUpsells) show.upsellRecommendations = {};
-        if (feat.showSocialProof) show.socialProof = {};
+        // Legacy feature flags — only set if NOT already populated by addons config
+        if (feat.showTrustBadges && !show.trustBadges) show.trustBadges = {};
+        if (feat.showScarcityTimer && !show.scarcityTimer) show.scarcityTimer = {};
+        if (feat.showProgressBar && !show.freeShippingBar) show.freeShippingBar = {};
+        if (feat.showUpsells && !show.upsellRecommendations) show.upsellRecommendations = {};
+        if (feat.showSocialProof && !show.socialProof) show.socialProof = {};
       }
 
       // 3. Inject shown addons, remove hidden ones
       for (var hk in self._addonHandlers) {
         if (show[hk]) { self._addonHandlers[hk].inject(show[hk]); }
         else { self._addonHandlers[hk].remove(); }
+      }
+
+      // Remember scarcity-timer resolved config so cart-state changes can re-inject
+      // it when the cart goes from empty → has-items, or remove it when emptied.
+      // null = scarcity addon is OFF for this tenant; falsy here means don't re-inject.
+      CCD._scarcityCfg = show.scarcityTimer || null;
+      // Same pattern for the Upsell Recommendations addon so refreshLight can sync
+      // "You may also like" with cart state (remove on empty, re-inject when items return).
+      CCD._upsellsCfg = show.upsellRecommendations || null;
+    },
+
+    // Cart-aware scarcity timer lifecycle. Called after every cart refresh so the
+    // timer mirrors cart state:
+    //   - Empty cart      → no timer, sessionStorage cleared (fresh start next time)
+    //   - Items present   → timer present (re-injects with stored start time)
+    //   - Addon disabled  → no-op
+    _syncScarcityTimer: function() {
+      if (!CCD._scarcityCfg) return; // addon not enabled for this tenant
+      var rc = (typeof CCD._lastRealCount === 'number') ? CCD._lastRealCount : -1;
+      var hasEl = !!document.getElementById('ccd-scarcity-timer');
+      if (rc === 0) {
+        if (hasEl || CCD._scarcityTick) {
+          CCD._addonHandlers.scarcityTimer.remove();
+        } else {
+          // No element yet but cart is empty — make sure no stale start time lingers
+          try { sessionStorage.removeItem(CCD._SCARCITY_STORAGE_KEY); } catch (err) {}
+        }
+      } else if (rc > 0 && !hasEl) {
+        CCD.injectScarcityTimer(CCD._scarcityCfg);
+      }
+    },
+
+    // Cart-aware Upsell Recommendations lifecycle. Mirrors _syncScarcityTimer because
+    // applyExperimentFeatures is NOT called on item removal — only on drawer open + ATC.
+    // Without this sync, "You may also like" stays visible after the last item is removed.
+    //   - Empty cart (rc===0) → remove #ccd-upsells, clear anchor key (force re-fetch next time)
+    //   - Items present (rc>0) → re-inject if missing (e.g. cart went empty→items)
+    //   - Addon disabled (_upsellsCfg null) → no-op
+    _syncUpsells: function() {
+      if (!CCD._upsellsCfg) return; // addon not enabled for this tenant
+      var rc = (typeof CCD._lastRealCount === 'number') ? CCD._lastRealCount : -1;
+      var hasEl = !!document.getElementById('ccd-upsells');
+      if (rc === 0) {
+        if (hasEl) {
+          CCD._addonHandlers.upsellRecommendations.remove();
+          CCD._upsellsAnchorKey = '';
+        }
+      } else if (rc > 0 && !hasEl) {
+        CCD.injectUpsells(CCD._upsellsCfg);
       }
     },
 
@@ -3811,10 +4009,17 @@
     },
 
     injectTrustBadges: function(cfg) {
+      // FF gate: trustBadgesV2 — when ON, suppress this legacy renderer entirely
+      // so the new BEM renderer (which respects config.badges and config.text) can
+      // take over. FF off (default): legacy behavior preserved verbatim — Eleganto unchanged.
+      if (CCD.FF('trustBadgesV2')) return;
       if (document.getElementById('ccd-trust-badges')) return;
       cfg = cfg || {};
-      var icons = cfg.icons || ['visa', 'mastercard', 'amex', 'paypal'];
-      var text = cfg.text || '';
+      var icons = cfg.icons || ['visa', 'mastercard', 'amex', 'discover', 'paypal', 'apple-pay', 'google-pay'];
+      var rawText = cfg.text || '';
+      // Treat <br>-only or whitespace-only text as empty (no orphan text div / green sliver)
+      var visibleText = rawText.replace(/<br\s*\/?>/gi, '').replace(/&nbsp;/gi, '').replace(/<[^>]+>/g, '').trim();
+      var text = visibleText ? rawText : '';
       var position = cfg.position || 'below-checkout';
       var svgs = CCD._paymentSvgs || {};
 
@@ -3828,7 +4033,7 @@
       // Build text row
       var textHtml = '';
       if (text) {
-        textHtml = '<div class="ccd-trust-text"><svg viewBox="0 0 16 16" width="12" height="12" style="vertical-align:-1px"><path fill="#22c55e" d="M8 1a5 5 0 0 0-5 5v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V6a5 5 0 0 0-5-5zm0 2a3 3 0 0 1 3 3v3H5V6a3 3 0 0 1 3-3z"/></svg> ' + text + '</div>';
+        textHtml = '<div class="ccd-trust-text">' + text + '</div>';
       }
 
       var row = document.createElement('div');
@@ -3858,9 +4063,138 @@
   };
 
   // ── Future addon stubs — implement visuals when ready ──
+  CCD._scarcityTick = null;
+  CCD._SCARCITY_STORAGE_KEY = 'ccd_scarcity_start';
+  // Empty cart = no reservation = no timer. Bail and clear any stale start time.
+  CCD._cartIsEmptyForScarcity = function() {
+    var rc = (typeof CCD._lastRealCount === 'number') ? CCD._lastRealCount : -1;
+    // -1 means "not yet computed" — let the caller decide; only treat 0 as empty.
+    return rc === 0;
+  };
   CCD.injectScarcityTimer = function(cfg) {
     if (document.getElementById('ccd-scarcity-timer')) return;
-    // TODO: implement scarcity countdown timer
+    if (CCD._cartIsEmptyForScarcity()) {
+      // Don't start the reservation clock for an empty cart.
+      try { sessionStorage.removeItem(CCD._SCARCITY_STORAGE_KEY); } catch (e) {}
+      return;
+    }
+    // Defer injection until cart count is known. When applyExperimentFeatures
+    // runs at drawer-open time, _lastRealCount is still -1 ("not yet fetched");
+    // injecting now and then removing in _syncScarcityTimer (after the cart
+    // fetch resolves with an empty cart) produces a visible flash. The
+    // post-fetch _syncScarcityTimer will re-inject for non-empty carts.
+    if (CCD._lastRealCount === -1) return;
+    cfg = cfg || {};
+    var rawText = cfg.text != null ? String(cfg.text) : '<span style="color:#d32f2f">Your cart is reserved for <strong>{time}</strong></span>';
+    var durationMin = typeof cfg.duration === 'number' ? cfg.duration : (parseFloat(cfg.duration) || 10);
+    if (!isFinite(durationMin) || durationMin < 1) durationMin = 1;
+    if (durationMin > 60) durationMin = 60;
+    var durationSec = Math.round(durationMin * 60);
+    var onComplete = cfg.onComplete === 'reset' ? 'reset' : 'hide';
+    var position = cfg.position || 'below-header';
+
+    // Visual styling (background, text color, font size, font weight, padding,
+    // border radius) is controlled inline via the rich text editor toolbar in
+    // rawText — no separate fields. Only pulse animation is a wrapper-level toggle.
+    var pulseAnimation = cfg.pulseAnimation !== false;
+
+    // Per-cart-session start time (sessionStorage so the timer survives navigation
+    // within the session but resets on a new session/tab).
+    // Cleared whenever the cart goes empty — see _addonHandlers.scarcityTimer.remove
+    // and _syncScarcityTimer below.
+    var STORAGE_KEY = CCD._SCARCITY_STORAGE_KEY;
+    var startMs;
+    try {
+      var stored = sessionStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        var n = parseInt(stored, 10);
+        if (isFinite(n) && n > 0) startMs = n;
+      }
+    } catch (e) { /* sessionStorage may be unavailable */ }
+    if (!startMs) {
+      startMs = Date.now();
+      try { sessionStorage.setItem(STORAGE_KEY, String(startMs)); } catch (e) {}
+    }
+
+    // Build wrapper element
+    // NOTE: NOT using .ccd-scarcity-badge class — that class has !important rules
+    // that override inline styles and is reserved for the per-item "only X left" badge.
+    // Using unique #ccd-scarcity-timer ID so all visuals come from inline styles
+    // driven by the dashboard config (nothing hardcoded — fully editable per tenant).
+    var el = document.createElement('div');
+    el.id = 'ccd-scarcity-timer';
+    // Alignment lives inside rawText (text-align inline styles set via the rich text editor).
+    el.style.cssText =
+      'display:block;width:auto;box-sizing:border-box;' +
+      'padding:8px 16px;border-radius:6px;' +
+      (pulseAnimation ? 'animation:ccdScarcityPulse 2s ease-in-out infinite;' : '');
+
+    // Inject placeholder span where {time} appears so we can update only the time text
+    var html = rawText.replace(/\{time\}/g, '<span class="ccd-scarcity-time">--:--</span>');
+    el.innerHTML = html;
+
+    // Insert at the chosen position
+    var inserted = false;
+    if (position === 'above-checkout') {
+      var checkoutBtn = document.querySelector('.ccd-checkout-btn');
+      if (checkoutBtn && checkoutBtn.parentNode) {
+        checkoutBtn.parentNode.insertBefore(el, checkoutBtn);
+        inserted = true;
+      }
+    } else if (position === 'floating-top') {
+      // Self-rendered shell only — never reference theme-specific classes
+      var header = document.querySelector('.ccd-fixed-header');
+      if (header && header.parentNode) {
+        header.parentNode.insertBefore(el, header);
+        inserted = true;
+      }
+    }
+    if (!inserted) {
+      // below-header (default) — insert at top of inner panel
+      // Self-rendered shell only — never reference theme-specific classes
+      var inner = document.querySelector('.ccd-inner');
+      if (inner && inner.parentNode) {
+        inner.parentNode.insertBefore(el, inner);
+        inserted = true;
+      }
+    }
+    if (!inserted) return;
+
+    // Tick: format mm:ss and handle completion
+    function fmt(totalSec) {
+      if (totalSec < 0) totalSec = 0;
+      var m = Math.floor(totalSec / 60);
+      var s = totalSec % 60;
+      return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    }
+    function tick() {
+      var node = document.getElementById('ccd-scarcity-timer');
+      if (!node) {
+        if (CCD._scarcityTick) { clearInterval(CCD._scarcityTick); CCD._scarcityTick = null; }
+        return;
+      }
+      var elapsed = Math.floor((Date.now() - startMs) / 1000);
+      var remaining = durationSec - elapsed;
+      if (remaining <= 0) {
+        if (onComplete === 'reset') {
+          startMs = Date.now();
+          try { sessionStorage.setItem(STORAGE_KEY, String(startMs)); } catch (e) {}
+          remaining = durationSec;
+        } else {
+          // hide
+          if (CCD._scarcityTick) { clearInterval(CCD._scarcityTick); CCD._scarcityTick = null; }
+          if (node.parentNode) node.parentNode.removeChild(node);
+          try { sessionStorage.removeItem(STORAGE_KEY); } catch (e) {}
+          return;
+        }
+      }
+      var spans = node.querySelectorAll('.ccd-scarcity-time');
+      var formatted = fmt(remaining);
+      for (var i = 0; i < spans.length; i++) spans[i].textContent = formatted;
+    }
+    if (CCD._scarcityTick) { clearInterval(CCD._scarcityTick); CCD._scarcityTick = null; }
+    tick();
+    CCD._scarcityTick = setInterval(tick, 1000);
   };
   CCD._lastTiersJSON = '';
   CCD.injectFreeShippingBar = function(cfg) {
@@ -3907,9 +4241,289 @@
     if (document.getElementById('ccd-social-proof')) return;
     // TODO: implement social proof indicator
   };
+  // Upsell recommendations — supports three sources:
+  //   • shopify-recommendations → /recommendations/products.json?intent=related (co-purchase signal)
+  //   • ai-selected             → /recommendations/products.json?intent=complementary (Shopify Magic ML)
+  //   • manual                  → cfg.manualProducts (merchant-picked in dashboard)
+  // All sources render to a single #ccd-upsells container. Re-injection short-circuits if the
+  // cart contents (used to anchor the fetch) haven't changed since last render.
+  CCD._upsellsAnchorKey = '';
+  CCD._upsellsInflight = false;
   CCD.injectUpsells = function(cfg) {
-    if (document.getElementById('ccd-upsells')) return;
-    // TODO: implement upsell recommendations
+    cfg = cfg || {};
+    if (CCD._upsellsInflight) return;
+
+    // Empty-cart guard. When the customer has nothing in the cart (or removed the last item),
+    // recommending complementary products is junk — there's no anchor and the section looks
+    // weird hovering over an empty cart message. Bail and clean up any existing element so
+    // re-renders after a "remove last item" action don't leave a stale "You may also like".
+    // Mirrors the proven _syncScarcityTimer pattern (rc===0 → remove + clear state).
+    if (CCD._lastRealCount === 0) {
+      var _stale = document.getElementById('ccd-upsells');
+      if (_stale && _stale.parentNode) _stale.parentNode.removeChild(_stale);
+      CCD._upsellsAnchorKey = '';
+      return;
+    }
+
+    var source = cfg.source || 'shopify-recommendations';
+    // Legacy slugs from when headline was a preset dropdown — map to bold+centered HTML.
+    var LEGACY_HEADLINES = {
+      'you-may-also-like': '<div style="text-align:center"><strong>You may also like</strong></div>',
+      'complete-your-order': '<div style="text-align:center"><strong>Complete your order</strong></div>',
+      'customers-also-bought': '<div style="text-align:center"><strong>Customers also bought</strong></div>'
+    };
+    var rawHeadline = (typeof cfg.headline === 'string') ? cfg.headline.trim() : '';
+    if (LEGACY_HEADLINES[rawHeadline]) rawHeadline = LEGACY_HEADLINES[rawHeadline];
+    var headlineHtml = rawHeadline || '<div style="text-align:center"><strong>You may also like</strong></div>';
+    var layout = cfg.layout || 'horizontal-scroll';
+    var position = cfg.position || 'below-items';
+    var maxN = Math.max(1, Math.min(6, parseInt(cfg.maxProducts, 10) || 3));
+    var manualProducts = Array.isArray(cfg.manualProducts) ? cfg.manualProducts : [];
+
+    function pickAnchorProductId(cart) {
+      // Anchor on the first cart line item. Excludes our $0 gift duplicates (they're tagged or
+      // their handle starts with "gift-"), since recommending complements of a free gift is junk.
+      var items = (cart && cart.items) || [];
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        if (!it || !it.product_id) continue;
+        var handle = String(it.handle || '').toLowerCase();
+        if (handle.indexOf('gift-') === 0) continue;
+        var price = Number(it.price) || 0;
+        if (price === 0) continue;
+        return it.product_id;
+      }
+      return null;
+    }
+
+    function fetchShopifyRecs(intent, anchorProductId) {
+      // Shopify storefront recs API — public, no auth needed, returns same shape as /products.json.
+      var url = '/recommendations/products.json?product_id=' + encodeURIComponent(anchorProductId) +
+                '&limit=' + maxN + '&intent=' + intent;
+      return fetch(url, { credentials: 'same-origin' })
+        .then(function(r) { return r.ok ? r.json() : { products: [] }; })
+        .then(function(data) {
+          var prods = (data && data.products) || [];
+          return prods.filter(function(p) {
+            // Exclude items already in cart and excluded products tagged "_eliminai-hidden".
+            var tags = (p.tags || []);
+            if (Array.isArray(tags) ? tags.indexOf('_eliminai-hidden') >= 0 : String(tags).indexOf('_eliminai-hidden') >= 0) return false;
+            var handle = String(p.handle || '').toLowerCase();
+            if (handle.indexOf('gift-') === 0) return false;
+            return true;
+          });
+        })
+        .catch(function() { return []; });
+    }
+
+    function fetchManualProducts() {
+      // Resolve each manual selection to live data (handle = stable identifier; variant id may rotate).
+      // We re-fetch /products/{handle}.js for each to pick up current price + availability without
+      // a backend round-trip. Falls back to the stored snapshot if the fetch fails or the product
+      // was deleted on Shopify.
+      if (manualProducts.length === 0) return Promise.resolve([]);
+      var picks = manualProducts.slice(0, maxN);
+      var fetches = picks.map(function(p) {
+        var handle = p && p.handle;
+        if (!handle) return Promise.resolve(p && p.title ? p : null);
+        return fetch('/products/' + encodeURIComponent(handle) + '.js', { credentials: 'same-origin' })
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(live) {
+            if (!live) return p && p.title ? p : null;
+            // Find the variant the merchant chose; fall back to the first available.
+            var preferredVariantId = p && p.variantId;
+            var variants = live.variants || [];
+            var chosen = null;
+            for (var v = 0; v < variants.length; v++) {
+              if (preferredVariantId && variants[v].id === preferredVariantId) { chosen = variants[v]; break; }
+            }
+            if (!chosen) chosen = variants.find(function(x) { return x.available; }) || variants[0];
+            if (!chosen) return null;
+            return {
+              id: live.id,
+              handle: live.handle,
+              title: live.title,
+              price: chosen.price, // cents
+              image: live.featured_image || (live.images && live.images[0]) || (p && p.image) || '',
+              variantId: chosen.id,
+              available: chosen.available !== false
+            };
+          })
+          .catch(function() { return p && p.title ? p : null; });
+      });
+      return Promise.all(fetches).then(function(arr) {
+        return arr.filter(function(x) { return x && x.title; });
+      });
+    }
+
+    // Build a Shopify-shaped product object into the unified shape we render.
+    function normalizeShopifyProduct(p) {
+      var variants = p.variants || [];
+      var v = variants.find(function(x) { return x.available; }) || variants[0] || {};
+      var img = p.featured_image || (p.images && p.images[0]) || '';
+      // Shopify storefront API returns price in dollars (string). Convert to cents-int for fmt.
+      var priceNum = typeof v.price === 'number' ? v.price : parseFloat(v.price || p.price || 0);
+      var priceCents = priceNum > 100 ? Math.round(priceNum) : Math.round(priceNum * 100);
+      return {
+        id: p.id,
+        handle: p.handle,
+        title: p.title,
+        price: priceCents,
+        image: img,
+        variantId: v.id,
+        available: v.available !== false
+      };
+    }
+
+    function fmtPrice(cents) {
+      // Use the cart drawer's money formatter if available (respects store currency), otherwise USD fallback.
+      try { if (typeof CCD.formatMoney === 'function') return CCD.formatMoney(cents); } catch (e) {}
+      var n = (Number(cents) || 0) / 100;
+      return '$' + n.toFixed(2);
+    }
+
+    function buildCard(p) {
+      var img = p.image || '';
+      var imgHtml = img
+        ? '<img src="' + img + '" style="width:100%;height:100%;object-fit:cover" alt="' + (p.title || '') + '">'
+        : '<div style="width:100%;height:100%;background:#f5f5f5"></div>';
+      var disabled = p.available === false;
+      var btnLabel = disabled ? 'Sold out' : 'Add';
+      var btnStyle = 'margin-top:6px;padding:6px 14px;font-size:11px;background:' +
+        (disabled ? '#cbd5e1' : 'var(--ccd-primary, #7c3aed)') +
+        ';color:#fff;border:none;border-radius:4px;cursor:' + (disabled ? 'not-allowed' : 'pointer') + ';font-weight:600';
+      return '<div class="ccd-upsell-card" data-variant-id="' + (p.variantId || '') +
+        '" data-product-handle="' + (p.handle || '') + '"' +
+        ' style="min-width:120px;flex-shrink:0;text-align:center">' +
+        '<div style="width:80px;height:80px;background:#f5f5f5;border-radius:8px;margin:0 auto 6px;overflow:hidden;display:flex;align-items:center;justify-content:center">' + imgHtml + '</div>' +
+        '<div style="font-size:11px;font-weight:600;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px" title="' + (p.title || '') + '">' + (p.title || '') + '</div>' +
+        '<div style="font-size:12px;color:#666">' + fmtPrice(p.price) + '</div>' +
+        '<button class="ccd-upsell-add" ' + (disabled ? 'disabled' : '') + ' style="' + btnStyle + '">' + btnLabel + '</button>' +
+        '</div>';
+    }
+
+    function render(products, anchorKey) {
+      // Pull any prior version first so we replace cleanly on re-render.
+      var existing = document.getElementById('ccd-upsells');
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      if (!products || products.length === 0) {
+        CCD._upsellsAnchorKey = anchorKey || '';
+        return; // Nothing to show — bail silently (no empty section visible to the customer).
+      }
+
+      var layoutStyle;
+      if (layout === 'single-card') {
+        layoutStyle = 'display:flex;justify-content:center;padding:4px 0 0 0';
+      } else if (layout === 'stacked-list') {
+        layoutStyle = 'display:flex;flex-direction:column;align-items:center;gap:10px;padding:4px 0 0 0';
+      } else {
+        // Horizontal scroll — center when items don't overflow; scroll normally when they do.
+        layoutStyle = 'display:flex;justify-content:center;gap:12px;overflow-x:auto;padding:4px 0 0 0;scrollbar-width:thin';
+      }
+
+      var items = (layout === 'single-card' ? products.slice(0, 1) : products).map(buildCard).join('');
+      var html = '<div id="ccd-upsells" class="ccd-upsells" style="padding:4px 0 8px 0">' +
+        '<div class="ccd-upsell-headline" style="font-size:13px;margin-bottom:4px">' + headlineHtml + '</div>' +
+        '<div class="ccd-upsell-list" style="' + layoutStyle + '">' + items + '</div>' +
+        '</div>';
+
+      var container = document.createElement('div');
+      container.innerHTML = html;
+      var node = container.firstChild;
+
+      var inserted = false;
+      if (position === 'above-footer') {
+        var footer = document.querySelector('.ccd-sticky-footer');
+        if (footer && footer.parentNode) { footer.parentNode.insertBefore(node, footer); inserted = true; }
+      } else if (position === 'after-checkout') {
+        var checkout = document.querySelector('.ccd-checkout-btn');
+        if (checkout && checkout.parentNode) { checkout.parentNode.insertBefore(node, checkout.nextSibling); inserted = true; }
+      } else {
+        // below-items (default) — insert as a SIBLING immediately AFTER .ccd-items, not as a child.
+        // Appending as a child caused the upsell to render ABOVE items when (a) injection raced ahead of
+        // line-item paint, or (b) .ccd-items got innerHTML-rewritten on cart refresh.
+        var itemsContainer = document.querySelector('.ccd-items');
+        if (itemsContainer && itemsContainer.parentNode) {
+          itemsContainer.parentNode.insertBefore(node, itemsContainer.nextSibling);
+          inserted = true;
+        }
+      }
+      if (!inserted) {
+        // Last-resort fallback — place inside .ccd-inner. Still safer than nothing.
+        var inner = document.querySelector('.ccd-inner');
+        if (inner) inner.appendChild(node);
+      }
+
+      // Wire add-to-cart buttons. Event delegation so re-renders don't leak handlers.
+      node.addEventListener('click', function(ev) {
+        var btn = ev.target && ev.target.closest && ev.target.closest('.ccd-upsell-add');
+        if (!btn || btn.disabled) return;
+        var card = btn.closest('.ccd-upsell-card');
+        if (!card) return;
+        var variantId = card.getAttribute('data-variant-id');
+        if (!variantId) return;
+        btn.disabled = true;
+        var prevLabel = btn.textContent;
+        btn.textContent = 'Adding…';
+        fetch('/cart/add.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ id: Number(variantId), quantity: 1 })
+        }).then(function(r) {
+          return r.ok ? r.json() : Promise.reject(new Error('add failed'));
+        }).then(function() {
+          // Track conversion signal for the A/B engine — upsell click is a high-value event.
+          try { if (CCD.track) CCD.track('UPSELL_ADDED', { variantId: Number(variantId), source: source }); } catch (e) {}
+          // Refresh cart so progress bar, totals, and other addons update.
+          if (CCD.refresh) CCD.refresh();
+          btn.textContent = 'Added ✓';
+          setTimeout(function() { btn.textContent = prevLabel; btn.disabled = false; }, 1500);
+        }).catch(function() {
+          btn.textContent = 'Try again';
+          setTimeout(function() { btn.textContent = prevLabel; btn.disabled = false; }, 1500);
+        });
+      });
+
+      CCD._upsellsAnchorKey = anchorKey || '';
+    }
+
+    // Resolve products based on source.
+    CCD._upsellsInflight = true;
+    var loadProducts;
+    if (source === 'manual') {
+      var key = 'manual:' + manualProducts.map(function(p) { return (p && (p.handle || p.variantId)) || ''; }).join(',') + ':n=' + maxN;
+      if (key === CCD._upsellsAnchorKey && document.getElementById('ccd-upsells')) { CCD._upsellsInflight = false; return; }
+      loadProducts = fetchManualProducts().then(function(list) { return { products: list, key: key }; });
+    } else {
+      var intent = (source === 'ai-selected') ? 'complementary' : 'related';
+      loadProducts = fetch('/cart.js', { credentials: 'same-origin' })
+        .then(function(r) { return r.ok ? r.json() : { items: [] }; })
+        .then(function(cart) {
+          var anchorId = pickAnchorProductId(cart);
+          if (!anchorId) return { products: [], key: 'no-anchor' };
+          var key = intent + ':' + anchorId + ':n=' + maxN;
+          if (key === CCD._upsellsAnchorKey && document.getElementById('ccd-upsells')) return { products: null, key: key };
+          return fetchShopifyRecs(intent, anchorId).then(function(prods) {
+            var inCart = {};
+            (cart.items || []).forEach(function(it) { if (it && it.product_id) inCart[it.product_id] = true; });
+            var normalized = prods
+              .filter(function(p) { return !inCart[p.id]; })
+              .slice(0, maxN)
+              .map(normalizeShopifyProduct);
+            return { products: normalized, key: key };
+          });
+        })
+        .catch(function() { return { products: [], key: 'error' }; });
+    }
+
+    loadProducts.then(function(result) {
+      if (result && result.products !== null) {
+        render(result.products || [], result.key);
+      }
+    }).catch(function() {}).then(function() {
+      CCD._upsellsInflight = false;
+    });
   };
 
   if (document.readyState === 'loading') {

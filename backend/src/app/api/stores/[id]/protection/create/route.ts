@@ -128,6 +128,9 @@ export async function POST(
       description = '',
     } = body;
 
+    // Strip HTML entities from user input (e.g. &nbsp; from rich text editors)
+    const cleanDescription = (description || '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+
     const shopDomain = store.shopDomain;
     const token = store.accessToken;
 
@@ -163,7 +166,7 @@ export async function POST(
         title,
         productType: 'Service',
         tags: ['_eliminai-cart-protection', '_eliminai-hidden'],
-        descriptionHtml: description || `<p>${title} — protects your order against loss, damage, and theft during shipping.</p>`,
+        descriptionHtml: cleanDescription || `<p>${title} — protects your order against loss, damage, and theft during shipping.</p>`,
       },
     });
 
@@ -204,6 +207,7 @@ export async function POST(
             id: Number(variantNumericId),
             price: firstPriceDollars,
             title: firstTierTitle,
+            requires_shipping: false,
           },
         }),
       },
@@ -369,7 +373,7 @@ export async function POST(
         iconId,
         pricingMode,
         defaultOn,
-        description,
+        description: cleanDescription,
         productName: title,
       },
     };
