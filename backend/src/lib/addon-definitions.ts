@@ -439,6 +439,164 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
     defaultConfig: { textTemplate: 'people-viewing', style: 'subtle-text', position: 'header' },
   },
 
+  {
+    key: 'notes',
+    label: 'Order Notes',
+    icon: '📝',
+    description: 'Let shoppers add a note to their order.',
+    estimatedImpact: 'AOV neutral, conversion +1-2%',
+    impactMetric: 'conversion',
+    dimensions: [
+      { key: 'label', label: 'Field label', type: 'text', testable: false, default: 'Add a note to your order' },
+      { key: 'placeholder', label: 'Placeholder', type: 'text', testable: false, default: '' },
+      { key: 'maxChars', label: 'Max characters (0 = unlimited)', type: 'number', testable: false, default: 250, min: 0, max: 1000 },
+      {
+        key: 'position',
+        label: 'Position in footer',
+        type: 'select',
+        testable: true,
+        options: [
+          { value: 'top', label: 'Top of footer' },
+          { value: 'bottom', label: 'Bottom of footer' },
+        ],
+        default: 'bottom',
+      },
+    ],
+    defaultConfig: {
+      enabled: false,
+      label: 'Add a note to your order',
+      placeholder: '',
+      maxChars: 250,
+      position: 'bottom',
+    },
+  },
+
+  {
+    key: 'discountCode',
+    label: 'Discount Code Field',
+    icon: '🏷️',
+    description: 'Inline discount code input in cart.',
+    estimatedImpact: 'Conversion +2-5% (when used with promos)',
+    impactMetric: 'conversion',
+    dimensions: [
+      { key: 'placeholder', label: 'Input placeholder', type: 'text', testable: false, default: 'Discount code' },
+      { key: 'applyButtonLabel', label: 'Apply button label', type: 'text', testable: false, default: 'Apply' },
+      {
+        key: 'position',
+        label: 'Position',
+        type: 'select',
+        testable: true,
+        options: [
+          { value: 'top', label: 'Top of footer' },
+          { value: 'bottom', label: 'Bottom of footer' },
+        ],
+        default: 'bottom',
+      },
+      { key: 'showAppliedBadge', label: 'Show applied-discount badge', type: 'toggle', testable: false, default: true },
+    ],
+    defaultConfig: {
+      enabled: false,
+      placeholder: 'Discount code',
+      applyButtonLabel: 'Apply',
+      position: 'bottom',
+      showAppliedBadge: true,
+    },
+  },
+
+  {
+    key: 'termsCheckbox',
+    label: 'Terms & Conditions',
+    icon: '☑️',
+    description: 'Required agreement checkbox above the checkout button.',
+    estimatedImpact: 'Legal compliance; minor conversion impact',
+    impactMetric: 'conversion',
+    dimensions: [
+      {
+        key: 'labelHtml',
+        label: 'Checkbox label (supports <a> tags only)',
+        type: 'text',
+        testable: false,
+        default: 'I agree to the <a href="/policies/terms-of-service">Terms of Service</a>',
+      },
+      {
+        key: 'errorMessage',
+        label: 'Error if unchecked',
+        type: 'text',
+        testable: false,
+        default: 'Please agree to the terms before continuing',
+      },
+      {
+        key: 'blockCheckoutIfUnchecked',
+        label: 'Block checkout if unchecked',
+        type: 'toggle',
+        testable: false,
+        default: true,
+      },
+    ],
+    defaultConfig: {
+      enabled: false,
+      labelHtml: 'I agree to the <a href="/policies/terms-of-service">Terms of Service</a>',
+      errorMessage: 'Please agree to the terms before continuing',
+      blockCheckoutIfUnchecked: true,
+    },
+  },
+
+  {
+    key: 'expressPayments',
+    label: 'Express Checkout Buttons',
+    icon: '⚡',
+    description: 'Show Shop Pay, Apple Pay, PayPal, and more directly in the cart.',
+    estimatedImpact: 'Conversion +8-15%',
+    impactMetric: 'conversion',
+    dimensions: [
+      {
+        key: 'providers',
+        label: 'Show providers',
+        type: 'checkboxes',
+        testable: false,
+        checkboxOptions: [
+          { value: 'shopPay', label: 'Shop Pay' },
+          { value: 'googlePay', label: 'Google Pay' },
+          { value: 'paypal', label: 'PayPal' },
+          { value: 'applePay', label: 'Apple Pay' },
+          { value: 'amazonPay', label: 'Amazon Pay' },
+          { value: 'metaPay', label: 'Meta Pay' },
+        ],
+        default: { shopPay: true, googlePay: true, paypal: true, applePay: true, amazonPay: false, metaPay: false },
+      },
+      {
+        key: 'position',
+        label: 'Position relative to checkout button',
+        type: 'select',
+        testable: true,
+        options: [
+          { value: 'above', label: 'Above checkout button' },
+          { value: 'below', label: 'Below checkout button' },
+        ],
+        default: 'above',
+      },
+      {
+        key: 'layout',
+        label: 'Layout',
+        type: 'select',
+        testable: true,
+        options: [
+          { value: 'stacked', label: 'Stacked (full-width buttons)' },
+          { value: 'row', label: 'Row (compact)' },
+        ],
+        default: 'stacked',
+      },
+      { key: 'separatorLabel', label: 'Separator label (empty = none)', type: 'text', testable: false, default: 'or' },
+    ],
+    defaultConfig: {
+      enabled: true,
+      providers: { shopPay: true, googlePay: true, paypal: true, applePay: true, amazonPay: false, metaPay: false },
+      position: 'above',
+      layout: 'stacked',
+      separatorLabel: 'or',
+    },
+  },
+
 ];
 
 // ─── Helper Functions ────────────────────────────────────────────────
@@ -491,4 +649,78 @@ export function getDefaultAddonsConfig(): {
   }
 
   return { addons, optimizeQueue: [] };
+}
+
+// ─── HTML Sanitizer for termsCheckbox.labelHtml ──────────────────────
+//
+// Allows ONLY <a> tags with a strict allowlist of attributes (href, target, rel).
+// Strips everything else. Rejects javascript: and data: in href. Caps output at
+// 500 chars. Server-side only — never trust client output.
+
+const ALLOWED_ANCHOR_ATTRS = new Set(['href', 'target', 'rel']);
+
+function isSafeHref(href: string): boolean {
+  const trimmed = href.trim().toLowerCase();
+  if (trimmed.startsWith('javascript:')) return false;
+  if (trimmed.startsWith('data:')) return false;
+  if (trimmed.startsWith('vbscript:')) return false;
+  return true;
+}
+
+/**
+ * Sanitize an HTML string intended for a checkbox label.
+ *
+ * - Strips all tags except <a>
+ * - On <a>: keeps only href/target/rel attributes
+ * - Rejects javascript:, data:, vbscript: schemes in href (drops the tag entirely)
+ * - Removes event-handler attributes (onclick, onerror, etc.)
+ * - Truncates output to 500 characters
+ *
+ * Returns the sanitized string. Never throws.
+ */
+export function sanitizeLabelHtml(input: unknown): string {
+  if (typeof input !== 'string') return '';
+
+  // First pass: remove dangerous nested elements wholesale (their contents too)
+  let out = input
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<script\b[^>]*\/?>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, '')
+    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '')
+    .replace(/<iframe\b[^>]*\/?>/gi, '');
+
+  // Second pass: walk tags. Keep only <a>...</a> with safe attrs; drop everything else.
+  out = out.replace(/<\/?\s*([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (full, rawTag, rawAttrs) => {
+    const tag = String(rawTag).toLowerCase();
+    const isClose = full.startsWith('</');
+
+    if (tag !== 'a') {
+      // Strip the tag entirely (but its text content remains)
+      return '';
+    }
+
+    if (isClose) return '</a>';
+
+    // Parse attributes from rawAttrs; keep only allowed ones with safe values
+    const kept: string[] = [];
+    const attrRegex = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
+    let m: RegExpExecArray | null;
+    while ((m = attrRegex.exec(String(rawAttrs))) !== null) {
+      const name = m[1].toLowerCase();
+      const value = m[2] ?? m[3] ?? m[4] ?? '';
+      if (!ALLOWED_ANCHOR_ATTRS.has(name)) continue;
+      if (name === 'href' && !isSafeHref(value)) {
+        // Whole <a> is unsafe — drop the tag entirely
+        return '';
+      }
+      // Escape any double-quotes in value to prevent breaking attr
+      const safe = value.replace(/"/g, '&quot;');
+      kept.push(`${name}="${safe}"`);
+    }
+    return kept.length > 0 ? `<a ${kept.join(' ')}>` : '<a>';
+  });
+
+  // Final length cap
+  if (out.length > 500) out = out.slice(0, 500);
+  return out;
 }
