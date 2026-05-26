@@ -18,14 +18,33 @@ const ctaLink = z.string().max(500).refine(
 
 const fontFamily = z.string().max(100).regex(/^[a-zA-Z0-9 ,\-_'"]+$/);
 
+const closeButtonSchema = z.object({
+  position: z.enum(['left', 'right']).optional(),
+  iconSize: z.enum(['S', 'M', 'L']).optional(),
+  strokeWeight: z.enum(['normal', 'thick']).optional(),
+  border: z.enum(['none', 'thin', 'normal', 'thick']).optional(),
+  bgColor: hexColor.optional(),
+  bgHoverColor: hexColor.optional(),
+  iconColor: hexColor.optional(),
+  borderColor: hexColor.optional(),
+  borderHoverColor: hexColor.optional(),
+}).strict();
+
 const headerSchema = z.object({
   title: safeString(200).optional(),
+  titleAlignment: z.enum(['side', 'center']).optional(),
   showItemCountBadge: z.boolean().optional(),
   badgeColor: hexColor.optional(),
   closeIcon: z.enum(['x', 'chevron', 'arrow']).optional(),
+  closeButton: closeButtonSchema.optional(),
   bgColor: hexColor.optional(),
   borderStyle: z.enum(['none', 'line', 'shadow']).optional(),
   padding: z.enum(['compact', 'comfortable', 'roomy']).optional(),
+  heightPreset: z.enum(['slim', 'tall']).optional(),
+  headingLevel: z.enum(['h2', 'h3', 'h4']).optional(),
+  titleFontSize: z.number().int().min(14).max(48).optional(),
+  titleFontWeight: z.enum(['normal', 'semibold', 'bold']).optional(),
+  titleColor: hexColor.optional(),
 }).strict();
 
 const milestoneBarSchema = z.object({
@@ -76,6 +95,15 @@ const footerSchema = z.object({
   bgStyle: z.enum(['transparent', 'surface', 'accent']).optional(),
   borderTop: z.enum(['none', 'line', 'shadow']).optional(),
   showGiftNote: z.boolean().optional(),
+  stickyFooter: z.boolean().optional(),
+}).strict();
+
+const behaviorSchema = z.object({
+  openOnAddToCart: z.boolean().optional(),
+  autoCloseOnCheckout: z.boolean().optional(),
+  bodyScrollLock: z.boolean().optional(),
+  mobileFullscreen: z.boolean().optional(),
+  hideOnPages: z.array(z.string().max(200)).max(50).optional(),
 }).strict();
 
 const checkoutButtonSchema = z.object({
@@ -126,6 +154,7 @@ const globalSchema = z.object({
   headingScale: z.number().min(1.0).max(1.8).optional(),
   spacing: z.enum(['compact', 'comfortable', 'roomy']).optional(),
   radius: z.enum(['sharp', 'soft', 'rounded']).optional(),
+  behavior: behaviorSchema.optional(),
   // customCss intentionally NOT declared — .strict() rejects it
 }).strict();
 
