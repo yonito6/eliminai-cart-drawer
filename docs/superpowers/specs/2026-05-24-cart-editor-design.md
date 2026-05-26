@@ -1,16 +1,21 @@
 # Cart Editor — Design Spec
 
 **Date:** 2026-05-24
-**Status:** Design approved, spec revised after second review (rev 3) — test-count math reconciled, Zod/TS schemaVersion clarified, blast-radius lock tests enumerated
+**Status:** Rev 4 — UpCart parity pass: 4 new addons added (notes, discountCode, termsCheckbox, expressPayments). Sticky-launcher and header-logo deferred.
 **Owner:** Yoni
 
 ## 1. Problem & goal
 
 Today's cart drawer dashboard has an Addons tab for enabling/disabling addons and an A/B Tests tab, but no place to edit the visuals of the cart itself — header text, checkout button color, milestone copy, totals layout, etc. Merchants can't customize without filing requests or editing code.
 
-**Goal:** a new "Cart Editor" tab where the merchant clicks any element in a live preview, edits every meaningful setting in a right-side panel, and saves the result to push live to all shoppers.
+**Goal:** a new "Cart Editor" tab where the merchant clicks any element in a live preview, edits every meaningful setting in a right-side panel, and saves the result to push live to all shoppers. Clicking elements that are owned by an Addon (milestone, trust line, notes, discount code, terms, express payments) opens the relevant Addon editor instead of a Cart-Editor-only editor — single source of truth per concept.
 
-**Non-goals:** This is not adding new addons (subscribe-save, quantity breaks, charity round-up, etc.). It is deeper settings control over what the cart already has, plus three explicitly requested new options (total outside checkout button, crossed-out compare-at price, "You saved" row).
+**Non-goals (v1):**
+- Custom HTML / Custom CSS / JavaScript merchant escape hatch (security review required)
+- Sticky cart launcher button on the storefront (the floating pill OUTSIDE the drawer)
+- Header logo upload
+- Subscribe-and-save inline toggle, quantity-break ladder, charity round-up, tiered free gift unlock, recently-viewed row, sticky pinned upsell carousel
+- Theme presets, per-segment overrides, multi-language UI for the editor
 
 ## 2. Decisions made during brainstorming
 
@@ -22,11 +27,15 @@ Today's cart drawer dashboard has an Addons tab for enabling/disabling addons an
 | Viewport | Desktop + Mobile preview toggle at top of preview. |
 | Hover/select feedback | Hover halo (dashed purple outline + floating label) + solid ring on selected element. |
 | Tree sidebar | None. Preview-state dropdown above the preview ("Cart with items / Empty / Unlocked / Loading") gives access to hidden states. |
-| New pricing options | Add as options. Defaults match current cart behavior. |
+| New pricing options | `totalOutsideButton`, `showCrossedOutSubtotal`, `showYouSaved` added as options. Defaults match current cart behavior. |
 | Announcement bar | Becomes an Addon (lives in Addons tab, not Cart Editor). |
-| Gift note field | Add as a Cart Editor option (under Line Item / Footer area). |
-| Custom CSS | **Out of scope for v1.** Security review required first (csstree AST allow-list). Deferred to a separate spec. |
-| Ownership of overlapping fields | Addons own: milestone tiers/thresholds (drives logic), trust-line/payment icons set (drives Shopify payment data), all addon `enabled` toggles. Cart Editor owns: visual-only style (colors, sizes, text templates, layout positions). See §4.3 Ownership map. |
+| Gift note field | Replaced by generic `notes` Addon (see §4.4). |
+| Custom CSS | **Out of scope for v1.** Security review required first. Deferred. |
+| Sticky cart launcher button | **Out of scope for v1.** Lives outside drawer, separate concern. |
+| Header logo upload | **Out of scope for v1.** Headline + close button only in v1. |
+| 4 new addons in this spec | `notes`, `discountCode`, `termsCheckbox`, `expressPayments` — built in same pass as Cart Editor. |
+| Click-routing for addon-owned elements | Clicking footer's notes/discount/terms/express-pay area in Cart Editor preview → opens the relevant Addon's editor panel directly (deep-link). |
+| Ownership of overlapping fields | Addons own: enabled toggles, functional fields (tiers, providers list, char limits, etc.). Cart Editor owns: visual-only style. See §4.3 Ownership map. |
 
 ## 3. Architecture
 
@@ -39,12 +48,14 @@ Today's cart drawer dashboard has an Addons tab for enabling/disabling addons an
 │  [Desktop ▾] [Mobile]        │  Default: "Click an element   │
 │  Preview state: [Items ▾]    │   in the preview to edit it." │
 │                              │                                │
-│  Real cart drawer DOM        │  When element selected,        │
-│  (same HTML/CSS as           │  this panel becomes the        │
-│  production v14-complete.js) │  editor for that element.      │
-│  + overlay layer for         │                                │
-│  hotspots / hover halo /     │  Discard | Save Changes        │
-│  selection ring              │                                │
+│  Real cart drawer DOM        │  When element selected:        │
+│  (same HTML/CSS as           │   - Cart-Editor-owned element  │
+│  production v14-complete.js) │     → editor renders inline    │
+│  + overlay layer for         │   - Addon-owned element        │
+│  hotspots / hover halo /     │     → deep-link to Addon tab    │
+│  selection ring              │       with that addon expanded │
+│                              │                                │
+│                              │  Discard | Save Changes        │
 └──────────────────────────────┴──────────────────────────────┘
 ```
 
@@ -55,21 +66,31 @@ backend/src/app/dashboard/cart-editor/
 ├── page.tsx                          # the tab — top-level layout
 ├── preview-canvas.tsx                # mounts real cart DOM + overlay
 ├── overlay/
-│   ├── hotspots.ts                   # element → CSS selector → label registry
+│   ├── hotspots.ts                   # element → CSS selector → label → routing target
 │   ├── hover-halo.tsx                # dashed outline + label on hover
 │   └── selection-ring.tsx            # solid ring on selected
 ├── element-editors/
 │   ├── header-editor.tsx
-│   ├── milestone-editor.tsx
+│   ├── milestone-editor.tsx          # visual-only; copy/tier fields deep-link to Addons
 │   ├── line-item-editor.tsx
 │   ├── empty-state-editor.tsx
 │   ├── footer-editor.tsx
 │   ├── checkout-button-editor.tsx
-│   ├── trust-line-editor.tsx
+│   ├── trust-line-editor.tsx         # visual-only; payment providers deep-link to Addons
 │   └── global-style-editor.tsx
+├── addon-deep-link.tsx               # renders "Edit in Addons →" CTA + opens Addons tab with addon expanded
 ├── draft-store.ts                    # React Context — draft, savedConfig, isDirty, setField, discard, save
 ├── schema.ts                         # Zod schema for editorOverrides
 └── api-client.ts                     # GET/PUT wrappers
+```
+
+New addon editors (lib `addon-definitions.ts` + UI in existing addons tab):
+```
+backend/src/app/dashboard/addons/
+├── notes-addon-editor.tsx              # NEW
+├── discount-code-addon-editor.tsx      # NEW
+├── terms-checkbox-addon-editor.tsx     # NEW
+└── express-payments-addon-editor.tsx   # NEW
 ```
 
 ### 3.3 Reuse, not reinvent
@@ -90,31 +111,41 @@ model CartConfig {
 }
 ```
 
-Why one nested JSON column:
-- Additive — new fields require no schema migration
-- Maps cleanly to the editor section model
-- Doesn't touch existing addon / A/B test data
-- Read by v14-complete.js via the existing `/apps/eliminai/config` proxy
+(Already merged in `claude/cart-editor` branch.)
 
-### 4.1 Shape (Zod-validated)
-
-**Zod schema reconciliation:** The TypeScript type below shows `schemaVersion` as required because that is what every current dashboard client is expected to send. The Zod schema on the server, however, declares it as `z.literal(1).default(1)` — so a payload from an older deployed client that omits the field is migrated to `{ schemaVersion: 1, ...rest }` BEFORE the rest of the schema runs. New clients are always required to send `1`. There is no contradiction; the TS type describes the post-parse shape, and Zod handles the missing-field migration on input.
+### 4.1 EditorOverrides shape (Zod-validated)
 
 ```ts
 type EditorOverrides = {
-  schemaVersion: 1;  // post-parse shape; Zod uses z.literal(1).default(1) — see note above
+  schemaVersion: 1;
   header?: {
-    title?: string;
+    title?: string;                                 // supports {{cart_quantity}} token
+    titleAlignment?: 'side' | 'center';
     showItemCountBadge?: boolean;
     badgeColor?: string;
     closeIcon?: 'x' | 'chevron' | 'arrow';
+    closeButton?: {
+      position?: 'left' | 'right';
+      iconSize?: 'S' | 'M' | 'L';
+      strokeWeight?: 'normal' | 'thick';
+      border?: 'none' | 'thin' | 'normal' | 'thick';
+      bgColor?: string;
+      bgHoverColor?: string;
+      iconColor?: string;
+      borderColor?: string;
+      borderHoverColor?: string;
+    };
     bgColor?: string;
     borderStyle?: 'none' | 'line' | 'shadow';
     padding?: 'compact' | 'comfortable' | 'roomy';
+    heightPreset?: 'slim' | 'tall';
+    headingLevel?: 'h2' | 'h3' | 'h4';            // semantic level for a11y
+    titleFontSize?: number;                        // 14–48
+    titleFontWeight?: 'normal' | 'semibold' | 'bold';
+    titleColor?: string;
   };
   milestoneBar?: {
-    enabled?: boolean;
-    tiers?: Array<{ threshold: number; rewardLabel: string; rewardIcon: string }>;
+    // visual-only — tiers/threshold/enabled live in Addon
     preUnlockTemplate?: string;
     unlockedTemplate?: string;
     celebrationAnim?: boolean;
@@ -128,7 +159,7 @@ type EditorOverrides = {
     showVariant?: boolean; showSku?: boolean;
     qtyControl?: 'minusPlus' | 'stepper' | 'dropdown';
     removeStyle?: 'x' | 'trash' | 'text';
-    showCompareAtPrice?: boolean;   // NEW
+    showCompareAtPrice?: boolean;
     showSavingsBadge?: boolean;
     separator?: 'line' | 'spacing' | 'card';
     titleSize?: number; titleWeight?: number;
@@ -143,14 +174,17 @@ type EditorOverrides = {
     showSubtotal?: boolean;
     showShippingNote?: boolean;
     showTaxNote?: boolean;
-    showYouSaved?: boolean;             // NEW
-    showCrossedOutSubtotal?: boolean;   // NEW
-    totalOutsideButton?: boolean;       // NEW
+    showYouSaved?: boolean;
+    showCrossedOutSubtotal?: boolean;
+    totalOutsideButton?: boolean;
     totalLabel?: string;
     totalSize?: number; totalWeight?: number;
     bgStyle?: 'transparent' | 'surface' | 'accent';
     borderTop?: 'none' | 'line' | 'shadow';
-    showGiftNote?: boolean;             // gift note field toggle
+    stickyFooter?: boolean;                        // explicit toggle (default true)
+    // NOTE: notes / discountCode / termsCheckbox / expressPayments are Addons.
+    //       Cart Editor does NOT mirror their config here.
+    //       Clicking those areas in preview deep-links to the Addon editor.
   };
   checkoutButton?: {
     label?: string;
@@ -163,19 +197,19 @@ type EditorOverrides = {
     loadingAnim?: 'spinner' | 'dots' | 'shimmer';
   };
   trustLine?: {
-    enabled?: boolean;
+    // visual-only — payment provider list lives in Addon
     text?: string; showLockIcon?: boolean;
-    paymentIcons?: Record<string, boolean>;
+    paymentIconsVisible?: Record<string, boolean>;  // override-hide per provider
     position?: 'above' | 'below';
     textSize?: number; textColor?: string;
   };
   global?: {
     side?: 'left' | 'right';
-    widthDesktop?: number;  // 320–800px
-    widthMobilePct?: number; // 50–100
-    backdropColor?: string; backdropOpacity?: number; // 0–1
+    widthDesktop?: number;
+    widthMobilePct?: number;
+    backdropColor?: string; backdropOpacity?: number;
     openAnim?: 'slide' | 'fade' | 'scale';
-    openDurationMs?: number; // 100–600
+    openDurationMs?: number;
     palette?: {
       bg?: string; surface?: string; text?: string; muted?: string;
       accent?: string; border?: string; success?: string; danger?: string;
@@ -184,54 +218,146 @@ type EditorOverrides = {
     baseFontSize?: number; headingScale?: number;
     spacing?: 'compact' | 'comfortable' | 'roomy';
     radius?: 'sharp' | 'soft' | 'rounded';
-    // customCss intentionally omitted in v1 — see §2. Deferred for security review.
+    behavior?: {
+      openOnAddToCart?: boolean;             // default true
+      autoCloseOnCheckout?: boolean;         // default true
+      bodyScrollLock?: boolean;              // default true
+      mobileFullscreen?: boolean;            // default false
+      hideOnPages?: string[];                // page-path glob patterns
+    };
   };
 };
 ```
 
-### 4.3 Ownership map (Addon settings vs Cart Editor overrides)
+### 4.2 Render contract
 
-The Addons tab and the Cart Editor must never write to overlapping fields. Each row below is owned by exactly one tab. The other tab MAY read the value (for preview) but MUST NOT mutate it.
+Every field is **optional**. v14-complete.js renders each part with a default fallback. When `editorOverrides` is `null`, `undefined`, or `{}`, the cart renders identically to today.
+
+### 4.3 Ownership map (Addon settings vs Cart Editor overrides)
 
 | Concept | Owner | Field path |
 |---|---|---|
 | Free-shipping milestone enabled toggle | Addons | `addons.milestone.enabled` |
 | Milestone tiers (threshold, reward label, icon) | Addons | `addons.milestone.tiers[]` |
-| Milestone copy templates (preUnlock / unlocked) | Cart Editor | `editorOverrides.milestoneBar.preUnlockTemplate` / `unlockedTemplate` |
-| Milestone visual style (fill, track, height, text size, position) | Cart Editor | `editorOverrides.milestoneBar.{fillColor,trackColor,height,textSize,textWeight,position}` |
-| Milestone celebration animation toggle | Cart Editor | `editorOverrides.milestoneBar.celebrationAnim` |
-| Trust line enabled toggle | Addons | `addons.trustLine.enabled` |
-| Trust line payment provider icons (which providers exist) | Addons | `addons.trustLine.providers[]` |
-| Trust line per-icon show/hide override + text + lock + position | Cart Editor | `editorOverrides.trustLine.{paymentIcons,text,showLockIcon,position,textSize,textColor}` |
-| Gift note addon (enable, char limit, validation) | Addons | `addons.giftNote.*` |
-| Gift note visual position/label override | Cart Editor | `editorOverrides.footer.showGiftNote` (visibility only) |
+| Milestone copy templates | Cart Editor | `editorOverrides.milestoneBar.preUnlockTemplate / unlockedTemplate` |
+| Milestone visual style | Cart Editor | `editorOverrides.milestoneBar.{fillColor, trackColor, height, textSize, position}` |
+| Trust line enabled | Addons | `addons.trustLine.enabled` |
+| Payment providers list (which exist) | Addons | `addons.trustLine.providers[]` |
+| Per-icon visible override + text + lock + position | Cart Editor | `editorOverrides.trustLine.*` |
+| **Notes addon enabled + label + placeholder + maxChars** | Addons | `addons.notes.*` |
+| **Discount code addon enabled + placeholder + applyButtonLabel** | Addons | `addons.discountCode.*` |
+| **Terms checkbox addon enabled + labelHtml + errorMessage + required** | Addons | `addons.termsCheckbox.*` |
+| **Express payments enabled + providers + position + layout** | Addons | `addons.expressPayments.*` |
 
-**Validation rule (server-side):** PUT `/api/cart-editor/config` rejects with 400 if the body contains any path explicitly listed as Addon-owned. The Zod schema for `editorOverrides` does not declare those keys, so they get stripped before save, AND an explicit pre-validation check returns an error message naming the conflict. This prevents silent corruption.
+**Validation rule (server-side):** PUT `/api/cart-editor/config` returns 400 if the body contains any Addon-owned path. Zod strips unknown keys; an explicit pre-validation check names conflicts in the error message.
 
-**Read-side merge in v14-complete.js:**
-- Milestone *tiers* always come from `addons.milestone.tiers` (Addons is source of truth)
-- Milestone *copy* uses `editorOverrides.milestoneBar.preUnlockTemplate` if set, else the addon default
-- Milestone *visual style* uses `editorOverrides.milestoneBar.{fillColor,...}` if set, else CSS defaults
-- If Addons disables milestone (`addons.milestone.enabled = false`), Cart Editor's milestone settings render nothing (Addon ownership wins on visibility of the whole feature)
-- `trustLine.paymentIcons` keys that are NOT in `addons.trustLine.providers[]` are silently ignored at render time (graceful degradation when a provider is removed in Addons)
+**Read-side merge in v14-complete.js:** Addon-owned fields render directly from `cfg.addons.*`. Cart Editor visual fields layer on top via CSS variable injection. If an addon is disabled, Cart Editor's visual settings for that area render nothing (Addon visibility wins).
 
-**Cart Editor UI behavior when an Addon is disabled:**
+**Cart Editor UI behavior when an addon is disabled:** Cart Editor visual fields stay editable. Preview shows nothing (matches shopper reality). Inline notice: "This addon is currently disabled in the Addons tab. [Go to Addons]"
 
-The Cart Editor settings panel remains fully editable for Cart Editor-owned visual fields even when the matching Addon is disabled — merchants can prepare visual styling for later enablement. The preview canvas reflects shopper-side reality (the addon is off, nothing renders) but adds a non-blocking inline notice in the settings panel:
+### 4.4 The 4 new Addons (added in this pass)
 
-> "This addon is currently disabled in the Addons tab. Your visual changes are saved but won't show to shoppers until you enable it. [Go to Addons]"
+#### 4.4.1 `notes` addon
 
-The notice appears in any element editor whose owning addon is disabled (milestone bar, trust line, gift note).
-
-### 4.2 Render contract
-
-Every field is **optional**. v14-complete.js renders each part with:
-
-```js
-var headerTitle = (cfg.editorOverrides?.header?.title) || 'Your Cart';
+```ts
+type NotesAddonConfig = {
+  enabled: boolean;            // default false
+  label: string;               // default "Add a note to your order"
+  placeholder: string;         // default ""
+  maxChars: number;            // 0–1000; default 250; 0 = unlimited
+  position: 'top' | 'bottom'; // within footer; default 'bottom'
+  // Visual fields editable in Cart Editor footer section:
+  // bgColor, borderColor, fontSize, labelColor (handled via editorOverrides.footer or CSS vars)
+};
 ```
 
-When `editorOverrides` is `null`, `undefined`, or `{}`, the cart renders identically to today. This is the regression guarantee.
+Renders in cart DOM as `<div class="ccd-notes-row">` with a `<textarea name="cart_attributes[note]">`. Value flows to Shopify cart note via existing cart API.
+
+#### 4.4.2 `discountCode` addon
+
+```ts
+type DiscountCodeAddonConfig = {
+  enabled: boolean;                  // default false
+  placeholder: string;               // default "Discount code"
+  applyButtonLabel: string;          // default "Apply"
+  position: 'top' | 'bottom';        // within footer; default 'bottom'
+  showAppliedBadge: boolean;         // default true
+};
+```
+
+Renders `<form class="ccd-discount-row">` with input + apply button. Apply triggers POST to `/discount/<code>` (Shopify standard). Applied discounts show as badges with remove ⓧ.
+
+#### 4.4.3 `termsCheckbox` addon
+
+```ts
+type TermsCheckboxAddonConfig = {
+  enabled: boolean;                  // default false
+  labelHtml: string;                 // default 'I agree to the <a href="/policies/terms-of-service">Terms</a>'
+                                     // Sanitized: only <a href target rel> tags allowed; max 500 chars
+  errorMessage: string;              // default "Please agree to the terms"
+  required: true;                    // hardcoded — addon exists for required agreements only
+  blockCheckoutIfUnchecked: boolean; // default true; if false, just warns
+  position: 'aboveCheckoutButton';   // only valid position; hardcoded
+};
+```
+
+Renders `<label class="ccd-terms-row"><input type="checkbox">...labelHtml...</label>`. When unchecked + `blockCheckoutIfUnchecked`, checkout button click is intercepted, `errorMessage` shows below, scroll-to-checkbox.
+
+**Security:** `labelHtml` is sanitized server-side (DOMPurify-equivalent) — only `<a>` tags with `href`, `target`, `rel` attributes; `javascript:` and `data:` hrefs rejected.
+
+#### 4.4.4 `expressPayments` addon
+
+```ts
+type ExpressPaymentsAddonConfig = {
+  enabled: boolean;                  // default true (Shopify already shows these by default)
+  providers: {                       // CSS show/hide flags; native Shopify express checkout still runs
+    shopPay: boolean;                // default true
+    googlePay: boolean;              // default true
+    paypal: boolean;                 // default true
+    applePay: boolean;               // default true
+    amazonPay: boolean;              // default false
+    metaPay: boolean;                // default false
+  };
+  position: 'above' | 'below';       // relative to checkout button; default 'above'
+  layout: 'stacked' | 'row';         // default 'stacked'
+  separatorLabel: string;            // default "or"; '' to hide
+};
+```
+
+**Mechanism:** native Shopify express-checkout markup stays. Our v14-complete.js sets CSS variables:
+
+```js
+root.style.setProperty('--ccd-show-shop-pay', cfg.addons.expressPayments.providers.shopPay ? 'flex' : 'none');
+// ...repeat per provider
+```
+
+```css
+[data-shopify-express-pay="shopPay"] { display: var(--ccd-show-shop-pay, flex); }
+/* etc. — one rule per provider */
+```
+
+Hidden buttons don't break the underlying Shopify express checkout — they're just visually removed. Visible buttons still trigger Shopify's real express checkout flow.
+
+If we cannot reliably target Shopify's native express markup (selector changes across themes), the fallback is to render our OWN express button container that calls Shopify's express checkout JS API directly. This branch is documented in the implementation plan.
+
+### 4.5 Click-to-edit deep-linking
+
+When the user clicks a footer region whose underlying feature is an Addon (notes / discount / terms / express-pay), the Cart Editor right panel renders an `<AddonDeepLink>` component:
+
+```
+┌──────────────────────────────────┐
+│  📦 Notes Addon                   │
+│                                    │
+│  This feature lives in the        │
+│  Addons tab.                       │
+│                                    │
+│  [ Edit Notes Settings →  ]       │
+└──────────────────────────────────┘
+```
+
+Click → router navigates to `/dashboard/addons?expand=notes` (Addons tab opens with the relevant addon's editor already expanded). Cart Editor draft state is preserved (sessionStorage).
+
+The same deep-link pattern applies to milestone (clicking the milestone bar with intent to change tiers — visual fields edit inline, tier/threshold deep-link).
 
 ## 5. Click-to-edit mechanic
 
@@ -239,326 +365,163 @@ When `editorOverrides` is `null`, `undefined`, or `{}`, the cart renders identic
 
 ```ts
 const HOTSPOTS = [
-  { id: 'header',         selector: '.ccd-header',       label: 'Header' },
-  { id: 'milestoneBar',   selector: '#ccd-progress',     label: 'Free Shipping Bar' },
-  { id: 'lineItem',       selector: '.ccd-item',         label: 'Line Item' },
-  { id: 'emptyState',     selector: '.ccd-empty',        label: 'Empty State' },
-  { id: 'footer',         selector: '.ccd-footer-totals',label: 'Totals' },
-  { id: 'checkoutButton', selector: '.ccd-checkout-btn', label: 'Checkout Button' },
-  { id: 'trustLine',      selector: '.ccd-trust',        label: 'Trust Line' },
-  { id: 'global',         selector: '.ccd-drawer-bg',    label: 'Cart Style' },
+  { id: 'header',         selector: '.ccd-header',         label: 'Header',           target: 'inline' },
+  { id: 'milestoneBar',   selector: '#ccd-progress',       label: 'Free Shipping Bar',target: 'inline+deepLink' },
+  { id: 'lineItem',       selector: '.ccd-item',           label: 'Line Item',        target: 'inline' },
+  { id: 'emptyState',     selector: '.ccd-empty',          label: 'Empty State',      target: 'inline' },
+  { id: 'footerNotes',    selector: '.ccd-notes-row',      label: 'Notes',            target: 'deepLink:notes' },
+  { id: 'footerDiscount', selector: '.ccd-discount-row',   label: 'Discount Code',    target: 'deepLink:discountCode' },
+  { id: 'footerTerms',    selector: '.ccd-terms-row',      label: 'Terms Checkbox',   target: 'deepLink:termsCheckbox' },
+  { id: 'footerExpress',  selector: '.ccd-express-pay',    label: 'Express Payments', target: 'deepLink:expressPayments' },
+  { id: 'footerTotals',   selector: '.ccd-footer-totals',  label: 'Totals',           target: 'inline' },
+  { id: 'checkoutButton', selector: '.ccd-checkout-btn',   label: 'Checkout Button',  target: 'inline' },
+  { id: 'trustLine',      selector: '.ccd-trust',          label: 'Trust Line',       target: 'inline+deepLink' },
+  { id: 'global',         selector: '.ccd-drawer-bg',      label: 'Cart Style',       target: 'inline' },
 ];
 ```
 
 ### 5.2 Overlay rendering
 
-- `mousemove` over preview → `document.elementsFromPoint(x,y)` → first match in hotspot registry → render hover halo (dashed purple outline + floating label) positioned via `getBoundingClientRect()`
-- `click` → dispatch `selectElement(id)` → right panel swaps editor → selection ring rendered (solid purple)
-- Click outside any hotspot → deselect
-- `ResizeObserver` on preview container → recompute positions on layout change
-- Preview-state dropdown change (Items / Empty / Unlocked / Loading) → cart DOM rebuilds → hotspot lookups re-run
+Unchanged from rev 3 — `mousemove` → `elementsFromPoint` → hover halo; `click` → selectElement → right panel.
 
 ### 5.3 Why an overlay, not direct listeners
 
-- Cart DOM stays byte-identical to production (no event-handler pollution)
-- Overlay is removable in one line if we ever need to disable editor mode
-- Same approach used by Figma, Webflow — proven pattern
+Cart DOM stays byte-identical to production. Overlay is removable. Same pattern Figma/Webflow use.
 
 ## 6. Save flow
 
-### 6.1 Edit → preview update (instant, no network)
+Unchanged from rev 3 except: Notes/Discount/Terms/ExpressPay save through the Addons API (`PUT /api/addons/<key>/config`), not the Cart Editor API. Each addon has its own If-Match/version (already part of the addon framework).
 
-```
-[User edits a field in right panel]
-        │
-        ▼
-[draftStore.setField(path, value)]
-        │ draft = {...draft, [path]: value}; isDirty = true
-        ▼
-[preview-canvas re-renders cart DOM using draft]  ◄── < 50 ms
-```
-
-### 6.2 Save → push live
-
-```
-[Save Changes click]
-        │
-        ▼
-[Zod validate draft.editorOverrides]
-        │ on fail → toast + auto-open offending element editor
-        │ on pass → continue
-        ▼
-[PUT /api/cart-editor/config
-  headers: { 'If-Match': 'ce-<savedConfig.editorOverridesVersion>' }
-  body:    { editorOverrides: { schemaVersion: 1, ...draft } }
-  (on first save when savedConfig is null, send 'If-Match: ce-0')]
-        │
-        ▼
-[Backend: prisma.cartConfig.update({ data: { editorOverrides, editorOverridesVersion: prev+1, updatedAt: now } })]
-        │
-        ▼
-[Cache invalidation: bump in-memory + edge config cache key for this store; new ETag/version on /apps/eliminai/config]
-        │
-        ▼
-[Response 200 → { editorOverridesVersion, editorOverrides } → draftStore: savedConfig = draft, isDirty = false]
-        │
-        ▼
-[Broadcast: BroadcastChannel('cart-editor:' + storeId).postMessage({ kind:'saved', version, editorOverrides })
-            also localStorage event 'cart-editor:<storeId>:lastSaveVersion' = version (cross-tab fallback)]
-        │
-        ▼
-[Toast: "Saved. Live in shoppers' carts on next open."]
-```
-
-### 6.2.1 Cache busting on the shopper-side proxy
-
-`/apps/eliminai/config` (the proxy v14-complete.js polls/reads) must serve the latest `editorOverrides` after a save. Three layers:
-
-1. **Database-derived version.** Each save bumps `CartConfig.editorOverridesVersion` (integer). The proxy response includes this version in its JSON body and in an `ETag: "ce-<version>"` header.
-2. **CDN/edge cache key.** The Next.js route uses `revalidateTag('cart-config:' + storeId)` after PUT. Proxy response sets `Cache-Control: public, max-age=0, s-maxage=300, stale-while-revalidate=60`. The cache key is composed from the request path INCLUDING the storeId path segment (`/apps/eliminai/config?shop=<storeId>`) — not via `Vary` headers (Vary doesn't work on path params; this corrects an earlier draft).
-3. **Runtime invalidation in v14-complete.js.** On every cart open the script compares the response version with the cached one in `sessionStorage` (`ccd:cfgVersion`). If they differ, it discards cached HTML and re-renders. Implementation note: the polling cadence is unchanged — opens are the natural sync point.
-
-This satisfies `feedback_dashboard_config_must_render.md` (proxy config flows through to live DOM, never stale).
-
-### 6.2.2 Cross-tab dashboard sync after save
-
-If a merchant has two dashboard tabs open and saves in tab A, tab B must reflect the new state without manual refresh (satisfies `feedback_preview_instant_update.md`).
-
-- **Primary channel:** `BroadcastChannel('cart-editor:' + storeId)`. On `saved` message, every listening tab refetches `editorOverrides` and updates `draftStore.savedConfig`. If the listening tab has its own `isDirty === true`, it does NOT clobber the user's draft — it shows a non-blocking banner: "Settings updated in another tab. [Discard mine & reload] [Keep my changes]".
-- **Fallback channel:** `localStorage` event `cart-editor:<storeId>:lastSaveVersion` (covers browsers/contexts without BroadcastChannel — same merge rules).
-- **Stale draft on save:** the PUT carries the `If-Match: ce-<version>` header (the version the user started editing from). Server compares with current; on mismatch returns 409 — see §7.
-- **Discards are local-only and never broadcast.** Only `saved` events cross tabs. A discard in tab A has no effect on tab B's state. This is intentional — discards are private state cleanup.
-- **localStorage payload shape:** `localStorage.setItem('cart-editor:<storeId>:lastSaveVersion', String(newVersion))`. The version is the entire payload; listening tabs MUST issue a fresh GET on `storage` event to fetch the new `editorOverrides`. (Storing the whole JSON in localStorage is rejected — quota limits and stale-data risk.)
-- **Relationship to `feedback_preview_instant_update.md`:** that rule applies *within a single tab* (every keystroke in the settings panel updates the preview, no network). Cross-tab merge applies only when two tabs both have draft state; it is a separate concern and does not contradict instant-update.
-
-### 6.3 Discard
-
-`draftStore.discard()` → `draft = savedConfig; isDirty = false`. No network call.
-
-### 6.4 Navigation guard
-
-If `isDirty === true`:
-- **Intra-dashboard navigation** (click another tab in the same app, Next.js Link click) → styled custom confirm modal "You have unsaved changes — discard?" (matches existing dashboard pattern used by rich-text-editor and scarcity-timer-editor).
-- **Hard navigation** (address-bar change, browser back/forward, tab close) → `window.beforeunload` listener. Browser shows its default (un-styled) dialog. This is a browser-imposed limitation — we cannot show our styled modal here. The Cart Editor still preserves the draft in `sessionStorage` so a reload restores work-in-progress (`draft` and `isDirty`).
-
-### 6.5 Validation rules
-
-- `schemaVersion`: client MUST send `schemaVersion: 1`. Server treats a missing `schemaVersion` as 1 for forward-compatibility with older deployed dashboard clients, then re-validates against the current schema. If the migration step fails (e.g., unknown legacy version >1), server returns 400 with explicit migration error.
-- Hex colors: `/^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i` — accepts 3-digit shorthand, 6-digit, and 8-digit (RGB+alpha). Normalized to 6-digit before persistence.
-- Drawer width desktop: 320–800
-- Drawer width mobile (percent): 50–100
-- Backdrop opacity: 0–1
-- Open duration: 100–600 ms
-- Base font size: 10–24
-- Heading scale: 1.0–1.8
-- All strings: max 200 chars (header title, button label, milestone templates)
-- `emptyState.ctaLink`: must parse as a relative path (`/...`) OR an absolute URL with `https:` protocol only (`http:` and `javascript:` rejected). Max 500 chars.
-- `fontFamily`: max 100 chars, allowed character set `[a-zA-Z0-9 ,\-_'"]` (rejects script-injection vectors and CSS expression syntax)
-- Per-element color overrides: when a Cart Editor element-level color is unset, it inherits from `global.palette`. Conflict resolution at render time: element-specific > palette > CSS default. The schema does not prevent setting both — by design, since per-element override is a real use case.
-- Unknown keys: stripped silently by Zod
-- Custom CSS: **not accepted** in v1 (see §2 decisions). Server returns 400 if the body contains a `global.customCss` key.
-
-### 6.6 Rate limiting and auth
-
-Rate limits below apply ONLY to the dashboard API endpoints (`/api/cart-editor/*`). The shopper proxy `/apps/eliminai/config` has its own separate rate-limit policy (CDN-fronted, shop-domain-based, NOT subject to these limits — applying dashboard limits there would cripple live carts).
-
-| Endpoint | Auth | Limit | On exceed |
-|---|---|---|---|
-| `PUT /api/cart-editor/config` | Dashboard session required | 10/min, 60/hour per `storeId` | 429 + `Retry-After`. Save button shows countdown. Draft preserved. |
-| `GET /api/cart-editor/config` | Dashboard session required | 60/min per `storeId` (covers cross-tab refresh + page mounts) | 429 + `Retry-After`. Cross-tab refresh retries with jitter. |
-| `GET /apps/eliminai/config` (shopper) | Shop domain only (no session) | Separate policy — CDN edge cache + per-IP throttling; NOT covered by this spec | N/A here |
+§§ 6.1–6.6 (save, cache bust, cross-tab sync, discard, navigation guard, validation, rate limit) carry over from rev 3.
 
 ## 7. Error handling
 
-| Failure | Handling |
-|---|---|
-| Save API 500 | Toast "Save failed — please retry". Draft preserved. isDirty stays true. |
-| Save API network error | Same as above. No silent loss. |
-| Validation rejection | Toast names the field. Editor auto-opens that element. Draft preserved. |
-| Preview render crash | React error boundary around preview only. Shows "Preview unavailable — settings still save correctly." Right panel stays usable. |
-| Cart DOM resize during edit | ResizeObserver recomputes overlay positions on next frame. |
-| Concurrent save from another tab | `If-Match: ce-<version>` header mismatch on PUT → 409 conflict → modal: "Cart settings changed in another tab. [Discard mine & reload latest] [Keep my changes (creates new version on save)]". The "Keep" path re-issues PUT with the latest `editorOverridesVersion` and the user's draft (last-write-wins, but user explicitly chose it). |
-| Rate limit exceeded | 429 with Retry-After. Toast shows countdown. Draft preserved. |
-| `schemaVersion` from older client | Server-side migration runs before Zod validation. If migration fails, return 400 with explicit reason. |
+Carries over from rev 3 unchanged. New addon validation errors follow the existing addon error pattern (per-addon Zod with 400 + field name).
 
 ## 8. Testing strategy
 
-Five layers, gating every commit. ALL must pass before merge.
-
 ### 8.1 Contract tests (static analysis of v14-complete.js)
 
-Add to `tests/contract.test.js` — one test per editorOverrides field, verifying:
-- The field is read from `cfg.editorOverrides?.<path>`
-- The default-fallback value still exists in the code
-- Missing/null editorOverrides falls back to current behavior
+~60 new contract tests for `editorOverrides` fields (rev 3 count). Plus ~24 new contract tests across the 4 new addons (6 per addon: enabled-off-hides-element, enabled-on-shows, default values, CSS-var injection, provider toggle, integration with cart).
 
-Estimate: ~60 new contract tests.
+**§8.1 total: 84 new contract tests.**
 
-### 8.2 Regression tests (existing cart must not break)
+### 8.2 Regression tests
 
-ALL 245 existing contract tests + 124 behavior-shield tests + 30 bug-regression tests must keep passing. Specifically locked:
-- Empty cart hides upsells (recent fix)
-- ATC + qty operations preserve discount math
-- Free shipping progress recalc on remove
-- Checkout button label without total (current default)
+ALL 245 existing contract + 124 behavior-shield + 30 bug-regression tests keep passing. New locks:
+- Empty cart hides notes/discount/terms/express rows (consistency with existing addon-hide-on-empty rule)
 - All 14 mandatory cart rules from project memory
-- No collision with addon settings (`editorOverrides` is a separate key from `addons`)
+- Native Shopify express checkout still triggers when provider toggle = true
 
-### 8.3 Editor unit tests (`backend/__tests__/cart-editor.test.ts`)
-
-```
-describe('draft store')                                                      // 8 tests
-  test setField updates path and marks dirty
-  test setField on same path twice — last write wins within same tab
-  test discard reverts to savedConfig
-  test save clears dirty
-  test concurrent setField on different paths merges correctly
-  test BroadcastChannel 'saved' message updates savedConfig when not dirty
-  test BroadcastChannel 'saved' shows banner when local isDirty (does not clobber)
-  test localStorage fallback when BroadcastChannel unavailable
-
-describe('Zod schema')                                                        // 16 tests
-  test rejects invalid hex
-  test accepts #fff (3-digit), #ffffff (6), #ffffffaa (8) — normalizes to 6
-  test rejects drawer width 319 (below min)
-  test rejects drawer width 1200 (above max)
-  test accepts widthMobilePct = 100 (percent, valid)
-  test rejects widthDesktop = 100 (below 320 min)
-  test rejects emptyState.ctaLink = 'javascript:alert(1)'
-  test rejects emptyState.ctaLink = 'http://example.com' (http not allowed)
-  test accepts emptyState.ctaLink = '/collections/all'
-  test accepts emptyState.ctaLink = 'https://example.com/page'
-  test rejects fontFamily with parens or semicolons
-  test strips unknown keys
-  test allows partial overrides (header only)
-  test allows empty object {} (with schemaVersion: 1)
-  test rejects body containing global.customCss (out of scope)
-  test rejects body containing Addon-owned paths (e.g. addons.milestone.tiers)
-
-describe('PUT /api/cart-editor/config')                                       // 10 tests
-  test writes editorOverrides only
-  test bumps editorOverridesVersion by exactly 1
-  test does not touch addons or abTests fields
-  test 409 on stale If-Match header (mismatch with current editorOverridesVersion)
-  test 401 on no session
-  test 429 after 10 saves in 60s
-  test response includes new editorOverridesVersion
-  test triggers revalidateTag('cart-config:'+storeId)
-  test ETag header is "ce-<version>"
-  test missing schemaVersion → server-side defaulted to 1 then validated
-
-describe('GET /apps/eliminai/config (shopper proxy)')                         // 3 tests
-  test returns editorOverridesVersion in body and ETag header
-  test serves stale-while-revalidate within s-maxage
-  test after PUT, next GET reflects new editorOverrides (no stale cache)
-```
-
-**Count: 8 + 16 + 10 + 3 = 37 new editor tests.**
-
-### 8.4 Preview integration tests (`tests/cart-editor-preview.spec.js` via Playwright)
+### 8.3 Editor unit tests
 
 ```
-test click Header → right panel shows Header editor
-test change header.title → preview text updates in <500ms (no network)
-test Save → reload → preview shows persisted value
-test navigate away with isDirty → confirm modal appears
-test preview state dropdown → empty state DOM mounts → click empty CTA → editor opens
-test desktop ↔ mobile viewport toggle → cart width changes
-test hover halo follows cursor as user moves mouse
-test selection ring stays after click, disappears on click-outside
-test cross-tab sync: tab A saves header title → tab B's savedConfig updates within 1s (no isDirty)
-test cross-tab conflict: tab B has isDirty → tab A saves → tab B shows banner with discard/keep options
-test cache bust: PUT save → shopper-side /apps/eliminai/config returns new editorOverridesVersion within 2s
-test ownership: PUT body with addons.milestone.tiers → 400 with explicit conflict message
+describe('draft store')                        // 8 tests (carry-over)
+describe('Zod schema — editorOverrides')        // 16 tests (carry-over)
+describe('Zod schema — notes addon')            // 5 tests (enabled, label, maxChars range, position, defaults)
+describe('Zod schema — discountCode addon')     // 4 tests
+describe('Zod schema — termsCheckbox addon')    // 6 tests (labelHtml sanitization is critical — 3 of the 6 cover XSS vectors)
+describe('Zod schema — expressPayments addon')  // 5 tests
+describe('PUT /api/cart-editor/config')         // 10 tests (carry-over)
+describe('PUT /api/addons/notes/config')        // 3 tests
+describe('PUT /api/addons/discountCode/config') // 3 tests
+describe('PUT /api/addons/termsCheckbox/config')// 3 tests (XSS-rejection test included)
+describe('PUT /api/addons/expressPayments/config')// 3 tests
+describe('GET /apps/eliminai/config — addons')  // 3 tests (new addon fields appear in proxy response)
 ```
 
-**Count: 12 new Playwright tests.** (cross-tab + cache-bust + ownership scenarios are included above; no separate group.)
+**§8.3 total: 8 + 16 + 5 + 4 + 6 + 5 + 10 + 3 + 3 + 3 + 3 + 3 = 69 new editor/addon unit tests.**
+
+### 8.4 Preview integration tests (Playwright)
+
+Carry over 12 from rev 3, plus:
+- Click Notes area in preview → deep-link to Addons tab opens with Notes expanded
+- Same for Discount / Terms / Express
+- Toggle expressPayments.providers.paypal off → preview hides PayPal button
+- Terms unchecked + `blockCheckoutIfUnchecked: true` + click checkout → error message shows, no navigation
+
+**§8.4 total: 12 + 4 (deep-link routes) + 2 (express toggle + terms block) = 18 new Playwright tests.**
 
 ### 8.5 Blast-radius lock tests
 
-Per CLAUDE.md blast-radius-shield rule. The drawer cannot be **byte-identical** after we add fallback reads — we must add code paths and (for newly editable elements like `showCrossedOutSubtotal`) empty wrapper elements that render nothing when the toggle is false. The assertion is therefore **structural equivalence**, not byte equality.
+Carry over 6 from rev 3, plus:
+- `editorOverrides = null` AND all 4 new addons `enabled: false` → cart structurally equivalent to pre-Stage-2 production
+- Enabling expressPayments alone (no editorOverrides) → only express-pay area mutates; header/items/footer/checkout button regions remain structurally equivalent
+- Enabling termsCheckbox + clicking checkout when unchecked → preventDefault verified (checkout flow does NOT execute Shopify checkout redirect)
 
-**Helper:** `tests/helpers/structural-equiv.js` — a DOM diff helper used by every lock test. It ignores: hidden elements (`hidden` attribute or `display:none`), `data-cart-editor-*` instrumentation attributes added by the editor overlay, and whitespace-only text node changes. This helper is **not** itself a test; it is shared infrastructure.
-
-Lock tests (added to `tests/blast-radius/cart-editor.test.js`):
-
-1. **`editorOverrides = null` is structurally equivalent to current production** — load v14-complete.js against a fixture cart with no overrides, assert structural-equiv vs the pre-Stage-2 production snapshot.
-2. **`editorOverrides = {}` (empty object, with `schemaVersion: 1`) is structurally equivalent to `null`** — guarantees the empty-object case takes the same defaults path as null.
-3. **Scoped change isolation** — `editorOverrides = { footer: { totalOutsideButton: true } }`: only footer/button visible DOM changes; structural-equiv on every OTHER region (header, milestone, line items, empty state, trust line, global) must pass.
-4. **Addon code paths unaffected by Cart Editor overrides** — with Addons enabled (milestone, trust badges, upsells) and `editorOverrides` setting visual fields, the Addon-owned values (tiers, enabled flags, payment-provider list) match exactly what the Addon panel wrote. No cross-write.
-5. **Production smoke replay** — snapshot the live cart HTML before Stage 2 deploy, replay against the new v14-complete.js with `editorOverrides = null`, assert structural equivalence. This is the deploy gate for Stage 2.
-6. **Idempotent re-render** — re-running the cart render twice with the same overrides produces structurally-equivalent DOM (guards against accidental cumulative state in addon code paths).
-
-**Count: 6 new blast-radius lock tests.**
+**§8.5 total: 6 + 3 = 9 new blast-radius locks.**
 
 ### 8.6 CI gate
 
-Pre-commit + pre-deploy. The per-section counts below MUST sum exactly to the stated total — any future spec edits that add/remove tests must update this section in the same change.
-
 | Layer | Section | Count |
 |---|---|---|
-| Baseline contract | existing `tests/contract.test.js` | 245 |
-| Baseline behavior-shield | existing `tests/behavior-shield.test.js` | 124 |
-| Baseline bug-regression | existing `tests/bug-regression.test.js` | 30 |
+| Baseline contract | `tests/contract.test.js` | 245 |
+| Baseline behavior-shield | `tests/behavior-shield.test.js` | 124 |
+| Baseline bug-regression | `tests/bug-regression.test.js` | 30 |
 | **Baseline total** | | **399** |
-| New contract (editor field wiring) | §8.1 | 60 |
-| New editor unit | §8.3 | 37 |
-| New Playwright (preview + cross-tab + cache-bust + ownership) | §8.4 | 12 |
-| New blast-radius locks | §8.5 | 6 |
-| **New additions total** | | **115** |
-| **Grand total target** | | **514** |
+| New contract (editor + 4 addons) | §8.1 | 84 |
+| New editor + addon unit tests | §8.3 | 69 |
+| New Playwright | §8.4 | 18 |
+| New blast-radius locks | §8.5 | 9 |
+| **New additions total** | | **180** |
+| **Grand total target** | | **579** |
 
-Gate steps:
-1. `npm test` — full suite. MUST report ≥ 514 passing tests (399 baseline + 115 new). Any number below this means a test was deleted without updating §8.1/§8.3/§8.4/§8.5 — block deploy and reconcile counts.
+Gate steps (pre-commit + pre-deploy):
+1. `npm test` — full suite. MUST report ≥ 579 passing tests.
 2. `tsc --noEmit`
-3. `node tests/contract.test.js` — static analysis on v14-complete.js (subset of step 1, but run standalone for fast pre-commit signal).
-4. Playwright suite on cart-editor-preview (12 tests).
-5. Structural-equivalence snapshot diff against pre-deploy production drawer HTML (§8.5 lock #5).
+3. `node tests/contract.test.js`
+4. Playwright suite on cart-editor-preview (18 tests)
+5. Structural-equivalence snapshot diff against pre-deploy production drawer HTML.
 
 ## 9. Rollout plan
 
-Stage 1 — Backend + data model (no UI yet)
-- Add `editorOverrides` + `editorOverridesVersion` columns + Zod schema + GET/PUT API
-- Implement ownership-map validation (rejects Addon-owned paths)
-- Implement rate limiting + `If-Match` concurrency + ETag cache layer
-- Deploy with API behind a feature flag (`CART_EDITOR_API_ENABLED`)
-- Contract tests + unit tests passing
+**Stage 1 — Backend + data model** ✅ DONE (`claude/cart-editor` branch merged)
+- `editorOverrides` + `editorOverridesVersion` columns
+- Zod schema (will be expanded by this rev)
+- GET/PUT `/api/cart-editor/config` gated behind `CART_EDITOR_API_ENABLED`
 
-Stage 2 — v14-complete.js reads overrides
-- Add fallback reads for every field
-- Add `editorOverridesVersion` check in sessionStorage to invalidate cached HTML on version bump
-- Contract tests verify all fields wired
-- Deploy to extension CDN
-- Smoke test: set `editorOverrides = null` in DB → cart structurally equivalent to pre-deploy snapshot (see §8.5)
+**Stage 2 — Expand schema + new addons**
+- Expand Zod for header/footer/global additions in EditorOverrides
+- Add 4 new addon definitions to `addon-definitions.ts` (notes, discountCode, termsCheckbox, expressPayments)
+- Add 4 new addon editor components in `dashboard/addons/`
+- Add per-addon GET/PUT API endpoints (or reuse the generic addon API if one exists)
+- Contract + unit tests passing (§8.1 + §8.3)
 
-Stage 3 — Editor UI
-- Build preview-canvas + overlay + element-editors
+**Stage 3 — v14-complete.js renders everything**
+- Fallback reads for every `editorOverrides` field
+- Render `<div class="ccd-notes-row">`, `<form class="ccd-discount-row">`, `<label class="ccd-terms-row">`, `<div class="ccd-express-pay">` when their addons are enabled
+- CSS-variable injection for expressPayments provider toggles
+- Terms checkbox interception of checkout click
+- Discount code POST to `/discount/<code>`
+- Notes textarea → `cart_attributes[note]`
+- Smoke test: `editorOverrides = null` AND all 4 new addons off → structurally equivalent to pre-Stage-2 production
+
+**Stage 4 — Editor UI**
+- Build preview-canvas + overlay + 8 element editors
 - Draft store + Save/Discard
-- BroadcastChannel + localStorage cross-tab sync wired
-- Playwright suite passing (including cross-tab + cache-bust tests)
-- Ship Cart Editor tab in dashboard
+- Deep-link routing to Addons tab for milestone/trust/notes/discount/terms/express
+- Playwright suite passing
+- Ship Cart Editor tab
 
-Stage 4 — Documentation + competitor parity check
-- Internal docs on each setting
-- Confirm parity with Rebuy / SLIDECART / UpCart for any settings we missed
+**Stage 5 — Docs + parity verification**
+- Internal docs per setting
+- Final UpCart parity audit
 
-## 10. Out of scope (deferred to later phases)
+## 10. Out of scope (deferred)
 
-- **Custom CSS escape hatch** — needs a CSS AST allow-list (csstree) and threat-model review before we expose merchant-controlled CSS to live shopper traffic (`expression()`, `behavior:url()`, `@import`, `url(javascript:)` and many more vectors). Deferred to a dedicated spec.
-- Subscribe-and-save inline toggle
-- Quantity-break ladder
-- Charity round-up
-- Tiered free gift unlock
-- Recently viewed products row
-- Sticky upsell carousel pinned above checkout button
-- Multi-language UI for the editor itself
-- Theme presets (save/load named configurations)
+- Custom HTML / CSS / JS escape hatch
+- Sticky cart launcher button (storefront floating pill)
+- Header logo upload
+- Subscribe-and-save, quantity-break ladder, charity round-up, tiered gift unlock, recently-viewed, sticky upsell carousel
+- Multi-language editor UI
+- Theme presets (save/load named configs)
 - Per-customer-segment overrides
+- Subscription upgrade module
 
 ## 11. Open questions
 
-None at design time. Implementation may surface micro-decisions; those will be resolved in the plan phase.
+None at design time. The expressPayments CSS-targeting fallback (if Shopify selectors prove unreliable) is documented as a known branch in §4.4.4 and will be resolved in the implementation plan.
 
 ---
 
-End of design spec.
+End of design spec — rev 4.
