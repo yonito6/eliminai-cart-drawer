@@ -5,11 +5,12 @@
 // Chunk 5.1 — skeleton only. Preview canvas (5.2), overlays (5.3), and
 // element editors (5.4) will mount into the placeholder zones below.
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useStore } from '@/lib/hooks/use-store';
 import { DraftStoreProvider, useDraftStore } from './draft-store';
 import PreviewCanvas from './preview-canvas';
 import type { PreviewState } from './preview-renderer';
+import Overlay from './overlay/overlay';
 
 type Viewport = 'desktop' | 'mobile';
 
@@ -288,6 +289,7 @@ function PanelPlaceholder() {
 function CartEditorInner() {
   const [previewState, setPreviewState] = useState<PreviewState>('items');
   const [viewport, setViewport] = useState<Viewport>('desktop');
+  const overlayHostRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 0px)', background: '#fafafa' }}>
@@ -299,7 +301,13 @@ function CartEditorInner() {
         setViewport={setViewport}
       />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <PreviewCanvas previewState={previewState} viewport={viewport} addons={{}} />
+        <div
+          ref={overlayHostRef}
+          style={{ flex: 1, position: 'relative', overflow: 'hidden' }}
+        >
+          <PreviewCanvas previewState={previewState} viewport={viewport} addons={{}} />
+          <Overlay hostRef={overlayHostRef} />
+        </div>
         <PanelPlaceholder />
       </div>
       <ConflictModal />
