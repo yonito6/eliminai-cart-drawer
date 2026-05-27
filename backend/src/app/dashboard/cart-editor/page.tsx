@@ -13,6 +13,7 @@ import type { PreviewState } from './preview-renderer';
 import Overlay from './overlay/overlay';
 import HeaderEditor from './element-editors/header-editor';
 import MilestoneEditor from './element-editors/milestone-editor';
+import LineItemEditor from './element-editors/line-item-editor';
 
 type Viewport = 'desktop' | 'mobile';
 
@@ -259,6 +260,7 @@ function PreviewControls({
 const ELEMENT_EDITORS: Record<string, { label: string; Component: React.ComponentType }> = {
   header: { label: 'Header', Component: HeaderEditor },
   milestoneBar: { label: 'Milestone Bar', Component: MilestoneEditor },
+  lineItem: { label: 'Line Item', Component: LineItemEditor },
 };
 
 function ElementPanel() {
