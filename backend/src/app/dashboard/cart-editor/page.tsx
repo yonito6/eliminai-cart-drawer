@@ -14,6 +14,7 @@ import Overlay from './overlay/overlay';
 import HeaderEditor from './element-editors/header-editor';
 import MilestoneEditor from './element-editors/milestone-editor';
 import LineItemEditor from './element-editors/line-item-editor';
+import EmptyStateEditor from './element-editors/empty-state-editor';
 
 type Viewport = 'desktop' | 'mobile';
 
@@ -261,6 +262,7 @@ const ELEMENT_EDITORS: Record<string, { label: string; Component: React.Componen
   header: { label: 'Header', Component: HeaderEditor },
   milestoneBar: { label: 'Milestone Bar', Component: MilestoneEditor },
   lineItem: { label: 'Line Item', Component: LineItemEditor },
+  emptyState: { label: 'Empty State', Component: EmptyStateEditor },
 };
 
 function ElementPanel() {
