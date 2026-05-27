@@ -4259,6 +4259,110 @@
           }
         }
       }
+
+      // ----- editorOverrides.trustLine -----
+      if (eo.trustLine && typeof eo.trustLine === 'object') {
+        var tl = eo.trustLine;
+        var trustEl = drawer.querySelector('.ccd-trust');
+        if (trustEl) {
+          if (typeof tl.text === 'string') {
+            // Update text node only; preserve any child icons/badges
+            var textNode = null;
+            for (var i = 0; i < trustEl.childNodes.length; i++) {
+              if (trustEl.childNodes[i].nodeType === 3 && trustEl.childNodes[i].textContent.trim()) {
+                textNode = trustEl.childNodes[i];
+                break;
+              }
+            }
+            if (textNode) textNode.textContent = ' ' + tl.text + ' ';
+            else trustEl.setAttribute('data-text', tl.text);
+          }
+          if (tl.showLockIcon === false) trustEl.classList.add('ccd-trust--no-lock');
+          else if (tl.showLockIcon === true) trustEl.classList.remove('ccd-trust--no-lock');
+          // position relative to checkout button
+          if (tl.position === 'above') trustEl.setAttribute('data-position', 'above');
+          else if (tl.position === 'below') trustEl.setAttribute('data-position', 'below');
+          if (typeof tl.textSize === 'number') trustEl.style.fontSize = tl.textSize + 'px';
+          if (typeof tl.textColor === 'string') trustEl.style.color = tl.textColor;
+          // paymentIcons: { visa: true, mc: false, ... } -> data-pay-{provider} attrs
+          if (tl.paymentIcons && typeof tl.paymentIcons === 'object') {
+            for (var prov in tl.paymentIcons) {
+              if (Object.prototype.hasOwnProperty.call(tl.paymentIcons, prov)) {
+                if (/^[a-z0-9_-]{1,40}$/i.test(prov)) {
+                  trustEl.setAttribute('data-pay-' + prov.toLowerCase(), tl.paymentIcons[prov] ? '1' : '0');
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // ----- editorOverrides.milestoneBar -----
+      if (eo.milestoneBar && typeof eo.milestoneBar === 'object') {
+        var mb = eo.milestoneBar;
+        var progEl = drawer.querySelector('.ccd-progress');
+        if (progEl) {
+          // templates stored as data attrs; engine picks them up on next render
+          if (typeof mb.preUnlockTemplate === 'string') progEl.setAttribute('data-pre-unlock', mb.preUnlockTemplate);
+          if (typeof mb.unlockedTemplate === 'string') progEl.setAttribute('data-unlocked', mb.unlockedTemplate);
+          if (mb.celebrationAnim === false) progEl.classList.add('ccd-progress--no-celebrate');
+          else if (mb.celebrationAnim === true) progEl.classList.remove('ccd-progress--no-celebrate');
+          if (typeof mb.fillColor === 'string') drawer.style.setProperty('--ccd-progress-fill', mb.fillColor);
+          if (typeof mb.trackColor === 'string') drawer.style.setProperty('--ccd-progress-bg', mb.trackColor);
+          if (typeof mb.height === 'number') drawer.style.setProperty('--ccd-progress-height', mb.height + 'px');
+          if (mb.position === 'top' || mb.position === 'underHeader' || mb.position === 'aboveCheckout') {
+            progEl.setAttribute('data-position', mb.position);
+          }
+          if (typeof mb.textSize === 'number') drawer.style.setProperty('--ccd-progress-text-size', mb.textSize + 'px');
+          if (typeof mb.textWeight === 'number') drawer.style.setProperty('--ccd-progress-text-weight', String(mb.textWeight));
+        }
+      }
+
+      // ----- editorOverrides.global -----
+      if (eo.global && typeof eo.global === 'object') {
+        var g = eo.global;
+        if (g.side === 'left') drawer.classList.add('ccd-side-left');
+        else if (g.side === 'right') drawer.classList.remove('ccd-side-left');
+        if (typeof g.widthDesktop === 'number') drawer.style.setProperty('--ccd-desktop-width', g.widthDesktop + 'px');
+        if (typeof g.widthMobilePct === 'number') drawer.style.setProperty('--ccd-mobile-width', g.widthMobilePct + '%');
+        if (typeof g.backdropColor === 'string') drawer.style.setProperty('--ccd-backdrop-color', g.backdropColor);
+        if (typeof g.backdropOpacity === 'number') drawer.style.setProperty('--ccd-backdrop-opacity', String(g.backdropOpacity));
+        if (g.openAnim === 'slide' || g.openAnim === 'fade' || g.openAnim === 'scale') {
+          drawer.setAttribute('data-open-anim', g.openAnim);
+        }
+        if (typeof g.openDurationMs === 'number') drawer.style.setProperty('--ccd-open-duration', g.openDurationMs + 'ms');
+        // palette colors -> CSS vars
+        if (g.palette && typeof g.palette === 'object') {
+          var pal = g.palette;
+          if (typeof pal.bg === 'string') drawer.style.setProperty('--ccd-bg', pal.bg);
+          if (typeof pal.surface === 'string') drawer.style.setProperty('--ccd-surface', pal.surface);
+          if (typeof pal.text === 'string') drawer.style.setProperty('--ccd-text', pal.text);
+          if (typeof pal.muted === 'string') drawer.style.setProperty('--ccd-text-muted', pal.muted);
+          if (typeof pal.accent === 'string') drawer.style.setProperty('--ccd-accent', pal.accent);
+          if (typeof pal.border === 'string') drawer.style.setProperty('--ccd-border', pal.border);
+          if (typeof pal.success === 'string') drawer.style.setProperty('--ccd-success', pal.success);
+          if (typeof pal.danger === 'string') drawer.style.setProperty('--ccd-danger', pal.danger);
+        }
+        // fontFamily — schema regex restricts to safe chars; still set via style for safety
+        if (typeof g.fontFamily === 'string' && /^[a-zA-Z0-9 ,\-_'"]+$/.test(g.fontFamily)) {
+          drawer.style.fontFamily = g.fontFamily;
+        }
+        if (typeof g.baseFontSize === 'number') drawer.style.setProperty('--ccd-base-font-size', g.baseFontSize + 'px');
+        if (typeof g.headingScale === 'number') drawer.style.setProperty('--ccd-heading-scale', String(g.headingScale));
+        if (g.spacing === 'compact' || g.spacing === 'comfortable' || g.spacing === 'roomy') {
+          drawer.classList.remove('ccd-spacing--compact', 'ccd-spacing--comfortable', 'ccd-spacing--roomy');
+          drawer.classList.add('ccd-spacing--' + g.spacing);
+        }
+        if (g.radius === 'sharp' || g.radius === 'soft' || g.radius === 'rounded') {
+          drawer.classList.remove('ccd-radius--sharp', 'ccd-radius--soft', 'ccd-radius--rounded');
+          drawer.classList.add('ccd-radius--' + g.radius);
+        }
+        // behavior subobject — these are reads other code paths consult
+        if (g.behavior && typeof g.behavior === 'object') {
+          // stash on CCD so engine code can read flags later
+          CCD._EOBehavior = g.behavior;
+        }
+      }
     },
 
     // Cart-aware scarcity timer lifecycle. Called after every cart refresh so the

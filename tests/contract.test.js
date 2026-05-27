@@ -3102,6 +3102,199 @@ async function run() {
       'Top-level guard: only enter checkoutButton block when object is present');
   });
 
+  // CONTRACT: editorOverrides Trust Line (Chunk 4.10a)
+  console.log('\nContract: editorOverrides Trust Line');
+
+  test('trustLine.text updates text node only (preserves child icons/badges)', () => {
+    assertRegex(code, /typeof\s+tl\.text\s*===\s*['"]string['"]/,
+      'text must be typeof-checked as string');
+    assertContains(code, "drawer.querySelector('.ccd-trust')",
+      'Must locate trust element via .ccd-trust selector');
+    assertContains(code, 'nodeType === 3',
+      'text update must find a text node (nodeType === 3) to avoid clobbering icon children');
+    assertContains(code, 'textNode.textContent',
+      'text must be assigned via textContent (XSS-safe)');
+  });
+
+  test('trustLine.showLockIcon toggles ccd-trust--no-lock class', () => {
+    assertRegex(code, /tl\.showLockIcon\s*===\s*false[\s\S]{0,80}ccd-trust--no-lock/,
+      'showLockIcon=false must add .ccd-trust--no-lock class');
+    assertRegex(code, /tl\.showLockIcon\s*===\s*true[\s\S]{0,120}classList\.remove\(\s*['"]ccd-trust--no-lock['"]/,
+      'showLockIcon=true must remove the class');
+  });
+
+  test('trustLine.position (above/below) sets data-position attribute', () => {
+    assertRegex(code, /tl\.position\s*===\s*['"]above['"][\s\S]{0,200}setAttribute\(\s*['"]data-position['"]\s*,\s*['"]above['"]/,
+      'position=above must set data-position="above"');
+    assertRegex(code, /tl\.position\s*===\s*['"]below['"][\s\S]{0,200}setAttribute\(\s*['"]data-position['"]\s*,\s*['"]below['"]/,
+      'position=below must set data-position="below"');
+  });
+
+  test('trustLine.textSize sets inline font-size with px unit', () => {
+    assertRegex(code, /typeof\s+tl\.textSize\s*===\s*['"]number['"][\s\S]{0,80}trustEl\.style\.fontSize\s*=\s*tl\.textSize\s*\+\s*['"]px['"]/,
+      'textSize must be typeof-checked and assigned with px unit');
+  });
+
+  test('trustLine.textColor sets inline color', () => {
+    assertRegex(code, /typeof\s+tl\.textColor\s*===\s*['"]string['"][\s\S]{0,80}trustEl\.style\.color\s*=\s*tl\.textColor/,
+      'textColor must be typeof-checked and applied inline');
+  });
+
+  test('trustLine.paymentIcons (record<string,boolean>) applies data-pay-{provider} attributes safely', () => {
+    assertContains(code, 'tl.paymentIcons',
+      'Must read paymentIcons map');
+    assertContains(code, 'Object.prototype.hasOwnProperty.call(tl.paymentIcons, prov)',
+      'Iteration must guard against prototype pollution via hasOwnProperty');
+    assertContains(code, '/^[a-z0-9_-]{1,40}$/i.test(prov)',
+      'Provider key must match safe-character regex before being used in attribute name');
+    assertRegex(code, /setAttribute\(\s*['"]data-pay-['"]\s*\+\s*prov\.toLowerCase\(\)/,
+      'Provider attribute must be lowercased data-pay-{provider}');
+  });
+
+  // CONTRACT: editorOverrides Milestone Bar (Chunk 4.10b)
+  console.log('\nContract: editorOverrides Milestone Bar');
+
+  test('milestoneBar.preUnlockTemplate + unlockedTemplate stored as data attributes', () => {
+    assertRegex(code, /typeof\s+mb\.preUnlockTemplate\s*===\s*['"]string['"][\s\S]{0,200}setAttribute\(\s*['"]data-pre-unlock['"]/,
+      'preUnlockTemplate must be stored as data-pre-unlock attribute (engine reads at render time)');
+    assertRegex(code, /typeof\s+mb\.unlockedTemplate\s*===\s*['"]string['"][\s\S]{0,200}setAttribute\(\s*['"]data-unlocked['"]/,
+      'unlockedTemplate must be stored as data-unlocked attribute');
+  });
+
+  test('milestoneBar.celebrationAnim toggles ccd-progress--no-celebrate class', () => {
+    assertRegex(code, /mb\.celebrationAnim\s*===\s*false[\s\S]{0,80}ccd-progress--no-celebrate/,
+      'celebrationAnim=false must add .ccd-progress--no-celebrate class');
+  });
+
+  test('milestoneBar.fillColor + trackColor set --ccd-progress-fill / --ccd-progress-bg CSS vars', () => {
+    assertContains(code, "'--ccd-progress-fill'",
+      'fillColor must set --ccd-progress-fill CSS var');
+    assertContains(code, "'--ccd-progress-bg'",
+      'trackColor must set --ccd-progress-bg CSS var');
+  });
+
+  test('milestoneBar.height sets --ccd-progress-height CSS var with px unit', () => {
+    assertRegex(code, /typeof\s+mb\.height\s*===\s*['"]number['"][\s\S]{0,200}--ccd-progress-height[\s\S]{0,80}mb\.height\s*\+\s*['"]px['"]/,
+      'height must be typeof-checked and applied as --ccd-progress-height with px unit');
+  });
+
+  test('milestoneBar.position (top/underHeader/aboveCheckout) sets data-position attribute', () => {
+    assertContains(code, "'top'",
+      'position must validate "top" enum');
+    assertContains(code, "'underHeader'",
+      'position must validate "underHeader" enum');
+    assertContains(code, "'aboveCheckout'",
+      'position must validate "aboveCheckout" enum');
+    assertRegex(code, /progEl\.setAttribute\(\s*['"]data-position['"]\s*,\s*mb\.position\s*\)/,
+      'position must be applied as data-position attribute (CSS positions the bar)');
+  });
+
+  test('milestoneBar.textSize + textWeight set --ccd-progress-text-size / --ccd-progress-text-weight', () => {
+    assertContains(code, "'--ccd-progress-text-size'",
+      'textSize must set --ccd-progress-text-size CSS var');
+    assertContains(code, "'--ccd-progress-text-weight'",
+      'textWeight must set --ccd-progress-text-weight CSS var');
+  });
+
+  // CONTRACT: editorOverrides Global (Chunk 4.10c)
+  console.log('\nContract: editorOverrides Global');
+
+  test('global.side (left/right) toggles ccd-side-left class', () => {
+    assertRegex(code, /g\.side\s*===\s*['"]left['"][\s\S]{0,80}drawer\.classList\.add\(\s*['"]ccd-side-left['"]/,
+      'side=left must add .ccd-side-left class');
+    assertRegex(code, /g\.side\s*===\s*['"]right['"][\s\S]{0,120}drawer\.classList\.remove\(\s*['"]ccd-side-left['"]/,
+      'side=right must remove the class (default position)');
+  });
+
+  test('global.widthDesktop + widthMobilePct set --ccd-desktop-width / --ccd-mobile-width vars', () => {
+    assertRegex(code, /typeof\s+g\.widthDesktop\s*===\s*['"]number['"][\s\S]{0,200}--ccd-desktop-width[\s\S]{0,80}g\.widthDesktop\s*\+\s*['"]px['"]/,
+      'widthDesktop must set --ccd-desktop-width with px');
+    assertRegex(code, /typeof\s+g\.widthMobilePct\s*===\s*['"]number['"][\s\S]{0,200}--ccd-mobile-width[\s\S]{0,80}g\.widthMobilePct\s*\+\s*['"]%['"]/,
+      'widthMobilePct must set --ccd-mobile-width with % unit');
+  });
+
+  test('global.backdropColor + backdropOpacity set CSS variables', () => {
+    assertContains(code, "'--ccd-backdrop-color'",
+      'backdropColor must set --ccd-backdrop-color');
+    assertContains(code, "'--ccd-backdrop-opacity'",
+      'backdropOpacity must set --ccd-backdrop-opacity');
+  });
+
+  test('global.openAnim (slide/fade/scale) sets data-open-anim attribute', () => {
+    assertRegex(code, /g\.openAnim\s*===\s*['"]slide['"][\s\S]{0,300}g\.openAnim\s*===\s*['"]fade['"][\s\S]{0,300}g\.openAnim\s*===\s*['"]scale['"]/,
+      'openAnim must validate all 3 enum values');
+    assertRegex(code, /drawer\.setAttribute\(\s*['"]data-open-anim['"]\s*,\s*g\.openAnim\s*\)/,
+      'openAnim must be applied as data-open-anim attribute');
+  });
+
+  test('global.openDurationMs sets --ccd-open-duration with ms unit', () => {
+    assertRegex(code, /typeof\s+g\.openDurationMs\s*===\s*['"]number['"][\s\S]{0,200}--ccd-open-duration[\s\S]{0,80}g\.openDurationMs\s*\+\s*['"]ms['"]/,
+      'openDurationMs must be typeof-checked and applied as --ccd-open-duration with ms unit');
+  });
+
+  test('global.palette maps 8 colors to CSS vars (bg/surface/text/muted/accent/border/success/danger)', () => {
+    assertContains(code, "'--ccd-bg'",
+      'palette.bg must set --ccd-bg');
+    assertContains(code, "'--ccd-surface'",
+      'palette.surface must set --ccd-surface');
+    assertContains(code, "'--ccd-text'",
+      'palette.text must set --ccd-text');
+    assertContains(code, "'--ccd-text-muted'",
+      'palette.muted must set --ccd-text-muted');
+    assertContains(code, "'--ccd-accent'",
+      'palette.accent must set --ccd-accent');
+    assertContains(code, "'--ccd-border'",
+      'palette.border must set --ccd-border');
+    assertContains(code, "'--ccd-success'",
+      'palette.success must set --ccd-success');
+    assertContains(code, "'--ccd-danger'",
+      'palette.danger must set --ccd-danger');
+  });
+
+  test('global.fontFamily re-validates safe-char regex before applying inline (defense-in-depth)', () => {
+    assertRegex(code, /typeof\s+g\.fontFamily\s*===\s*['"]string['"]/,
+      'fontFamily must be typeof-checked');
+    assertContains(code, "/^[a-zA-Z0-9 ,\\-_'\"]+$/.test(g.fontFamily)",
+      'fontFamily must re-validate same regex as Zod schema before being assigned to style');
+    assertContains(code, 'drawer.style.fontFamily',
+      'fontFamily applied inline to drawer');
+  });
+
+  test('global.baseFontSize sets --ccd-base-font-size with px unit', () => {
+    assertRegex(code, /typeof\s+g\.baseFontSize\s*===\s*['"]number['"][\s\S]{0,200}--ccd-base-font-size[\s\S]{0,80}g\.baseFontSize\s*\+\s*['"]px['"]/,
+      'baseFontSize must set --ccd-base-font-size with px');
+  });
+
+  test('global.headingScale sets --ccd-heading-scale (unitless number)', () => {
+    assertRegex(code, /typeof\s+g\.headingScale\s*===\s*['"]number['"][\s\S]{0,200}--ccd-heading-scale[\s\S]{0,80}String\(g\.headingScale\)/,
+      'headingScale must be applied as String() unitless to --ccd-heading-scale CSS var');
+  });
+
+  test('global.spacing (compact/comfortable/roomy) maps to ccd-spacing--{value} class', () => {
+    assertContains(code, 'ccd-spacing--compact',
+      'spacing=compact must map to .ccd-spacing--compact');
+    assertContains(code, 'ccd-spacing--comfortable',
+      'spacing=comfortable must map to .ccd-spacing--comfortable');
+    assertContains(code, 'ccd-spacing--roomy',
+      'spacing=roomy must map to .ccd-spacing--roomy');
+    assertRegex(code, /classList\.remove\(\s*['"]ccd-spacing--compact['"]\s*,\s*['"]ccd-spacing--comfortable['"]\s*,\s*['"]ccd-spacing--roomy['"]/,
+      'Previous spacing modifier classes must be removed before applying new one');
+  });
+
+  test('global.radius (sharp/soft/rounded) maps to ccd-radius--{value} class', () => {
+    assertContains(code, 'ccd-radius--sharp',
+      'radius=sharp must map to .ccd-radius--sharp');
+    assertContains(code, 'ccd-radius--soft',
+      'radius=soft must map to .ccd-radius--soft');
+    assertContains(code, 'ccd-radius--rounded',
+      'radius=rounded must map to .ccd-radius--rounded');
+  });
+
+  test('global.behavior stash on CCD._EOBehavior for engine code to read flags later', () => {
+    assertContains(code, 'CCD._EOBehavior = g.behavior',
+      'behavior subobject must be stashed on CCD._EOBehavior so engine code (openOnAddToCart, etc.) can read flags');
+  });
+
   // ================================================================
   // RESULTS
   // ================================================================
