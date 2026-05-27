@@ -2871,6 +2871,58 @@ async function run() {
       'titleWeight must set --ccd-li-title-weight as a string (CSS font-weight values)');
   });
 
+  // CONTRACT: editorOverrides Empty State (Chunk 4.7)
+  console.log('\nContract: editorOverrides Empty State');
+
+  test('emptyState.heading overrides the main "cart is empty" paragraph', () => {
+    assertRegex(code, /typeof\s+es\.heading\s*===\s*['"]string['"]/,
+      'heading must be typeof-checked before assignment');
+    assertRegex(code, /headingEl\.textContent\s*=\s*es\.heading/,
+      'heading must be assigned via textContent (not innerHTML) to prevent XSS');
+  });
+
+  test('emptyState.subtext creates or updates a secondary paragraph element', () => {
+    assertContains(code, "'ccd-cart-empty__subtext'",
+      'Subtext element uses the .ccd-cart-empty__subtext class (BEM convention)');
+    assertRegex(code, /document\.createElement\(['"]p['"]\)/,
+      'Subtext element must be created via createElement when not already present');
+    assertRegex(code, /subEl\.textContent\s*=\s*es\.subtext/,
+      'subtext must be assigned via textContent for XSS safety');
+  });
+
+  test('emptyState.icon sets data-icon attribute (no DOM injection)', () => {
+    assertRegex(code, /typeof\s+es\.icon\s*===\s*['"]string['"]/,
+      'icon must be typeof-checked');
+    assertRegex(code, /emptyEl\.setAttribute\(['"]data-icon['"]\s*,\s*es\.icon\)/,
+      'icon must be applied as data-icon attribute (CSS swaps the visual — string never enters innerHTML)');
+  });
+
+  test('emptyState.ctaLabel updates the continue-shopping button text', () => {
+    assertContains(code, ".ccd-continue-btn",
+      'CTA selector must target .ccd-continue-btn');
+    assertRegex(code, /ctaBtn\.textContent\s*=\s*es\.ctaLabel/,
+      'ctaLabel must update the button via textContent');
+  });
+
+  test('emptyState.ctaLink replaces closeDrawer onclick with navigation (validated URL only)', () => {
+    // Must validate the link matches the schema rules: /, /path, or https://
+    assertRegex(code, /es\.ctaLink\s*===\s*['"]\/['"]/,
+      'ctaLink must accept "/" (cart-root navigation)');
+    assertContains(code, '/^\\/[^/]/.test(es.ctaLink)',
+      'ctaLink must validate single-leading-slash paths via /^\\/[^/]/ (rejects protocol-relative //)');
+    assertContains(code, '/^https:\\/\\//.test(es.ctaLink)',
+      'ctaLink must validate https:// URLs via /^https:\\/\\//');
+    assertContains(code, 'window.location.href = safeLink',
+      'CTA navigation must assign to window.location.href (only after URL validation)');
+  });
+
+  test('emptyState.ctaInheritsCheckoutStyle toggles checkout-style modifier class', () => {
+    assertRegex(code, /es\.ctaInheritsCheckoutStyle\s*===\s*true[\s\S]{0,80}ccd-continue-btn--checkout-style/,
+      'true must add the .ccd-continue-btn--checkout-style modifier class');
+    assertRegex(code, /es\.ctaInheritsCheckoutStyle\s*===\s*false[\s\S]{0,80}classList\.remove\(\s*['"]ccd-continue-btn--checkout-style['"]/,
+      'false must remove the modifier class (allows toggling back to default)');
+  });
+
   // ================================================================
   // RESULTS
   // ================================================================

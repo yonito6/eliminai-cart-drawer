@@ -4102,6 +4102,48 @@
         if (typeof li.titleSize === 'number') drawer.style.setProperty('--ccd-li-title-size', li.titleSize + 'px');
         if (typeof li.titleWeight === 'number') drawer.style.setProperty('--ccd-li-title-weight', String(li.titleWeight));
       }
+
+      // ── EMPTY STATE ──
+      // The .ccd-cart-empty block exists in the drawer at all times — visibility
+      // toggles based on cart.item_count === 0. Overrides update text/CTA/icon.
+      if (eo.emptyState && typeof eo.emptyState === 'object') {
+        var es = eo.emptyState;
+        var emptyEl = drawer.querySelector('.ccd-cart-empty');
+        if (emptyEl) {
+          // Heading text (the main "Your cart is empty" paragraph)
+          if (typeof es.heading === 'string') {
+            var headingEl = emptyEl.querySelector('p');
+            if (headingEl) headingEl.textContent = es.heading;
+          }
+          // Subtext — create or update a secondary paragraph below the heading
+          if (typeof es.subtext === 'string') {
+            var subEl = emptyEl.querySelector('.ccd-cart-empty__subtext');
+            if (!subEl) {
+              subEl = document.createElement('p');
+              subEl.className = 'ccd-cart-empty__subtext';
+              var p = emptyEl.querySelector('p');
+              if (p && p.nextSibling) p.parentNode.insertBefore(subEl, p.nextSibling);
+              else emptyEl.appendChild(subEl);
+            }
+            subEl.textContent = es.subtext;
+          }
+          // Icon — applied as data-icon attribute for CSS to swap (safe: no DOM injection)
+          if (typeof es.icon === 'string') emptyEl.setAttribute('data-icon', es.icon);
+          // CTA label
+          var ctaBtn = emptyEl.querySelector('.ccd-continue-btn');
+          if (ctaBtn) {
+            if (typeof es.ctaLabel === 'string') ctaBtn.textContent = es.ctaLabel;
+            // CTA link — navigate instead of just closing the drawer
+            if (typeof es.ctaLink === 'string' && (es.ctaLink === '/' || /^\/[^/]/.test(es.ctaLink) || /^https:\/\//.test(es.ctaLink))) {
+              var safeLink = es.ctaLink;
+              ctaBtn.onclick = function() { window.location.href = safeLink; };
+            }
+            // Inherits checkout-button visual style — toggle modifier class
+            if (es.ctaInheritsCheckoutStyle === true) ctaBtn.classList.add('ccd-continue-btn--checkout-style');
+            else if (es.ctaInheritsCheckoutStyle === false) ctaBtn.classList.remove('ccd-continue-btn--checkout-style');
+          }
+        }
+      }
     },
 
     // Cart-aware scarcity timer lifecycle. Called after every cart refresh so the
