@@ -2563,6 +2563,104 @@ async function run() {
       'Guard must filter for .ccd-checkout-btn (via Element.closest so clicks on inner spans/svgs still count)');
   });
 
+  // CONTRACT: Express Payments Addon (Chunk 4.4)
+  console.log('\nContract: Express Payments Addon');
+
+  test('expressPayments addon registered in _addonHandlers with inject + remove', () => {
+    assertRegex(code, /expressPayments\s*:\s*\{\s*inject\s*:\s*function\s*\([^)]*\)\s*\{\s*CCD\.injectExpressPayments/,
+      'Registry must call CCD.injectExpressPayments(c) on inject');
+    var entry = code.match(/expressPayments\s*:\s*\{[\s\S]*?ccd-express-payments[\s\S]*?\}\s*[,}]/);
+    assert(entry, 'expressPayments registry entry must reference #ccd-express-payments id');
+    assert(/remove\s*:\s*function/.test(entry[0]),
+      'Registry must define remove() to clean up the wrapper');
+    assert(/getElementById\(['"]ccd-express-payments['"]\)/.test(entry[0]),
+      'remove() must locate and delete #ccd-express-payments');
+  });
+
+  test('CCD._EXPRESS_PROVIDERS contains all 6 providers with brand colors', () => {
+    assertContains(code, 'CCD._EXPRESS_PROVIDERS',
+      'Provider table must be exposed on CCD so the dashboard preview can read identical brand colors');
+    assertContains(code, "key: 'shopPay'", 'shopPay must be a defined provider');
+    assertContains(code, "key: 'googlePay'", 'googlePay must be a defined provider');
+    assertContains(code, "key: 'paypal'", 'paypal must be a defined provider');
+    assertContains(code, "key: 'applePay'", 'applePay must be a defined provider');
+    assertContains(code, "key: 'amazonPay'", 'amazonPay must be a defined provider');
+    assertContains(code, "key: 'metaPay'", 'metaPay must be a defined provider');
+    // Shop Pay brand color must be the exact official purple
+    assertContains(code, "#5a31f4", 'Shop Pay must use its official brand color #5a31f4');
+  });
+
+  test('CCD.injectExpressPayments only renders providers explicitly enabled in cfg.providers', () => {
+    assertContains(code, 'CCD.injectExpressPayments = function',
+      'injectExpressPayments must be defined on CCD');
+    // Loop guards against rendering disabled providers — uses providers[p.key] truthy check
+    assertRegex(code, /if\s*\(\s*providers\[p\.key\]\s*\)\s*enabled\.push/,
+      'Only providers with truthy cfg.providers[key] may be rendered (disabled = no button)');
+    // If no provider is enabled, the wrapper must NOT be inserted
+    assertRegex(code, /if\s*\(\s*!enabled\.length\s*\)\s*return/,
+      'Render must short-circuit when zero providers are enabled (no empty wrapper)');
+  });
+
+  test('Express button per provider has CSS-var injection for brand color', () => {
+    // The promised CSS-var contract: --ccd-ep-bg and --ccd-ep-fg set per button.
+    // Dashboard preview reads the same vars so visuals stay 1:1 with storefront.
+    assertContains(code, "setProperty('--ccd-ep-bg'",
+      '--ccd-ep-bg CSS custom property must be set per button (background)');
+    assertContains(code, "setProperty('--ccd-ep-fg'",
+      '--ccd-ep-fg CSS custom property must be set per button (foreground)');
+    assertContains(code, "'var(--ccd-ep-bg)'",
+      'Button background must read from var(--ccd-ep-bg) so the var actually controls the color');
+    assertContains(code, "'var(--ccd-ep-fg)'",
+      'Button foreground must read from var(--ccd-ep-fg)');
+    assertContains(code, "setAttribute('data-provider'",
+      'Each button must carry data-provider so QA, analytics, and CSS overrides can target it');
+  });
+
+  test('Layout stacked vs row applies modifier class to wrapper and button row', () => {
+    // Modifier classes drive flex-direction in CSS (column vs row).
+    assertRegex(code, /ccd-express--['"]?\s*\+\s*layout/,
+      'Wrapper class must include --stacked or --row (--layout modifier)');
+    assertRegex(code, /ccd-express__buttons--['"]?\s*\+\s*layout/,
+      'Button row must include matching --stacked / --row modifier');
+    assertRegex(code, /layout\s*===\s*['"]row['"]\s*\?\s*['"]row['"]\s*:\s*['"]stacked['"]/,
+      'Default layout must be "stacked" — only switch to "row" when cfg.layout === "row"');
+  });
+
+  test('Position above inserts before .ccd-checkout-btn, below inserts after', () => {
+    // Above: footer.insertBefore(wrap, checkoutBtn) — natural insert-before
+    // Below: insert after checkoutBtn via checkoutBtn.nextSibling reference
+    assertRegex(code, /footer\.insertBefore\(\s*wrap\s*,\s*checkoutBtn\s*\)/,
+      'Position "above" must use footer.insertBefore(wrap, checkoutBtn)');
+    assertRegex(code, /checkoutBtn\.nextSibling/,
+      'Position "below" must reference checkoutBtn.nextSibling to insert after the button');
+    assertRegex(code, /position\s*===\s*['"]below['"]\s*\?\s*['"]below['"]\s*:\s*['"]above['"]/,
+      'Default position must be "above" — only switch to "below" when cfg.position === "below"');
+  });
+
+  test('Separator label renders only when non-empty string', () => {
+    assertRegex(code, /if\s*\(\s*separatorLabel\s*\)\s*\{/,
+      'Separator element must be created only when separatorLabel is truthy (empty string = no separator)');
+    assertContains(code, "className = 'ccd-express__separator'",
+      'Separator element must use the .ccd-express__separator class so CSS can style it');
+    assertRegex(code, /sep\.textContent\s*=\s*separatorLabel/,
+      'Separator must render the cfg.separatorLabel text');
+  });
+
+  test('Express button click navigates to /checkout?payment=<provider>', () => {
+    // Real express buttons would need Shopify shop-pay-button web component
+    // with Storefront API token. Inside the cart drawer we advertise + route
+    // to /checkout, which Shopify's checkout page resolves to the correct
+    // express method via the ?payment query hint.
+    assertContains(code, "'/checkout?payment='",
+      'Click must navigate to /checkout?payment=<encoded provider key>');
+    assertContains(code, 'encodeURIComponent(provKey)',
+      'Provider key must be URL-encoded before being appended to the checkout URL');
+    // IIFE closure captures the per-iteration provKey so each button routes to
+    // its own provider (avoids the classic loop-var closure bug)
+    assertRegex(code, /\(function\(provKey\)\s*\{[\s\S]*?return\s+function/,
+      'Per-button click must use IIFE closure to capture provKey (otherwise all buttons would target the last provider in the loop)');
+  });
+
   // ================================================================
   // RESULTS
   // ================================================================

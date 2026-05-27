@@ -3907,7 +3907,8 @@
       upsellRecommendations:{ inject: function(c) { CCD.injectUpsells(c); },        remove: function() { var e = document.getElementById('ccd-upsells'); if (e) e.remove(); } },
       notes:                { inject: function(c) { CCD.injectNotes(c); },          remove: function() { var e = document.getElementById('ccd-notes-row'); if (e) e.remove(); } },
       discountCode:         { inject: function(c) { CCD.injectDiscountCode(c); },   remove: function() { var e = document.getElementById('ccd-discount-code-row'); if (e) e.remove(); } },
-      termsCheckbox:        { inject: function(c) { CCD.injectTermsCheckbox(c); },  remove: function() { var e = document.getElementById('ccd-terms-row'); if (e) e.remove(); CCD._termsBlock = null; } }
+      termsCheckbox:        { inject: function(c) { CCD.injectTermsCheckbox(c); },  remove: function() { var e = document.getElementById('ccd-terms-row'); if (e) e.remove(); CCD._termsBlock = null; } },
+      expressPayments:      { inject: function(c) { CCD.injectExpressPayments(c); },remove: function() { var e = document.getElementById('ccd-express-payments'); if (e) e.remove(); } }
     },
 
     applyExperimentFeatures: function(config) {
@@ -4806,6 +4807,97 @@
       }
     };
     document.addEventListener('click', CCD._termsClickGuard, true);
+  };
+
+  // ── Express Payments addon ──
+  // Renders branded payment buttons (Shop Pay, Google Pay, PayPal, Apple Pay,
+  // Amazon Pay, Meta Pay) above or below .ccd-checkout-btn. Each button has
+  // its provider brand color injected as CSS custom properties (--ccd-ep-bg,
+  // --ccd-ep-fg) so the dashboard preview and the storefront stay in sync.
+  //
+  // Layout 'stacked' = column of full-width buttons. 'row' = compact flex row.
+  // separatorLabel renders between the wrapper and the checkout button when
+  // non-empty (e.g. "— or —").
+  //
+  // Click navigates to /checkout?payment=<provider> — Shopify's checkout page
+  // recognizes the hint and surfaces that express method. Real
+  // shop-pay-button web component would need Shopify Storefront token, which
+  // is outside the cart-drawer scope; this is the standard cart-drawer
+  // pattern (advertise + route to /checkout).
+  CCD._EXPRESS_PROVIDERS = [
+    { key: 'shopPay',    label: 'Shop Pay',    bg: '#5a31f4', fg: '#ffffff' },
+    { key: 'googlePay',  label: 'Google Pay',  bg: '#000000', fg: '#ffffff' },
+    { key: 'paypal',     label: 'PayPal',      bg: '#ffc439', fg: '#003087' },
+    { key: 'applePay',   label: 'Apple Pay',   bg: '#000000', fg: '#ffffff' },
+    { key: 'amazonPay',  label: 'Amazon Pay',  bg: '#ff9900', fg: '#000000' },
+    { key: 'metaPay',    label: 'Meta Pay',    bg: '#0866ff', fg: '#ffffff' }
+  ];
+  CCD.injectExpressPayments = function(cfg) {
+    cfg = cfg || {};
+    var existing = document.getElementById('ccd-express-payments');
+    if (existing) existing.remove();
+    var footer = document.querySelector('.ccd-sticky-footer');
+    var checkoutBtn = footer && footer.querySelector('.ccd-checkout-btn');
+    if (!footer || !checkoutBtn) return;
+
+    var providers = cfg.providers || {};
+    var position = cfg.position === 'below' ? 'below' : 'above';
+    var layout = cfg.layout === 'row' ? 'row' : 'stacked';
+    var separatorLabel = typeof cfg.separatorLabel === 'string' ? cfg.separatorLabel : '';
+
+    var enabled = [];
+    for (var i = 0; i < CCD._EXPRESS_PROVIDERS.length; i++) {
+      var p = CCD._EXPRESS_PROVIDERS[i];
+      if (providers[p.key]) enabled.push(p);
+    }
+    if (!enabled.length) return;
+
+    var wrap = document.createElement('div');
+    wrap.id = 'ccd-express-payments';
+    wrap.className = 'ccd-express ccd-express--' + position + ' ccd-express--' + layout;
+
+    var btnRow = document.createElement('div');
+    btnRow.className = 'ccd-express__buttons ccd-express__buttons--' + layout;
+    wrap.appendChild(btnRow);
+
+    for (var j = 0; j < enabled.length; j++) {
+      var prov = enabled[j];
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ccd-express__btn ccd-express__btn--' + prov.key;
+      btn.setAttribute('data-provider', prov.key);
+      // CSS custom property injection — dashboard preview reads the same vars
+      btn.style.setProperty('--ccd-ep-bg', prov.bg);
+      btn.style.setProperty('--ccd-ep-fg', prov.fg);
+      btn.style.background = 'var(--ccd-ep-bg)';
+      btn.style.color = 'var(--ccd-ep-fg)';
+      btn.textContent = prov.label;
+      btn.addEventListener('click', (function(provKey) {
+        return function() { window.location.href = '/checkout?payment=' + encodeURIComponent(provKey); };
+      })(prov.key));
+      btnRow.appendChild(btn);
+    }
+
+    var sep = null;
+    if (separatorLabel) {
+      sep = document.createElement('div');
+      sep.className = 'ccd-express__separator';
+      sep.textContent = separatorLabel;
+    }
+
+    if (position === 'above') {
+      footer.insertBefore(wrap, checkoutBtn);
+      if (sep) footer.insertBefore(sep, checkoutBtn);
+    } else {
+      // 'below' — insert wrap after checkoutBtn. If sep, sep goes between btn and wrap.
+      var afterRef = checkoutBtn.nextSibling;
+      if (sep) {
+        if (afterRef) footer.insertBefore(sep, afterRef);
+        else footer.appendChild(sep);
+      }
+      if (afterRef) footer.insertBefore(wrap, afterRef);
+      else footer.appendChild(wrap);
+    }
   };
 
   if (document.readyState === 'loading') {
