@@ -2923,6 +2923,88 @@ async function run() {
       'false must remove the modifier class (allows toggling back to default)');
   });
 
+  // CONTRACT: editorOverrides Footer (Chunk 4.8)
+  console.log('\nContract: editorOverrides Footer');
+
+  test('footer.showSubtotal=false adds ccd-footer--no-subtotal class', () => {
+    assertRegex(code, /ft\.showSubtotal\s*===\s*false[\s\S]{0,80}ccd-footer--no-subtotal/,
+      'showSubtotal=false must add .ccd-footer--no-subtotal modifier class');
+    assertRegex(code, /ft\.showSubtotal\s*===\s*true[\s\S]{0,120}classList\.remove\(\s*['"]ccd-footer--no-subtotal['"]/,
+      'showSubtotal=true must remove the modifier class');
+  });
+
+  test('footer.showShippingNote and showTaxNote toggle independent modifier classes', () => {
+    assertContains(code, 'ccd-footer--no-shipping-note',
+      'showShippingNote must control .ccd-footer--no-shipping-note class');
+    assertContains(code, 'ccd-footer--no-tax-note',
+      'showTaxNote must control .ccd-footer--no-tax-note class');
+  });
+
+  test('footer.showYouSaved and showCrossedOutSubtotal toggle modifier classes', () => {
+    assertContains(code, 'ccd-footer--no-you-saved',
+      'showYouSaved must control .ccd-footer--no-you-saved class');
+    assertContains(code, 'ccd-footer--no-crossed',
+      'showCrossedOutSubtotal must control .ccd-footer--no-crossed class');
+  });
+
+  test('footer.showGiftNote toggles ccd-footer--no-gift-note class', () => {
+    assertRegex(code, /ft\.showGiftNote\s*===\s*false[\s\S]{0,80}ccd-footer--no-gift-note/,
+      'showGiftNote=false must add .ccd-footer--no-gift-note class');
+  });
+
+  test('footer.totalOutsideButton=true adds ccd-footer--total-outside class', () => {
+    assertRegex(code, /ft\.totalOutsideButton\s*===\s*true[\s\S]{0,80}ccd-footer--total-outside/,
+      'totalOutsideButton=true must add .ccd-footer--total-outside modifier class');
+  });
+
+  test('footer.totalLabel updates .ccd-checkout-total-label via textContent (XSS-safe)', () => {
+    assertContains(code, '.ccd-checkout-total-label',
+      'totalLabel selector must target .ccd-checkout-total-label');
+    assertRegex(code, /labelEl\.textContent\s*=\s*ft\.totalLabel/,
+      'totalLabel must be assigned via textContent (not innerHTML) to prevent XSS');
+  });
+
+  test('footer.totalSize sets --ccd-footer-total-size CSS var with px unit', () => {
+    assertRegex(code, /typeof\s+ft\.totalSize\s*===\s*['"]number['"]/,
+      'totalSize must be typeof-checked as number');
+    assertRegex(code, /setProperty\(\s*['"]--ccd-footer-total-size['"]\s*,\s*ft\.totalSize\s*\+\s*['"]px['"]/,
+      'totalSize must set --ccd-footer-total-size with px suffix');
+  });
+
+  test('footer.totalWeight sets --ccd-footer-total-weight CSS var', () => {
+    assertRegex(code, /typeof\s+ft\.totalWeight\s*===\s*['"]number['"]/,
+      'totalWeight must be typeof-checked as number');
+    assertContains(code, "'--ccd-footer-total-weight'",
+      'totalWeight must set --ccd-footer-total-weight CSS variable');
+  });
+
+  test('footer.bgStyle enum (transparent/surface/accent) maps to modifier classes', () => {
+    assertContains(code, 'ccd-footer--bg-transparent',
+      'bgStyle=transparent must map to .ccd-footer--bg-transparent');
+    assertContains(code, 'ccd-footer--bg-surface',
+      'bgStyle=surface must map to .ccd-footer--bg-surface');
+    assertContains(code, 'ccd-footer--bg-accent',
+      'bgStyle=accent must map to .ccd-footer--bg-accent');
+    assertRegex(code, /classList\.remove\(\s*['"]ccd-footer--bg-transparent['"]\s*,\s*['"]ccd-footer--bg-surface['"]\s*,\s*['"]ccd-footer--bg-accent['"]/,
+      'Previous bg modifier classes must be removed before applying new one');
+  });
+
+  test('footer.borderTop enum (none/line/shadow) maps to modifier classes', () => {
+    assertContains(code, 'ccd-footer--border-none',
+      'borderTop=none must map to .ccd-footer--border-none');
+    assertContains(code, 'ccd-footer--border-line',
+      'borderTop=line must map to .ccd-footer--border-line');
+    assertContains(code, 'ccd-footer--border-shadow',
+      'borderTop=shadow must map to .ccd-footer--border-shadow');
+  });
+
+  test('footer.stickyFooter=false adds ccd-footer--not-sticky class', () => {
+    assertRegex(code, /ft\.stickyFooter\s*===\s*false[\s\S]{0,80}ccd-footer--not-sticky/,
+      'stickyFooter=false must add .ccd-footer--not-sticky modifier class');
+    assertRegex(code, /ft\.stickyFooter\s*===\s*true[\s\S]{0,120}classList\.remove\(\s*['"]ccd-footer--not-sticky['"]/,
+      'stickyFooter=true must remove the .ccd-footer--not-sticky class');
+  });
+
   // ================================================================
   // RESULTS
   // ================================================================

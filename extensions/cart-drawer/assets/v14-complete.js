@@ -4144,6 +4144,61 @@
           }
         }
       }
+
+      // ── FOOTER ──
+      // .ccd-sticky-footer is the bottom block containing protection, discount
+      // badges, the checkout button, and the trust line. Visibility toggles are
+      // applied via classes; values use CSS custom properties.
+      if (eo.footer && typeof eo.footer === 'object') {
+        var ft = eo.footer;
+        var footEl = drawer.querySelector('.ccd-sticky-footer');
+        if (footEl) {
+          // Visibility booleans — modifier classes the CSS uses to hide sub-elements
+          if (ft.showSubtotal === false) footEl.classList.add('ccd-footer--no-subtotal');
+          else if (ft.showSubtotal === true) footEl.classList.remove('ccd-footer--no-subtotal');
+          if (ft.showShippingNote === false) footEl.classList.add('ccd-footer--no-shipping-note');
+          else if (ft.showShippingNote === true) footEl.classList.remove('ccd-footer--no-shipping-note');
+          if (ft.showTaxNote === false) footEl.classList.add('ccd-footer--no-tax-note');
+          else if (ft.showTaxNote === true) footEl.classList.remove('ccd-footer--no-tax-note');
+          if (ft.showYouSaved === false) footEl.classList.add('ccd-footer--no-you-saved');
+          else if (ft.showYouSaved === true) footEl.classList.remove('ccd-footer--no-you-saved');
+          if (ft.showCrossedOutSubtotal === false) footEl.classList.add('ccd-footer--no-crossed');
+          else if (ft.showCrossedOutSubtotal === true) footEl.classList.remove('ccd-footer--no-crossed');
+          if (ft.showGiftNote === false) footEl.classList.add('ccd-footer--no-gift-note');
+          else if (ft.showGiftNote === true) footEl.classList.remove('ccd-footer--no-gift-note');
+
+          // totalOutsideButton — when true, move total label out of the button
+          if (ft.totalOutsideButton === true) footEl.classList.add('ccd-footer--total-outside');
+          else if (ft.totalOutsideButton === false) footEl.classList.remove('ccd-footer--total-outside');
+
+          // totalLabel — updates the existing total label text (XSS-safe)
+          if (typeof ft.totalLabel === 'string') {
+            var labelEl = footEl.querySelector('.ccd-checkout-total-label');
+            if (labelEl) labelEl.textContent = ft.totalLabel;
+            else footEl.setAttribute('data-total-label', ft.totalLabel);
+          }
+
+          // totalSize + totalWeight → CSS custom properties (read by .ccd-checkout-total)
+          if (typeof ft.totalSize === 'number') drawer.style.setProperty('--ccd-footer-total-size', ft.totalSize + 'px');
+          if (typeof ft.totalWeight === 'number') drawer.style.setProperty('--ccd-footer-total-weight', String(ft.totalWeight));
+
+          // bgStyle modifier (transparent / surface / accent)
+          footEl.classList.remove('ccd-footer--bg-transparent', 'ccd-footer--bg-surface', 'ccd-footer--bg-accent');
+          if (ft.bgStyle === 'transparent' || ft.bgStyle === 'surface' || ft.bgStyle === 'accent') {
+            footEl.classList.add('ccd-footer--bg-' + ft.bgStyle);
+          }
+
+          // borderTop modifier (none / line / shadow)
+          footEl.classList.remove('ccd-footer--border-none', 'ccd-footer--border-line', 'ccd-footer--border-shadow');
+          if (ft.borderTop === 'none' || ft.borderTop === 'line' || ft.borderTop === 'shadow') {
+            footEl.classList.add('ccd-footer--border-' + ft.borderTop);
+          }
+
+          // stickyFooter — toggle position:sticky vs static
+          if (ft.stickyFooter === false) footEl.classList.add('ccd-footer--not-sticky');
+          else if (ft.stickyFooter === true) footEl.classList.remove('ccd-footer--not-sticky');
+        }
+      }
     },
 
     // Cart-aware scarcity timer lifecycle. Called after every cart refresh so the
