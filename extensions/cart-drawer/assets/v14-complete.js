@@ -2119,6 +2119,7 @@
                     CCD.loadExperiment(function(config) {
                       if (config) {
                         CCD.applyExperimentFeatures(config);
+                        if (config.editorOverrides) CCD.applyEditorOverrides(config.editorOverrides);
                         if (config.cartConfig && config.cartConfig.addons) {
                           var sp = config.cartConfig.addons.shippingProtection;
                           if (sp && sp.config) {
@@ -3661,6 +3662,7 @@
       this.loadExperiment(function(config) {
         if (config) {
           self.applyExperimentFeatures(config);
+          if (config.editorOverrides) self.applyEditorOverrides(config.editorOverrides);
           // Merge backend addon config into CFG so all stores get the right settings
           // (not just stores using Liquid theme settings)
           if (config.cartConfig && config.cartConfig.addons) {
@@ -3954,6 +3956,99 @@
       // Same pattern for the Upsell Recommendations addon so refreshLight can sync
       // "You may also like" with cart state (remove on empty, re-inject when items return).
       CCD._upsellsCfg = show.upsellRecommendations || null;
+    },
+
+    // ──────────────────────────────────────────────────────────────────
+    // Cart Editor — editorOverrides fallback reads (chunk 4.5)
+    // Applies per-element styling/text overrides AFTER the drawer is built.
+    // All reads are guarded: every field has a fallback to the current CFG/default.
+    // Stashes the full overrides object on CCD._EO so other addons (notes, terms,
+    // milestoneBar position, etc.) can read shared visual contracts.
+    // ──────────────────────────────────────────────────────────────────
+    applyEditorOverrides: function(eo) {
+      if (!eo || typeof eo !== 'object') return;
+      CCD._EO = eo;
+      var drawer = document.getElementById('CCD-Drawer');
+      if (!drawer) return;
+
+      // ── HEADER ──
+      if (eo.header && typeof eo.header === 'object') {
+        var h = eo.header;
+        var headerEl = drawer.querySelector('.ccd-header');
+        var titleEl = drawer.querySelector('.ccd-title');
+
+        if (titleEl) {
+          // Title text — supports {{cart_quantity}} token
+          if (typeof h.title === 'string') {
+            var qty = (CCD._lastCart && CCD._lastCart.item_count) || 0;
+            titleEl.textContent = h.title.replace(/\{\{cart_quantity\}\}/g, String(qty));
+          }
+          // Alignment: 'center' or 'side' (left)
+          if (h.titleAlignment === 'center') titleEl.style.textAlign = 'center';
+          else if (h.titleAlignment === 'side') titleEl.style.textAlign = 'left';
+          // Title font size (14-48px)
+          if (typeof h.titleFontSize === 'number') titleEl.style.fontSize = h.titleFontSize + 'px';
+          // Title font weight
+          if (h.titleFontWeight === 'normal') titleEl.style.fontWeight = '400';
+          else if (h.titleFontWeight === 'semibold') titleEl.style.fontWeight = '600';
+          else if (h.titleFontWeight === 'bold') titleEl.style.fontWeight = '700';
+          // Title color
+          if (typeof h.titleColor === 'string') titleEl.style.color = h.titleColor;
+          // Heading level swap (h2 ↔ h3 ↔ h4)
+          if (h.headingLevel && /^h[234]$/.test(h.headingLevel) && h.headingLevel !== titleEl.tagName.toLowerCase()) {
+            var newEl = document.createElement(h.headingLevel);
+            newEl.className = titleEl.className;
+            newEl.textContent = titleEl.textContent;
+            newEl.style.cssText = titleEl.style.cssText;
+            titleEl.parentNode.replaceChild(newEl, titleEl);
+          }
+        }
+
+        if (headerEl) {
+          if (typeof h.bgColor === 'string') headerEl.style.backgroundColor = h.bgColor;
+          // Padding via modifier class (compact / comfortable / roomy)
+          headerEl.classList.remove('ccd-header--compact', 'ccd-header--comfortable', 'ccd-header--roomy');
+          if (h.padding === 'compact' || h.padding === 'comfortable' || h.padding === 'roomy') {
+            headerEl.classList.add('ccd-header--' + h.padding);
+          }
+        }
+
+        // ── CLOSE BUTTON ──
+        if (h.closeButton && typeof h.closeButton === 'object') {
+          var cb = h.closeButton;
+          var btn = drawer.querySelector('.ccd-close-btn');
+          if (btn) {
+            if (typeof cb.bgColor === 'string') {
+              btn.style.setProperty('--ccd-cb-bg', cb.bgColor);
+              btn.style.backgroundColor = cb.bgColor;
+            }
+            if (typeof cb.bgHoverColor === 'string') {
+              btn.style.setProperty('--ccd-cb-bg-hover', cb.bgHoverColor);
+            }
+            if (typeof cb.iconColor === 'string') btn.style.color = cb.iconColor;
+            // Icon size class (S / M / L)
+            btn.classList.remove('ccd-close-btn--s', 'ccd-close-btn--m', 'ccd-close-btn--l');
+            if (cb.iconSize === 'S') btn.classList.add('ccd-close-btn--s');
+            else if (cb.iconSize === 'M') btn.classList.add('ccd-close-btn--m');
+            else if (cb.iconSize === 'L') btn.classList.add('ccd-close-btn--l');
+            // Stroke weight on the SVG (normal=2, thick=3)
+            var svg = btn.querySelector('svg');
+            if (svg) {
+              if (cb.strokeWeight === 'thick') svg.setAttribute('stroke-width', '3');
+              else if (cb.strokeWeight === 'normal') svg.setAttribute('stroke-width', '2');
+            }
+            // Border style + color
+            if (cb.border === 'none') {
+              btn.style.border = 'none';
+            } else if (cb.border === 'thin' || cb.border === 'normal' || cb.border === 'thick') {
+              var bw = (cb.border === 'thin') ? '1px' : (cb.border === 'thick' ? '3px' : '2px');
+              btn.style.border = bw + ' solid ' + (cb.borderColor || 'currentColor');
+            }
+            if (typeof cb.borderColor === 'string') btn.style.setProperty('--ccd-cb-border', cb.borderColor);
+            if (typeof cb.borderHoverColor === 'string') btn.style.setProperty('--ccd-cb-border-hover', cb.borderHoverColor);
+          }
+        }
+      }
     },
 
     // Cart-aware scarcity timer lifecycle. Called after every cart refresh so the

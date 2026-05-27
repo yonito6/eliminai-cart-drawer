@@ -2661,6 +2661,135 @@ async function run() {
       'Per-button click must use IIFE closure to capture provKey (otherwise all buttons would target the last provider in the loop)');
   });
 
+  // CONTRACT: editorOverrides Header (Chunk 4.5)
+  // The Cart Editor sends an `editorOverrides` object alongside the experiment
+  // config. The storefront must read each `editorOverrides.header.*` field with
+  // a fallback to the current CFG/default — overrides must NEVER force a default
+  // when undefined. CCD._EO is the stash so downstream code can also read it.
+  console.log('\nContract: editorOverrides Header');
+
+  test('CCD.applyEditorOverrides is defined and called from loadExperiment callback', () => {
+    assertContains(code, 'applyEditorOverrides: function(eo)',
+      'CCD.applyEditorOverrides(eo) must exist as a method on CCD');
+    assertRegex(code, /applyEditorOverrides\(config\.editorOverrides\)/,
+      'loadExperiment callback must call applyEditorOverrides(config.editorOverrides) so overrides actually take effect');
+    assertContains(code, 'CCD._EO = eo',
+      'Overrides object must be stashed on CCD._EO for downstream addons to read');
+  });
+
+  test('Header title override: read with fallback + {{cart_quantity}} token replacement', () => {
+    assertRegex(code, /typeof\s+h\.title\s*===\s*['"]string['"]/,
+      'Title must be read defensively (typeof check) so undefined overrides do not blank the title');
+    assertContains(code, "h.title.replace(/\\{\\{cart_quantity\\}\\}/g",
+      'Title must support the {{cart_quantity}} token (replaced with cart.item_count)');
+    assertRegex(code, /titleEl\.textContent\s*=\s*h\.title\.replace/,
+      'Title text must be assigned via textContent (not innerHTML) to prevent XSS');
+  });
+
+  test('Header titleAlignment override: center vs side (left)', () => {
+    assertRegex(code, /h\.titleAlignment\s*===\s*['"]center['"]/,
+      'titleAlignment === "center" must apply text-align:center');
+    assertRegex(code, /h\.titleAlignment\s*===\s*['"]side['"]/,
+      'titleAlignment === "side" must apply text-align:left (start side)');
+    assertRegex(code, /titleEl\.style\.textAlign\s*=\s*['"]center['"]/,
+      'text-align must be set inline so it overrides any theme CSS');
+  });
+
+  test('Header bgColor override applies to .ccd-header element', () => {
+    assertRegex(code, /typeof\s+h\.bgColor\s*===\s*['"]string['"]/,
+      'bgColor must be read with typeof check (skip if not provided)');
+    assertRegex(code, /headerEl\.style\.backgroundColor\s*=\s*h\.bgColor/,
+      'bgColor must be assigned to headerEl.style.backgroundColor');
+  });
+
+  test('Header padding override applies ccd-header--{padding} modifier class', () => {
+    assertContains(code, "'ccd-header--compact'",
+      'compact padding modifier class must be removed before reapply (resets stale state)');
+    assertContains(code, "'ccd-header--comfortable'",
+      'comfortable padding modifier class must be tracked');
+    assertContains(code, "'ccd-header--roomy'",
+      'roomy padding modifier class must be tracked');
+    assertContains(code, "'ccd-header--' + h.padding",
+      'Padding must be applied as a modifier class (ccd-header--{value})');
+  });
+
+  test('Header headingLevel override swaps title element tag (h2/h3/h4)', () => {
+    assertRegex(code, /\/\^h\[234\]\$\//,
+      'headingLevel must be validated against /^h[234]$/ before createElement (prevents arbitrary tags)');
+    assertContains(code, 'document.createElement(h.headingLevel)',
+      'New heading element must be created via createElement(h.headingLevel)');
+    assertContains(code, 'titleEl.parentNode.replaceChild(newEl, titleEl)',
+      'Old title must be replaced in-place via parentNode.replaceChild');
+  });
+
+  test('Header titleFontSize override (number, px units)', () => {
+    assertRegex(code, /typeof\s+h\.titleFontSize\s*===\s*['"]number['"]/,
+      'titleFontSize must be checked as a number (avoid string concat issues)');
+    assertRegex(code, /titleEl\.style\.fontSize\s*=\s*h\.titleFontSize\s*\+\s*['"]px['"]/,
+      'titleFontSize must be assigned with px suffix');
+  });
+
+  test('Header titleFontWeight override: normal/semibold/bold → 400/600/700', () => {
+    assertRegex(code, /h\.titleFontWeight\s*===\s*['"]normal['"][\s\S]*?['"]400['"]/,
+      'normal weight must map to 400');
+    assertRegex(code, /h\.titleFontWeight\s*===\s*['"]semibold['"][\s\S]*?['"]600['"]/,
+      'semibold weight must map to 600');
+    assertRegex(code, /h\.titleFontWeight\s*===\s*['"]bold['"][\s\S]*?['"]700['"]/,
+      'bold weight must map to 700');
+  });
+
+  test('Header titleColor override applies inline color', () => {
+    assertRegex(code, /typeof\s+h\.titleColor\s*===\s*['"]string['"]/,
+      'titleColor must be checked as string before assignment');
+    assertRegex(code, /titleEl\.style\.color\s*=\s*h\.titleColor/,
+      'titleColor must be assigned to titleEl.style.color');
+  });
+
+  test('Close button bgColor + bgHoverColor inject as CSS custom properties', () => {
+    assertContains(code, "setProperty('--ccd-cb-bg'",
+      'closeButton.bgColor must set --ccd-cb-bg CSS custom property (so :hover state can still vary)');
+    assertContains(code, "setProperty('--ccd-cb-bg-hover'",
+      'closeButton.bgHoverColor must set --ccd-cb-bg-hover for the hover state');
+    assertRegex(code, /btn\.style\.backgroundColor\s*=\s*cb\.bgColor/,
+      'Static bgColor must also assign inline backgroundColor (fallback for browsers/themes ignoring the CSS var)');
+  });
+
+  test('Close button iconColor + iconSize (S/M/L) modifier class', () => {
+    assertRegex(code, /typeof\s+cb\.iconColor\s*===\s*['"]string['"]/,
+      'iconColor must be typeof-checked');
+    assertRegex(code, /btn\.style\.color\s*=\s*cb\.iconColor/,
+      'iconColor maps to button color (SVG uses stroke="currentColor" so this drives the X color)');
+    assertContains(code, "'ccd-close-btn--s'",
+      'Small icon size class must be referenced');
+    assertContains(code, "'ccd-close-btn--m'",
+      'Medium icon size class must be referenced');
+    assertContains(code, "'ccd-close-btn--l'",
+      'Large icon size class must be referenced');
+    assertRegex(code, /cb\.iconSize\s*===\s*['"]L['"]/,
+      'iconSize === "L" must apply the large modifier class');
+  });
+
+  test('Close button strokeWeight + border style + borderColor', () => {
+    // strokeWeight maps to SVG stroke-width attribute
+    assertRegex(code, /cb\.strokeWeight\s*===\s*['"]thick['"]/,
+      'strokeWeight === "thick" must be a tracked branch');
+    assertRegex(code, /svg\.setAttribute\(['"]stroke-width['"]\s*,\s*['"]3['"]\)/,
+      'thick stroke must set the SVG stroke-width attribute to 3');
+    assertRegex(code, /svg\.setAttribute\(['"]stroke-width['"]\s*,\s*['"]2['"]\)/,
+      'normal stroke must set the SVG stroke-width attribute to 2');
+    // border styles
+    assertRegex(code, /cb\.border\s*===\s*['"]none['"]/,
+      'border === "none" must clear the border');
+    assertRegex(code, /btn\.style\.border\s*=\s*['"]none['"]/,
+      'border === "none" must set border:none inline');
+    // borderColor is referenced in the dynamic border string
+    assertRegex(code, /cb\.borderColor\s*\|\|\s*['"]currentColor['"]/,
+      'borderColor must default to currentColor when not provided so the border still renders');
+    // borderHoverColor exposed as CSS var for :hover state
+    assertContains(code, "setProperty('--ccd-cb-border-hover'",
+      'borderHoverColor must be exposed as a CSS custom property for :hover styling');
+  });
+
   // ================================================================
   // RESULTS
   // ================================================================
