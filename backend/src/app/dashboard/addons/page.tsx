@@ -650,7 +650,8 @@ function AddonsPage() {
   const didRestoreFromUrl = useRef(false);
   useEffect(() => {
     if (didRestoreFromUrl.current) return;
-    let editKey = searchParams.get('edit');
+    // Accept both ?edit= (legacy) and ?expand= (cart-editor deep links, Chunk 5.5).
+    let editKey = searchParams.get('edit') ?? searchParams.get('expand');
     if (editKey === 'rewards') editKey = 'freeShippingBar';
     if (editKey && definitions.length > 0) {
       const def = definitions.find(d => d.key === editKey);

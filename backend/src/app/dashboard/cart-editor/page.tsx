@@ -19,6 +19,7 @@ import FooterEditor from './element-editors/footer-editor';
 import CheckoutButtonEditor from './element-editors/checkout-button-editor';
 import TrustLineEditor from './element-editors/trust-line-editor';
 import GlobalStyleEditor from './element-editors/global-style-editor';
+import AddonDeepLink from './addon-deep-link';
 
 type Viewport = 'desktop' | 'mobile';
 
@@ -271,6 +272,49 @@ const ELEMENT_EDITORS: Record<string, { label: string; Component: React.Componen
   checkoutButton: { label: 'Checkout Button', Component: CheckoutButtonEditor },
   trustLine: { label: 'Trust Line', Component: TrustLineEditor },
   global: { label: 'Drawer (Global)', Component: GlobalStyleEditor },
+  // Addon footer zones — deep-link to the Addons tab (Chunk 5.5). The addon
+  // itself is the source of truth for everything inside these zones, so the
+  // cart-editor panel just shows a banner that opens the matching addon card.
+  'addon.notes': {
+    label: 'Order Notes',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="notes"
+        title="Edit the Order Notes addon →"
+        description="Notes textarea label, placeholder, and visibility are managed in the Addons tab."
+      />
+    ),
+  },
+  'addon.discountCode': {
+    label: 'Discount Code',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="discountCode"
+        title="Edit the Discount Code addon →"
+        description="Input label, button text, and rendering rules live in the Addons tab."
+      />
+    ),
+  },
+  'addon.termsCheckbox': {
+    label: 'Terms Checkbox',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="termsCheckbox"
+        title="Edit the Terms Checkbox addon →"
+        description="Checkbox label, terms link, and enforcement options are managed in the Addons tab."
+      />
+    ),
+  },
+  'addon.expressPayments': {
+    label: 'Express Payments',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="expressPayments"
+        title="Edit the Express Payments addon →"
+        description="Apple Pay / Google Pay / Shop Pay buttons are managed in the Addons tab."
+      />
+    ),
+  },
 };
 
 function ElementPanel() {
