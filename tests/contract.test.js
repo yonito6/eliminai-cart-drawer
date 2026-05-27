@@ -2508,6 +2508,61 @@ async function run() {
       'Badge rendering must be gated on cfg.showAppliedBadge (default true → only skip when explicitly false)');
   });
 
+  // CONTRACT: Terms Checkbox Addon (Chunk 4.3)
+  console.log('\nContract: Terms Checkbox Addon');
+
+  test('termsCheckbox addon registered in _addonHandlers with inject + remove', () => {
+    assertRegex(code, /termsCheckbox\s*:\s*\{\s*inject\s*:\s*function\s*\([^)]*\)\s*\{\s*CCD\.injectTermsCheckbox/,
+      'Registry must call CCD.injectTermsCheckbox(c) on inject');
+    var entryMatch = code.match(/termsCheckbox\s*:\s*\{[\s\S]*?ccd-terms-row[\s\S]*?\}\s*[,}]/);
+    assert(entryMatch, 'termsCheckbox registry entry must reference #ccd-terms-row id');
+    assert(/remove\s*:\s*function/.test(entryMatch[0]),
+      'Registry must define remove() to clean up the terms row');
+    assert(/getElementById\(['"]ccd-terms-row['"]\)/.test(entryMatch[0]),
+      'remove() must locate and delete #ccd-terms-row');
+    assert(/CCD\._termsBlock\s*=\s*null/.test(entryMatch[0]),
+      'remove() must clear CCD._termsBlock so the checkout click guard no longer blocks');
+  });
+
+  test('CCD.injectTermsCheckbox renders checkbox + sanitized label above .ccd-checkout-btn', () => {
+    assertContains(code, 'CCD.injectTermsCheckbox = function',
+      'injectTermsCheckbox must be defined on CCD');
+    assertRegex(code, /id\s*=\s*['"]ccd-terms-checkbox['"]/,
+      'Checkbox must have id ccd-terms-checkbox');
+    // Row must mount as previous sibling of the checkout button (footer.insertBefore(row, checkoutBtn))
+    assertRegex(code, /footer\.insertBefore\(\s*row\s*,\s*checkoutBtn\s*\)/,
+      'Terms row must insert immediately before .ccd-checkout-btn so it appears above it');
+    assertContains(code, 'ccdSanitizeTermsHtml',
+      'labelHtml must be passed through ccdSanitizeTermsHtml (defense in depth — editor sanitizes on save too)');
+  });
+
+  test('ccdSanitizeTermsHtml strips javascript:/data: hrefs and non-anchor tags', () => {
+    // The sanitizer must:
+    //   - keep <a href="/path"> with href/target/rel only
+    //   - drop javascript: and data: hrefs
+    //   - drop all other tags (script, img, etc.) — unwrap to text only
+    assertRegex(code, /\/\^\\s\*\(javascript\|data\):\/i/,
+      'Sanitizer must reject hrefs starting with javascript: or data: (XSS guard)');
+    assertRegex(code, /if\s*\(\s*child\.tagName\s*===\s*['"]A['"]\s*\)/,
+      'Sanitizer must whitelist anchor tags by tagName');
+    assertRegex(code, /(an\s*!==\s*['"]target['"]\s*&&\s*an\s*!==\s*['"]rel['"])|(an !== 'target' && an !== 'rel')/,
+      'Sanitizer must allow only target + rel attributes on <a> besides href');
+  });
+
+  test('terms checkout-click guard blocks /checkout when unchecked AND blockCheckoutIfUnchecked', () => {
+    // Capture-phase document listener catches .ccd-checkout-btn clicks BEFORE the
+    // existing handler that does window.location = '/checkout'. Calls preventDefault
+    // + stopImmediatePropagation so the navigation never runs.
+    assertContains(code, "addEventListener('click', CCD._termsClickGuard, true)",
+      'Click guard must register in capture phase (third arg true) so it fires before the existing checkout handler');
+    assertContains(code, 'stopImmediatePropagation',
+      'Guard must call stopImmediatePropagation so the existing checkout click handler never runs');
+    assertRegex(code, /blockCheckoutIfUnchecked\s*!==\s*false/,
+      'Default for blockCheckoutIfUnchecked must be true — only skip block when explicitly false');
+    assertRegex(code, /closest\s*\(\s*['"]\.ccd-checkout-btn['"]\s*\)/,
+      'Guard must filter for .ccd-checkout-btn (via Element.closest so clicks on inner spans/svgs still count)');
+  });
+
   // ================================================================
   // RESULTS
   // ================================================================

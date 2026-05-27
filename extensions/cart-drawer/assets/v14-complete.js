@@ -3906,7 +3906,8 @@
       socialProof:          { inject: function(c) { CCD.injectSocialProof(c); },    remove: function() { var e = document.getElementById('ccd-social-proof'); if (e) e.remove(); } },
       upsellRecommendations:{ inject: function(c) { CCD.injectUpsells(c); },        remove: function() { var e = document.getElementById('ccd-upsells'); if (e) e.remove(); } },
       notes:                { inject: function(c) { CCD.injectNotes(c); },          remove: function() { var e = document.getElementById('ccd-notes-row'); if (e) e.remove(); } },
-      discountCode:         { inject: function(c) { CCD.injectDiscountCode(c); },   remove: function() { var e = document.getElementById('ccd-discount-code-row'); if (e) e.remove(); } }
+      discountCode:         { inject: function(c) { CCD.injectDiscountCode(c); },   remove: function() { var e = document.getElementById('ccd-discount-code-row'); if (e) e.remove(); } },
+      termsCheckbox:        { inject: function(c) { CCD.injectTermsCheckbox(c); },  remove: function() { var e = document.getElementById('ccd-terms-row'); if (e) e.remove(); CCD._termsBlock = null; } }
     },
 
     applyExperimentFeatures: function(config) {
@@ -4691,6 +4692,120 @@
       }
     }
     renderAppliedBadge();
+  };
+
+  // ── Terms Checkbox addon ──
+  // Renders a checkbox + label above .ccd-checkout-btn. labelHtml is
+  // sanitized client-side to allow ONLY <a> with safe href/target/rel
+  // (defense-in-depth — the editor already sanitizes on save).
+  //
+  // When blockCheckoutIfUnchecked is true and the box is unchecked,
+  // a capture-phase document click listener targeting .ccd-checkout-btn
+  // calls preventDefault + stopImmediatePropagation so the existing
+  // checkout handler (window.location = '/checkout') never runs. The
+  // error message renders inline and the row pulses red.
+  CCD._termsBlock = null;
+  CCD._termsClickGuard = null;
+  function ccdSanitizeTermsHtml(html) {
+    var tmp = document.createElement('div');
+    tmp.innerHTML = String(html || '');
+    function walk(node) {
+      var children = Array.prototype.slice.call(node.childNodes);
+      for (var i = 0; i < children.length; i++) {
+        var child = children[i];
+        if (child.nodeType === 1) {
+          if (child.tagName === 'A') {
+            var attrs = Array.prototype.slice.call(child.attributes);
+            for (var j = 0; j < attrs.length; j++) {
+              var an = attrs[j].name.toLowerCase();
+              var av = attrs[j].value || '';
+              if (an === 'href') {
+                if (/^\s*(javascript|data):/i.test(av)) child.removeAttribute('href');
+              } else if (an !== 'target' && an !== 'rel') {
+                child.removeAttribute(attrs[j].name);
+              }
+            }
+            walk(child);
+          } else {
+            var text = document.createTextNode(child.textContent || '');
+            node.replaceChild(text, child);
+          }
+        }
+      }
+    }
+    walk(tmp);
+    return tmp.innerHTML;
+  }
+  CCD.injectTermsCheckbox = function(cfg) {
+    cfg = cfg || {};
+    var existing = document.getElementById('ccd-terms-row');
+    if (existing) existing.remove();
+    var footer = document.querySelector('.ccd-sticky-footer');
+    var checkoutBtn = footer && footer.querySelector('.ccd-checkout-btn');
+    if (!footer || !checkoutBtn) return;
+
+    var labelHtml = ccdSanitizeTermsHtml(typeof cfg.labelHtml === 'string' ? cfg.labelHtml : '');
+    var errorMessage = typeof cfg.errorMessage === 'string' ? cfg.errorMessage : 'Please agree to the terms before continuing';
+    var blockCheckout = cfg.blockCheckoutIfUnchecked !== false;
+
+    var row = document.createElement('div');
+    row.id = 'ccd-terms-row';
+    row.className = 'ccd-terms-row';
+
+    var label = document.createElement('label');
+    label.className = 'ccd-terms-row__label';
+    label.htmlFor = 'ccd-terms-checkbox';
+
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.id = 'ccd-terms-checkbox';
+    box.className = 'ccd-terms-row__checkbox';
+    label.appendChild(box);
+
+    var text = document.createElement('span');
+    text.className = 'ccd-terms-row__text';
+    text.innerHTML = labelHtml;
+    label.appendChild(text);
+    row.appendChild(label);
+
+    var err = document.createElement('div');
+    err.id = 'ccd-terms-error';
+    err.className = 'ccd-terms-row__error';
+    err.style.display = 'none';
+    err.textContent = errorMessage;
+    row.appendChild(err);
+
+    footer.insertBefore(row, checkoutBtn);
+
+    box.addEventListener('change', function() {
+      if (box.checked) {
+        err.style.display = 'none';
+        row.classList.remove('ccd-terms-row--error');
+      }
+    });
+
+    CCD._termsBlock = { required: blockCheckout, errorMessage: errorMessage };
+
+    if (CCD._termsClickGuard) {
+      document.removeEventListener('click', CCD._termsClickGuard, true);
+      CCD._termsClickGuard = null;
+    }
+    CCD._termsClickGuard = function(e) {
+      if (!CCD._termsBlock || !CCD._termsBlock.required) return;
+      var t = e.target;
+      var btn = t && (t.closest ? t.closest('.ccd-checkout-btn') : null);
+      if (!btn) return;
+      var cb = document.getElementById('ccd-terms-checkbox');
+      if (cb && !cb.checked) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        var errEl = document.getElementById('ccd-terms-error');
+        if (errEl) errEl.style.display = '';
+        var rowEl = document.getElementById('ccd-terms-row');
+        if (rowEl) rowEl.classList.add('ccd-terms-row--error');
+      }
+    };
+    document.addEventListener('click', CCD._termsClickGuard, true);
   };
 
   if (document.readyState === 'loading') {
