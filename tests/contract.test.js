@@ -2416,6 +2416,47 @@ async function run() {
   });
 
   // ================================================================
+  // CONTRACT: Order Notes Addon (Chunk 4.1)
+  // ================================================================
+  console.log('\nContract: Order Notes Addon');
+
+  test('notes addon registered in _addonHandlers with inject + remove', () => {
+    // Registry must reference CCD.injectNotes and remove element by id ccd-notes-row
+    assertRegex(code, /notes\s*:\s*\{\s*inject\s*:\s*function\s*\([^)]*\)\s*\{\s*CCD\.injectNotes/,
+      'notes handler must call CCD.injectNotes(c) when injecting');
+    // Find the notes registry line and ensure remove handler removes ccd-notes-row
+    const notesLineMatch = code.match(/notes\s*:\s*\{[\s\S]*?ccd-notes-row[\s\S]*?\}\s*[,}]/);
+    assert(notesLineMatch, 'notes registry entry must reference ccd-notes-row id');
+    assert(/remove\s*:\s*function/.test(notesLineMatch[0]),
+      'notes registry entry must define a remove function');
+    assert(/getElementById\(['"]ccd-notes-row['"]\)/.test(notesLineMatch[0]),
+      'notes remove handler must look up element by id ccd-notes-row');
+  });
+
+  test('CCD.injectNotes creates textarea with position class and saves note via /cart/update.js', () => {
+    // The function must exist, create a textarea, apply ccd-notes-row--<position> class,
+    // and POST to /cart/update.js with a JSON body containing the note field.
+    assertContains(code, 'CCD.injectNotes = function', 'CCD.injectNotes must be defined');
+    assertRegex(code, /ccd-notes-row--['"]?\s*\+\s*position/,
+      'Position class (ccd-notes-row--top / ccd-notes-row--bottom) must be applied from cfg.position');
+    assertContains(code, "createElement('textarea')", 'injectNotes must create a textarea element');
+    assertContains(code, "'/cart/update.js'", 'injectNotes must POST to /cart/update.js to persist note');
+    assertRegex(code, /JSON\.stringify\(\s*\{\s*note\s*:/,
+      'injectNotes must send { note: ... } in request body so Shopify stores cart.attributes.note');
+  });
+
+  test('injectNotes inserts at top (firstChild) or bottom (before .ccd-trust) of sticky-footer', () => {
+    // Position 'top' → footer.insertBefore(row, footer.firstChild)
+    // Position 'bottom' → footer.insertBefore(row, trustRow) when .ccd-trust exists, else append
+    assertContains(code, "querySelector('.ccd-sticky-footer')",
+      'injectNotes must locate .ccd-sticky-footer to anchor the row');
+    assertRegex(code, /insertBefore\(\s*row\s*,\s*footer\.firstChild\s*\)/,
+      'Position "top" must insert as firstChild of sticky-footer');
+    assertRegex(code, /querySelector\(['"]\.ccd-trust['"]\)/,
+      'Position "bottom" must look up .ccd-trust to insert before it (so notes sit above the trust row)');
+  });
+
+  // ================================================================
   // RESULTS
   // ================================================================
   console.log(`\n${'='.repeat(55)}`);

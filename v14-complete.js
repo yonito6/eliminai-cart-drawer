@@ -3904,7 +3904,8 @@
       scarcityTimer:        { inject: function(c) { CCD.injectScarcityTimer(c); },  remove: function() { if (CCD._scarcityTick) { clearInterval(CCD._scarcityTick); CCD._scarcityTick = null; } var e = document.getElementById('ccd-scarcity-timer'); if (e) e.remove(); try { sessionStorage.removeItem(CCD._SCARCITY_STORAGE_KEY); } catch (err) {} } },
       freeShippingBar:      { inject: function(c) { CCD.injectFreeShippingBar(c); },remove: function() { var e = document.getElementById('ccd-free-shipping-bar'); if (e) e.remove(); } },
       socialProof:          { inject: function(c) { CCD.injectSocialProof(c); },    remove: function() { var e = document.getElementById('ccd-social-proof'); if (e) e.remove(); } },
-      upsellRecommendations:{ inject: function(c) { CCD.injectUpsells(c); },        remove: function() { var e = document.getElementById('ccd-upsells'); if (e) e.remove(); } }
+      upsellRecommendations:{ inject: function(c) { CCD.injectUpsells(c); },        remove: function() { var e = document.getElementById('ccd-upsells'); if (e) e.remove(); } },
+      notes:                { inject: function(c) { CCD.injectNotes(c); },          remove: function() { var e = document.getElementById('ccd-notes-row'); if (e) e.remove(); } }
     },
 
     applyExperimentFeatures: function(config) {
@@ -4524,6 +4525,75 @@
     }).catch(function() {}).then(function() {
       CCD._upsellsInflight = false;
     });
+  };
+
+  // ── Order Notes addon ──
+  // Adds a <textarea> bound to cart.attributes.note. Position 'top' inserts as
+  // first child of sticky-footer; 'bottom' inserts before .ccd-trust (or appended
+  // if no trust row). Pre-fills from CCD._lastCart.note. Saves on blur via
+  // /cart/update.js with 500ms debounce to avoid hammering the API on every
+  // keystroke.
+  CCD._notesDebounce = null;
+  CCD.injectNotes = function(cfg) {
+    cfg = cfg || {};
+    var existing = document.getElementById('ccd-notes-row');
+    if (existing) existing.remove();
+    var footer = document.querySelector('.ccd-sticky-footer');
+    if (!footer) return;
+
+    var position = cfg.position === 'top' ? 'top' : 'bottom';
+    var label = typeof cfg.label === 'string' ? cfg.label : 'Add a note to your order';
+    var placeholder = typeof cfg.placeholder === 'string' ? cfg.placeholder : '';
+    var maxChars = typeof cfg.maxChars === 'number' ? cfg.maxChars : 250;
+
+    var row = document.createElement('div');
+    row.id = 'ccd-notes-row';
+    row.className = 'ccd-notes-row ccd-notes-row--' + position;
+
+    var labelEl = document.createElement('label');
+    labelEl.className = 'ccd-notes-row__label';
+    labelEl.textContent = label;
+    labelEl.htmlFor = 'ccd-notes-textarea';
+    row.appendChild(labelEl);
+
+    var ta = document.createElement('textarea');
+    ta.id = 'ccd-notes-textarea';
+    ta.className = 'ccd-notes-row__input';
+    ta.name = 'note';
+    ta.rows = 2;
+    if (placeholder) ta.placeholder = placeholder;
+    if (maxChars > 0) ta.maxLength = maxChars;
+    var existingNote = (CCD._lastCart && typeof CCD._lastCart.note === 'string') ? CCD._lastCart.note : '';
+    if (existingNote) ta.value = existingNote;
+    row.appendChild(ta);
+
+    function saveNote() {
+      var val = ta.value || '';
+      fetch('/cart/update.js', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ note: val })
+      }).then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(cart) { if (cart) { CCD._lastCart = cart; } })
+        .catch(function() {});
+    }
+    ta.addEventListener('blur', saveNote);
+    ta.addEventListener('input', function() {
+      if (CCD._notesDebounce) clearTimeout(CCD._notesDebounce);
+      CCD._notesDebounce = setTimeout(saveNote, 500);
+    });
+
+    if (position === 'top') {
+      footer.insertBefore(row, footer.firstChild);
+    } else {
+      var trustRow = footer.querySelector('.ccd-trust');
+      if (trustRow) {
+        footer.insertBefore(row, trustRow);
+      } else {
+        footer.appendChild(row);
+      }
+    }
   };
 
   if (document.readyState === 'loading') {
