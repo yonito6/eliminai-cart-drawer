@@ -16,6 +16,7 @@ import MilestoneEditor from './element-editors/milestone-editor';
 import LineItemEditor from './element-editors/line-item-editor';
 import EmptyStateEditor from './element-editors/empty-state-editor';
 import FooterEditor from './element-editors/footer-editor';
+import CheckoutButtonEditor from './element-editors/checkout-button-editor';
 
 type Viewport = 'desktop' | 'mobile';
 
@@ -265,6 +266,7 @@ const ELEMENT_EDITORS: Record<string, { label: string; Component: React.Componen
   lineItem: { label: 'Line Item', Component: LineItemEditor },
   emptyState: { label: 'Empty State', Component: EmptyStateEditor },
   footer: { label: 'Footer', Component: FooterEditor },
+  checkoutButton: { label: 'Checkout Button', Component: CheckoutButtonEditor },
 };
 
 function ElementPanel() {
