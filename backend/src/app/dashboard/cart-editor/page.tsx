@@ -12,6 +12,7 @@ import PreviewCanvas from './preview-canvas';
 import type { PreviewState } from './preview-renderer';
 import Overlay from './overlay/overlay';
 import HeaderEditor from './element-editors/header-editor';
+import MilestoneEditor from './element-editors/milestone-editor';
 
 type Viewport = 'desktop' | 'mobile';
 
@@ -257,6 +258,7 @@ function PreviewControls({
 // As each Chunk 5.4.x editor lands, add its row here.
 const ELEMENT_EDITORS: Record<string, { label: string; Component: React.ComponentType }> = {
   header: { label: 'Header', Component: HeaderEditor },
+  milestoneBar: { label: 'Milestone Bar', Component: MilestoneEditor },
 };
 
 function ElementPanel() {
