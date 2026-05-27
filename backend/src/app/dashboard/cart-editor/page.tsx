@@ -8,8 +8,9 @@
 import React, { useState } from 'react';
 import { useStore } from '@/lib/hooks/use-store';
 import { DraftStoreProvider, useDraftStore } from './draft-store';
+import PreviewCanvas from './preview-canvas';
+import type { PreviewState } from './preview-renderer';
 
-type PreviewState = 'items' | 'empty' | 'unlocked' | 'loading';
 type Viewport = 'desktop' | 'mobile';
 
 const PURPLE = '#7c3aed';
@@ -250,45 +251,6 @@ function PreviewControls({
   );
 }
 
-function PreviewPlaceholder({ viewport }: { viewport: Viewport }) {
-  // Real preview canvas comes in Chunk 5.2. This is just a sized placeholder
-  // so the layout has visible structure during 5.1.
-  const width = viewport === 'mobile' ? 375 : 440;
-  return (
-    <div
-      id="ce-preview-host"
-      style={{
-        flex: 1,
-        background: '#f3f4f6',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '32px 16px',
-        overflow: 'auto',
-      }}
-    >
-      <div
-        style={{
-          width,
-          minHeight: 600,
-          background: '#fff',
-          borderRadius: 12,
-          border: '1px solid #e5e7eb',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#9ca3af',
-          fontSize: 13,
-          fontStyle: 'italic',
-        }}
-      >
-        Preview canvas — Chunk 5.2
-      </div>
-    </div>
-  );
-}
-
 function PanelPlaceholder() {
   const { selectedElementId } = useDraftStore();
   return (
@@ -337,7 +299,7 @@ function CartEditorInner() {
         setViewport={setViewport}
       />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <PreviewPlaceholder viewport={viewport} />
+        <PreviewCanvas previewState={previewState} viewport={viewport} addons={{}} />
         <PanelPlaceholder />
       </div>
       <ConflictModal />
