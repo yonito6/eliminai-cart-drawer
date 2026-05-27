@@ -18,6 +18,7 @@ import EmptyStateEditor from './element-editors/empty-state-editor';
 import FooterEditor from './element-editors/footer-editor';
 import CheckoutButtonEditor from './element-editors/checkout-button-editor';
 import TrustLineEditor from './element-editors/trust-line-editor';
+import GlobalStyleEditor from './element-editors/global-style-editor';
 
 type Viewport = 'desktop' | 'mobile';
 
@@ -269,6 +270,7 @@ const ELEMENT_EDITORS: Record<string, { label: string; Component: React.Componen
   footer: { label: 'Footer', Component: FooterEditor },
   checkoutButton: { label: 'Checkout Button', Component: CheckoutButtonEditor },
   trustLine: { label: 'Trust Line', Component: TrustLineEditor },
+  global: { label: 'Drawer (Global)', Component: GlobalStyleEditor },
 };
 
 function ElementPanel() {
