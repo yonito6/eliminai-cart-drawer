@@ -7,6 +7,10 @@ import type { StagingHint } from './addon-preview';
 import { RewardsTierEditorWithSave } from './rewards-tier-editor';
 import ProtectionEditor from './protection-editor';
 import ScarcityTimerEditor from './scarcity-timer-editor';
+import NotesAddonEditor from './notes-addon-editor';
+import DiscountCodeAddonEditor from './discount-code-addon-editor';
+import TermsCheckboxAddonEditor from './terms-checkbox-addon-editor';
+import ExpressPaymentsAddonEditor from './express-payments-addon-editor';
 import { useStore } from '@/lib/hooks/use-store';
 import RichTextEditor from './rich-text-editor';
 import UpsellManualProducts from './upsell-manual-products';
@@ -1988,8 +1992,84 @@ function AddonsPage() {
                         />
                       )}
 
+                      {/* Notes addon dedicated editor */}
+                      {def.key === 'notes' && (
+                        <NotesAddonEditor
+                          config={addon.config ?? {}}
+                          onPreviewChange={(patch) => {
+                            draftAddonKeyRef.current = def.key;
+                            setAddons(prev => {
+                              const current = prev[def.key];
+                              if (!current) return prev;
+                              return { ...prev, [def.key]: { ...current, config: { ...current.config, ...patch } } };
+                            });
+                          }}
+                          onSave={(fullConfig) => {
+                            draftAddonKeyRef.current = null;
+                            updateAddonConfig(def.key, fullConfig);
+                          }}
+                        />
+                      )}
+
+                      {/* Discount Code addon dedicated editor */}
+                      {def.key === 'discountCode' && (
+                        <DiscountCodeAddonEditor
+                          config={addon.config ?? {}}
+                          onPreviewChange={(patch) => {
+                            draftAddonKeyRef.current = def.key;
+                            setAddons(prev => {
+                              const current = prev[def.key];
+                              if (!current) return prev;
+                              return { ...prev, [def.key]: { ...current, config: { ...current.config, ...patch } } };
+                            });
+                          }}
+                          onSave={(fullConfig) => {
+                            draftAddonKeyRef.current = null;
+                            updateAddonConfig(def.key, fullConfig);
+                          }}
+                        />
+                      )}
+
+                      {/* Terms Checkbox addon dedicated editor (with HTML sanitization) */}
+                      {def.key === 'termsCheckbox' && (
+                        <TermsCheckboxAddonEditor
+                          config={addon.config ?? {}}
+                          onPreviewChange={(patch) => {
+                            draftAddonKeyRef.current = def.key;
+                            setAddons(prev => {
+                              const current = prev[def.key];
+                              if (!current) return prev;
+                              return { ...prev, [def.key]: { ...current, config: { ...current.config, ...patch } } };
+                            });
+                          }}
+                          onSave={(fullConfig) => {
+                            draftAddonKeyRef.current = null;
+                            updateAddonConfig(def.key, fullConfig);
+                          }}
+                        />
+                      )}
+
+                      {/* Express Payments addon dedicated editor */}
+                      {def.key === 'expressPayments' && (
+                        <ExpressPaymentsAddonEditor
+                          config={addon.config ?? {}}
+                          onPreviewChange={(patch) => {
+                            draftAddonKeyRef.current = def.key;
+                            setAddons(prev => {
+                              const current = prev[def.key];
+                              if (!current) return prev;
+                              return { ...prev, [def.key]: { ...current, config: { ...current.config, ...patch } } };
+                            });
+                          }}
+                          onSave={(fullConfig) => {
+                            draftAddonKeyRef.current = null;
+                            updateAddonConfig(def.key, fullConfig);
+                          }}
+                        />
+                      )}
+
                       {/* Standard dimensions — skip for addons with dedicated editors */}
-                      {def.key !== 'shippingProtection' && def.key !== 'scarcityTimer' && (() => {
+                      {def.key !== 'shippingProtection' && def.key !== 'scarcityTimer' && def.key !== 'notes' && def.key !== 'discountCode' && def.key !== 'termsCheckbox' && def.key !== 'expressPayments' && (() => {
                         const savedConfig = addon.config ?? {};
                         const pending = pendingDimPatches[def.key] ?? {};
                         const mergedConfig = { ...savedConfig, ...pending };
