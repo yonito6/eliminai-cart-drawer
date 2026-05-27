@@ -33,6 +33,10 @@ interface DraftContextValue {
   conflictServerVersion: number | null;
   resolveConflictKeepMine: () => Promise<void>;
   resolveConflictTakeServer: () => void;
+  // Cross-tab — true when another tab saved while we have unsaved edits.
+  remoteUpdateWhileDirty: boolean;
+  acknowledgeRemoteUpdate: () => void;
+  takeRemoteUpdate: () => void;
 }
 
 const DraftContext = createContext<DraftContextValue | null>(null);
@@ -92,6 +96,8 @@ export function DraftStoreProvider({
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [conflictServerOverrides, setConflictServerOverrides] = useState<Overrides | null>(null);
   const [conflictServerVersion, setConflictServerVersion] = useState<number | null>(null);
+  const [remoteUpdateWhileDirty, setRemoteUpdateWhileDirty] = useState<boolean>(false);
+  const remoteUpdatePayload = useRef<{ version: number; overrides: Overrides } | null>(null);
 
   // Initial fetch + restore any sessionStorage draft
   const didInit = useRef(false);
@@ -224,16 +230,55 @@ export function DraftStoreProvider({
       ch.onmessage = (ev) => {
         if (!ev?.data || ev.data.kind !== 'saved') return;
         const newVersion = ev.data.version as number;
-        const newOverrides = ev.data.overrides as Overrides;
+        const newOverrides = (ev.data.overrides as Overrides) ?? {};
         if (typeof newVersion !== 'number') return;
-        setSavedConfig(newOverrides ?? {});
-        setVersion(newVersion);
-        // If not dirty, also update draft so preview reflects new server state
-        setDraft((cur) => (stableStringify(cur) === stableStringify(savedConfig) ? newOverrides ?? {} : cur));
+        // Determine dirty at message time using the current draft, not the
+        // closure capture.
+        setDraft((curDraft) => {
+          const curDirty = stableStringify(curDraft) !== stableStringify(savedConfig);
+          if (curDirty) {
+            remoteUpdatePayload.current = { version: newVersion, overrides: newOverrides };
+            setRemoteUpdateWhileDirty(true);
+            return curDraft;
+          }
+          setSavedConfig(newOverrides);
+          setVersion(newVersion);
+          return newOverrides;
+        });
       };
     } catch {}
     return () => { try { ch?.close(); } catch {} };
   }, [storeId, savedConfig]);
+
+  // Cross-tab — user clicks "Keep mine" on the banner. Adopt the remote
+  // version number so the next Save does not 409, but keep the local draft.
+  const acknowledgeRemoteUpdate = useCallback(() => {
+    const payload = remoteUpdatePayload.current;
+    if (!payload) {
+      setRemoteUpdateWhileDirty(false);
+      return;
+    }
+    setSavedConfig(payload.overrides);
+    setVersion(payload.version);
+    remoteUpdatePayload.current = null;
+    setRemoteUpdateWhileDirty(false);
+  }, []);
+
+  // Cross-tab — user clicks "Discard mine" on the banner. Throw away the
+  // local draft and adopt the remote state.
+  const takeRemoteUpdate = useCallback(() => {
+    const payload = remoteUpdatePayload.current;
+    if (!payload) {
+      setRemoteUpdateWhileDirty(false);
+      return;
+    }
+    setSavedConfig(payload.overrides);
+    setVersion(payload.version);
+    setDraft(payload.overrides);
+    try { sessionStorage.removeItem(SS_KEY(storeId)); } catch {}
+    remoteUpdatePayload.current = null;
+    setRemoteUpdateWhileDirty(false);
+  }, [storeId]);
 
   const value: DraftContextValue = {
     storeId,
@@ -253,6 +298,9 @@ export function DraftStoreProvider({
     conflictServerVersion,
     resolveConflictKeepMine,
     resolveConflictTakeServer,
+    remoteUpdateWhileDirty,
+    acknowledgeRemoteUpdate,
+    takeRemoteUpdate,
   };
 
   return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;

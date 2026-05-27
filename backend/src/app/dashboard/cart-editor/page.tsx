@@ -28,8 +28,19 @@ const GRAY_TEXT = '#374151';
 
 function HeaderBar() {
   const { isDirty, saveState, saveError, save, discard, loading } = useDraftStore();
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+
+  const handleDiscardClick = () => {
+    if (!isDirty) return;
+    setConfirmDiscard(true);
+  };
+  const confirmDiscardYes = () => {
+    discard();
+    setConfirmDiscard(false);
+  };
 
   return (
+    <>
     <div
       style={{
         display: 'flex',
@@ -78,7 +89,7 @@ function HeaderBar() {
       <div style={{ display: 'flex', gap: 8 }}>
         {isDirty && (
           <button
-            onClick={discard}
+            onClick={handleDiscardClick}
             disabled={saveState === 'saving'}
             style={{
               padding: '6px 12px',
@@ -115,6 +126,72 @@ function HeaderBar() {
         <span style={{ fontSize: 11, color: '#b91c1c' }}>{saveError}</span>
       )}
     </div>
+    {confirmDiscard && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.45)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}
+      >
+        <div
+          style={{
+            background: '#1f2937',
+            color: '#fff',
+            padding: 24,
+            borderRadius: 12,
+            maxWidth: 420,
+            width: '90%',
+            border: `1px solid ${PURPLE}`,
+          }}
+        >
+          <h3 style={{ marginTop: 0, fontSize: 16, fontWeight: 700 }}>Discard unsaved changes?</h3>
+          <p style={{ fontSize: 13, lineHeight: 1.5, color: '#d1d5db' }}>
+            Your edits will be lost. This can&rsquo;t be undone.
+          </p>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => setConfirmDiscard(false)}
+              style={{
+                padding: '8px 14px',
+                fontSize: 12,
+                fontWeight: 500,
+                borderRadius: 6,
+                border: '1px solid #4b5563',
+                background: 'transparent',
+                color: '#e5e7eb',
+                cursor: 'pointer',
+              }}
+            >
+              Keep editing
+            </button>
+            <button
+              onClick={confirmDiscardYes}
+              style={{
+                padding: '8px 14px',
+                fontSize: 12,
+                fontWeight: 600,
+                borderRadius: 6,
+                border: 'none',
+                background: '#b91c1c',
+                color: '#fff',
+                cursor: 'pointer',
+              }}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -189,6 +266,64 @@ function ConflictModal() {
             Keep my edits
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Cross-tab banner — shown when another tab saved while we have unsaved edits.
+function RemoteUpdateBanner() {
+  const { remoteUpdateWhileDirty, acknowledgeRemoteUpdate, takeRemoteUpdate } = useDraftStore();
+  if (!remoteUpdateWhileDirty) return null;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        padding: '10px 16px',
+        background: '#fef3c7',
+        borderBottom: '1px solid #fde68a',
+        fontSize: 12,
+        color: '#92400e',
+      }}
+    >
+      <span>
+        <strong>Settings updated in another tab.</strong> You have unsaved edits — choose
+        which version to keep.
+      </span>
+      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        <button
+          onClick={takeRemoteUpdate}
+          style={{
+            padding: '4px 10px',
+            fontSize: 11,
+            fontWeight: 500,
+            borderRadius: 4,
+            border: '1px solid #d97706',
+            background: '#fff',
+            color: '#92400e',
+            cursor: 'pointer',
+          }}
+        >
+          Discard mine
+        </button>
+        <button
+          onClick={acknowledgeRemoteUpdate}
+          style={{
+            padding: '4px 10px',
+            fontSize: 11,
+            fontWeight: 600,
+            borderRadius: 4,
+            border: 'none',
+            background: '#d97706',
+            color: '#fff',
+            cursor: 'pointer',
+          }}
+        >
+          Keep mine
+        </button>
       </div>
     </div>
   );
@@ -385,6 +520,7 @@ function CartEditorInner() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 0px)', background: '#fafafa' }}>
       <HeaderBar />
+      <RemoteUpdateBanner />
       <PreviewControls
         previewState={previewState}
         setPreviewState={setPreviewState}
