@@ -17,6 +17,7 @@ import LineItemEditor from './element-editors/line-item-editor';
 import EmptyStateEditor from './element-editors/empty-state-editor';
 import FooterEditor from './element-editors/footer-editor';
 import CheckoutButtonEditor from './element-editors/checkout-button-editor';
+import TrustLineEditor from './element-editors/trust-line-editor';
 
 type Viewport = 'desktop' | 'mobile';
 
@@ -267,6 +268,7 @@ const ELEMENT_EDITORS: Record<string, { label: string; Component: React.Componen
   emptyState: { label: 'Empty State', Component: EmptyStateEditor },
   footer: { label: 'Footer', Component: FooterEditor },
   checkoutButton: { label: 'Checkout Button', Component: CheckoutButtonEditor },
+  trustLine: { label: 'Trust Line', Component: TrustLineEditor },
 };
 
 function ElementPanel() {
