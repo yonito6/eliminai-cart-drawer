@@ -3005,6 +3005,103 @@ async function run() {
       'stickyFooter=true must remove the .ccd-footer--not-sticky class');
   });
 
+  // CONTRACT: editorOverrides Checkout Button (Chunk 4.9)
+  console.log('\nContract: editorOverrides Checkout Button');
+
+  test('checkoutButton.label updates leading text node (preserves .ccd-checkout-total span)', () => {
+    assertRegex(code, /typeof\s+cbtn\.label\s*===\s*['"]string['"]/,
+      'label must be typeof-checked as string');
+    assertContains(code, 'btnEl.firstChild',
+      'label must walk to firstChild to preserve the total span sibling');
+    assertRegex(code, /first\.nodeType\s*===\s*3/,
+      'label must guard that firstChild is a text node (nodeType === 3) before writing');
+    assertRegex(code, /first\.textContent\s*=\s*cbtn\.label/,
+      'label must be assigned via textContent (XSS-safe)');
+  });
+
+  test('checkoutButton.bgColor/bgHoverColor/textColor apply inline + CSS vars', () => {
+    assertRegex(code, /btnEl\.style\.backgroundColor\s*=\s*cbtn\.bgColor/,
+      'bgColor must set inline backgroundColor');
+    assertContains(code, "'--ccd-co-bg'",
+      'bgColor must also expose --ccd-co-bg CSS var for related elements');
+    assertContains(code, "'--ccd-co-bg-hover'",
+      'bgHoverColor must set --ccd-co-bg-hover CSS var');
+    assertRegex(code, /btnEl\.style\.color\s*=\s*cbtn\.textColor/,
+      'textColor must set inline color');
+  });
+
+  test('checkoutButton.radius (sharp/soft/rounded/pill) maps to modifier class', () => {
+    assertContains(code, 'ccd-checkout-btn--sharp',
+      'radius=sharp must map to .ccd-checkout-btn--sharp');
+    assertContains(code, 'ccd-checkout-btn--soft',
+      'radius=soft must map to .ccd-checkout-btn--soft');
+    assertContains(code, 'ccd-checkout-btn--rounded',
+      'radius=rounded must map to .ccd-checkout-btn--rounded');
+    assertContains(code, 'ccd-checkout-btn--pill',
+      'radius=pill must map to .ccd-checkout-btn--pill');
+    assertRegex(code, /classList\.remove\(\s*['"]ccd-checkout-btn--sharp['"]\s*,\s*['"]ccd-checkout-btn--soft['"]\s*,\s*['"]ccd-checkout-btn--rounded['"]\s*,\s*['"]ccd-checkout-btn--pill['"]/,
+      'Previous radius modifier classes must be removed before applying new one');
+  });
+
+  test('checkoutButton.height (S/M/L/XL) maps to lowercase modifier class', () => {
+    assertContains(code, 'ccd-checkout-btn--h-s',
+      'height=S must map to .ccd-checkout-btn--h-s');
+    assertContains(code, 'ccd-checkout-btn--h-m',
+      'height=M must map to .ccd-checkout-btn--h-m');
+    assertContains(code, 'ccd-checkout-btn--h-l',
+      'height=L must map to .ccd-checkout-btn--h-l');
+    assertContains(code, 'ccd-checkout-btn--h-xl',
+      'height=XL must map to .ccd-checkout-btn--h-xl');
+    assertContains(code, 'cbtn.height.toLowerCase()',
+      'height must be lowercased before being appended to the class name');
+  });
+
+  test('checkoutButton.fontWeight (number) sets inline font-weight', () => {
+    assertRegex(code, /typeof\s+cbtn\.fontWeight\s*===\s*['"]number['"]/,
+      'fontWeight must be typeof-checked as number');
+    assertRegex(code, /btnEl\.style\.fontWeight\s*=\s*String\(cbtn\.fontWeight\)/,
+      'fontWeight must stringify the number (CSS font-weight accepts 100-900)');
+  });
+
+  test('checkoutButton.letterSpacing (number) sets inline letter-spacing with px unit', () => {
+    assertRegex(code, /typeof\s+cbtn\.letterSpacing\s*===\s*['"]number['"]/,
+      'letterSpacing must be typeof-checked as number');
+    assertRegex(code, /btnEl\.style\.letterSpacing\s*=\s*cbtn\.letterSpacing\s*\+\s*['"]px['"]/,
+      'letterSpacing must append px unit');
+  });
+
+  test('checkoutButton.icon (none/arrow/lock/cart) sets data-icon attribute', () => {
+    assertRegex(code, /cbtn\.icon\s*===\s*['"]none['"][\s\S]{0,400}cbtn\.icon\s*===\s*['"]arrow['"][\s\S]{0,400}cbtn\.icon\s*===\s*['"]lock['"][\s\S]{0,400}cbtn\.icon\s*===\s*['"]cart['"]/,
+      'All 4 icon enum values must be validated');
+    assertRegex(code, /btnEl\.setAttribute\(\s*['"]data-icon['"]\s*,\s*cbtn\.icon\s*\)/,
+      'icon must be applied as data-icon attribute (CSS swaps visual — string never enters innerHTML)');
+  });
+
+  test('checkoutButton.fullWidth=false adds ccd-checkout-btn--auto-width class', () => {
+    assertRegex(code, /cbtn\.fullWidth\s*===\s*false[\s\S]{0,80}ccd-checkout-btn--auto-width/,
+      'fullWidth=false must add .ccd-checkout-btn--auto-width modifier class');
+    assertRegex(code, /cbtn\.fullWidth\s*===\s*true[\s\S]{0,120}classList\.remove\(\s*['"]ccd-checkout-btn--auto-width['"]/,
+      'fullWidth=true must remove the modifier class');
+  });
+
+  test('checkoutButton.loadingAnim (spinner/dots/shimmer) sets data-loading-anim attribute', () => {
+    assertContains(code, "'spinner'",
+      'loadingAnim must validate spinner enum');
+    assertContains(code, "'dots'",
+      'loadingAnim must validate dots enum');
+    assertContains(code, "'shimmer'",
+      'loadingAnim must validate shimmer enum');
+    assertRegex(code, /setAttribute\(\s*['"]data-loading-anim['"]\s*,\s*cbtn\.loadingAnim/,
+      'loadingAnim must be applied as data-loading-anim attribute');
+  });
+
+  test('checkoutButton overrides only apply when .ccd-checkout-btn element is found', () => {
+    assertContains(code, "drawer.querySelector('.ccd-checkout-btn')",
+      'Must locate the checkout button via .ccd-checkout-btn selector');
+    assertRegex(code, /eo\.checkoutButton\s*&&\s*typeof\s+eo\.checkoutButton\s*===\s*['"]object['"]/,
+      'Top-level guard: only enter checkoutButton block when object is present');
+  });
+
   // ================================================================
   // RESULTS
   // ================================================================

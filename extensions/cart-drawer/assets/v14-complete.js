@@ -4199,6 +4199,66 @@
           else if (ft.stickyFooter === true) footEl.classList.remove('ccd-footer--not-sticky');
         }
       }
+
+      // ----- editorOverrides.checkoutButton -----
+      if (eo.checkoutButton && typeof eo.checkoutButton === 'object') {
+        var cbtn = eo.checkoutButton;
+        var btnEl = drawer.querySelector('.ccd-checkout-btn');
+        if (btnEl) {
+          // label — XSS-safe textContent on the leading text node only
+          if (typeof cbtn.label === 'string') {
+            // The button contains: "{label} · <span class=ccd-checkout-total>$X.XX</span>"
+            // Preserve the total span by walking children and updating only the first text node.
+            var first = btnEl.firstChild;
+            if (first && first.nodeType === 3) {
+              first.textContent = cbtn.label + ' · ';
+            } else {
+              // No leading text node — set a data attribute for CSS pseudo-content if needed
+              btnEl.setAttribute('data-label', cbtn.label);
+            }
+          }
+          // colors
+          if (typeof cbtn.bgColor === 'string') {
+            btnEl.style.backgroundColor = cbtn.bgColor;
+            btnEl.style.setProperty('--ccd-co-bg', cbtn.bgColor);
+          }
+          if (typeof cbtn.bgHoverColor === 'string') {
+            btnEl.style.setProperty('--ccd-co-bg-hover', cbtn.bgHoverColor);
+          }
+          if (typeof cbtn.textColor === 'string') {
+            btnEl.style.color = cbtn.textColor;
+          }
+          // radius enum -> modifier class
+          btnEl.classList.remove('ccd-checkout-btn--sharp', 'ccd-checkout-btn--soft', 'ccd-checkout-btn--rounded', 'ccd-checkout-btn--pill');
+          if (cbtn.radius === 'sharp' || cbtn.radius === 'soft' || cbtn.radius === 'rounded' || cbtn.radius === 'pill') {
+            btnEl.classList.add('ccd-checkout-btn--' + cbtn.radius);
+          }
+          // height enum -> modifier class
+          btnEl.classList.remove('ccd-checkout-btn--h-s', 'ccd-checkout-btn--h-m', 'ccd-checkout-btn--h-l', 'ccd-checkout-btn--h-xl');
+          if (cbtn.height === 'S' || cbtn.height === 'M' || cbtn.height === 'L' || cbtn.height === 'XL') {
+            btnEl.classList.add('ccd-checkout-btn--h-' + cbtn.height.toLowerCase());
+          }
+          // fontWeight (100-900)
+          if (typeof cbtn.fontWeight === 'number') {
+            btnEl.style.fontWeight = String(cbtn.fontWeight);
+          }
+          // letterSpacing
+          if (typeof cbtn.letterSpacing === 'number') {
+            btnEl.style.letterSpacing = cbtn.letterSpacing + 'px';
+          }
+          // icon enum -> data attribute (CSS swaps the icon)
+          if (cbtn.icon === 'none' || cbtn.icon === 'arrow' || cbtn.icon === 'lock' || cbtn.icon === 'cart') {
+            btnEl.setAttribute('data-icon', cbtn.icon);
+          }
+          // fullWidth boolean -> modifier class
+          if (cbtn.fullWidth === false) btnEl.classList.add('ccd-checkout-btn--auto-width');
+          else if (cbtn.fullWidth === true) btnEl.classList.remove('ccd-checkout-btn--auto-width');
+          // loadingAnim enum -> data attribute (CSS picks animation style)
+          if (cbtn.loadingAnim === 'spinner' || cbtn.loadingAnim === 'dots' || cbtn.loadingAnim === 'shimmer') {
+            btnEl.setAttribute('data-loading-anim', cbtn.loadingAnim);
+          }
+        }
+      }
     },
 
     // Cart-aware scarcity timer lifecycle. Called after every cart refresh so the
