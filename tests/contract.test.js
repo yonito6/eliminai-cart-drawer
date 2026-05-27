@@ -2790,6 +2790,87 @@ async function run() {
       'borderHoverColor must be exposed as a CSS custom property for :hover styling');
   });
 
+  // CONTRACT: editorOverrides Line Item (Chunk 4.6)
+  // Line items re-render on every cart refresh, so overrides are applied as
+  // CSS custom properties + modifier classes that survive re-renders.
+  console.log('\nContract: editorOverrides Line Item');
+
+  test('lineItem.imageSize (S/M/L) sets --ccd-li-img-size CSS custom property', () => {
+    assertRegex(code, /li\.imageSize\s*===\s*['"]S['"][\s\S]{0,120}--ccd-li-img-size['"]\s*,\s*['"]80px['"]/,
+      'imageSize S must set --ccd-li-img-size to 80px');
+    assertRegex(code, /li\.imageSize\s*===\s*['"]M['"][\s\S]{0,120}--ccd-li-img-size['"]\s*,\s*['"]120px['"]/,
+      'imageSize M must set --ccd-li-img-size to 120px');
+    assertRegex(code, /li\.imageSize\s*===\s*['"]L['"][\s\S]{0,120}--ccd-li-img-size['"]\s*,\s*['"]160px['"]/,
+      'imageSize L must set --ccd-li-img-size to 160px');
+  });
+
+  test('lineItem.imageShape (square/rounded/circle) sets --ccd-li-img-radius', () => {
+    assertContains(code, "setProperty('--ccd-li-img-radius', '0')",
+      'square shape must set radius to 0');
+    assertContains(code, "setProperty('--ccd-li-img-radius', '8px')",
+      'rounded shape must set radius to 8px');
+    assertContains(code, "setProperty('--ccd-li-img-radius', '50%')",
+      'circle shape must set radius to 50%');
+  });
+
+  test('lineItem.showVariant + showSku toggle --no-variant / --no-sku class', () => {
+    assertRegex(code, /li\.showVariant\s*===\s*false[\s\S]{0,80}ccd-items--no-variant/,
+      'showVariant === false must add ccd-items--no-variant class');
+    assertRegex(code, /li\.showSku\s*===\s*false[\s\S]{0,80}ccd-items--no-sku/,
+      'showSku === false must add ccd-items--no-sku class');
+    assertRegex(code, /li\.showVariant\s*===\s*true[\s\S]{0,80}classList\.remove\(\s*['"]ccd-items--no-variant['"]/,
+      'showVariant === true must remove the no-variant class (allows toggling back on)');
+  });
+
+  test('lineItem.qtyControl applies ccd-items--qty-{value} modifier class', () => {
+    assertContains(code, "'ccd-items--qty-minusPlus'",
+      'minusPlus qty modifier class must be tracked for cleanup');
+    assertContains(code, "'ccd-items--qty-stepper'",
+      'stepper qty modifier class must be tracked');
+    assertContains(code, "'ccd-items--qty-dropdown'",
+      'dropdown qty modifier class must be tracked');
+    assertContains(code, "'ccd-items--qty-' + li.qtyControl",
+      'Modifier class must be derived from li.qtyControl');
+  });
+
+  test('lineItem.removeStyle applies ccd-items--rm-{x|trash|text} modifier class', () => {
+    assertContains(code, "'ccd-items--rm-x'",
+      'remove style "x" modifier must be tracked');
+    assertContains(code, "'ccd-items--rm-trash'",
+      'remove style "trash" modifier must be tracked');
+    assertContains(code, "'ccd-items--rm-text'",
+      'remove style "text" modifier must be tracked');
+    assertContains(code, "'ccd-items--rm-' + li.removeStyle",
+      'Class must be derived from li.removeStyle');
+  });
+
+  test('lineItem.showCompareAtPrice + showSavingsBadge visibility toggles', () => {
+    assertRegex(code, /li\.showCompareAtPrice\s*===\s*false[\s\S]{0,80}ccd-items--no-compare/,
+      'showCompareAtPrice === false must add ccd-items--no-compare class');
+    assertRegex(code, /li\.showSavingsBadge\s*===\s*false[\s\S]{0,80}ccd-items--no-savings/,
+      'showSavingsBadge === false must add ccd-items--no-savings class');
+  });
+
+  test('lineItem.separator (line/spacing/card) applies modifier class', () => {
+    assertContains(code, "'ccd-items--sep-line'",
+      'separator "line" modifier must be tracked');
+    assertContains(code, "'ccd-items--sep-spacing'",
+      'separator "spacing" modifier must be tracked');
+    assertContains(code, "'ccd-items--sep-card'",
+      'separator "card" modifier must be tracked');
+  });
+
+  test('lineItem.titleSize + titleWeight set --ccd-li-title-size / --ccd-li-title-weight', () => {
+    assertRegex(code, /typeof\s+li\.titleSize\s*===\s*['"]number['"]/,
+      'titleSize must be typeof-checked as number');
+    assertContains(code, "setProperty('--ccd-li-title-size', li.titleSize + 'px')",
+      'titleSize must set --ccd-li-title-size with px suffix');
+    assertRegex(code, /typeof\s+li\.titleWeight\s*===\s*['"]number['"]/,
+      'titleWeight must be typeof-checked as number');
+    assertContains(code, "setProperty('--ccd-li-title-weight', String(li.titleWeight))",
+      'titleWeight must set --ccd-li-title-weight as a string (CSS font-weight values)');
+  });
+
   // ================================================================
   // RESULTS
   // ================================================================

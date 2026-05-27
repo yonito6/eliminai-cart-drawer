@@ -4049,6 +4049,59 @@
           }
         }
       }
+
+      // ── LINE ITEM ──
+      // Line items are re-rendered on every cart refresh, so per-element styling
+      // is applied via CSS custom properties on the drawer + modifier classes on
+      // the .ccd-items wrapper. Both inherit through every future re-render.
+      if (eo.lineItem && typeof eo.lineItem === 'object') {
+        var li = eo.lineItem;
+        var itemsEl = drawer.querySelector('.ccd-items') || drawer;
+
+        // Image size (S/M/L → 80/120/160 px) — CSS var read by .ccd-item__image
+        if (li.imageSize === 'S') drawer.style.setProperty('--ccd-li-img-size', '80px');
+        else if (li.imageSize === 'M') drawer.style.setProperty('--ccd-li-img-size', '120px');
+        else if (li.imageSize === 'L') drawer.style.setProperty('--ccd-li-img-size', '160px');
+
+        // Image shape (square / rounded / circle) → border-radius via CSS var
+        if (li.imageShape === 'square') drawer.style.setProperty('--ccd-li-img-radius', '0');
+        else if (li.imageShape === 'rounded') drawer.style.setProperty('--ccd-li-img-radius', '8px');
+        else if (li.imageShape === 'circle') drawer.style.setProperty('--ccd-li-img-radius', '50%');
+
+        // Show/hide variant text + SKU text (boolean) — class on the wrapper
+        if (li.showVariant === false) itemsEl.classList.add('ccd-items--no-variant');
+        else if (li.showVariant === true) itemsEl.classList.remove('ccd-items--no-variant');
+        if (li.showSku === false) itemsEl.classList.add('ccd-items--no-sku');
+        else if (li.showSku === true) itemsEl.classList.remove('ccd-items--no-sku');
+
+        // Qty control modifier (minusPlus / stepper / dropdown)
+        itemsEl.classList.remove('ccd-items--qty-minusPlus', 'ccd-items--qty-stepper', 'ccd-items--qty-dropdown');
+        if (li.qtyControl === 'minusPlus' || li.qtyControl === 'stepper' || li.qtyControl === 'dropdown') {
+          itemsEl.classList.add('ccd-items--qty-' + li.qtyControl);
+        }
+
+        // Remove style modifier (x / trash / text)
+        itemsEl.classList.remove('ccd-items--rm-x', 'ccd-items--rm-trash', 'ccd-items--rm-text');
+        if (li.removeStyle === 'x' || li.removeStyle === 'trash' || li.removeStyle === 'text') {
+          itemsEl.classList.add('ccd-items--rm-' + li.removeStyle);
+        }
+
+        // Compare-at price + savings badge visibility
+        if (li.showCompareAtPrice === false) itemsEl.classList.add('ccd-items--no-compare');
+        else if (li.showCompareAtPrice === true) itemsEl.classList.remove('ccd-items--no-compare');
+        if (li.showSavingsBadge === false) itemsEl.classList.add('ccd-items--no-savings');
+        else if (li.showSavingsBadge === true) itemsEl.classList.remove('ccd-items--no-savings');
+
+        // Separator style (line / spacing / card)
+        itemsEl.classList.remove('ccd-items--sep-line', 'ccd-items--sep-spacing', 'ccd-items--sep-card');
+        if (li.separator === 'line' || li.separator === 'spacing' || li.separator === 'card') {
+          itemsEl.classList.add('ccd-items--sep-' + li.separator);
+        }
+
+        // Title size + weight → CSS vars (read by .ccd-item__name)
+        if (typeof li.titleSize === 'number') drawer.style.setProperty('--ccd-li-title-size', li.titleSize + 'px');
+        if (typeof li.titleWeight === 'number') drawer.style.setProperty('--ccd-li-title-weight', String(li.titleWeight));
+      }
     },
 
     // Cart-aware scarcity timer lifecycle. Called after every cart refresh so the
