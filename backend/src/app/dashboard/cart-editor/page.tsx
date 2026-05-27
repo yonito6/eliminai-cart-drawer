@@ -11,6 +11,7 @@ import { DraftStoreProvider, useDraftStore } from './draft-store';
 import PreviewCanvas from './preview-canvas';
 import type { PreviewState } from './preview-renderer';
 import Overlay from './overlay/overlay';
+import HeaderEditor from './element-editors/header-editor';
 
 type Viewport = 'desktop' | 'mobile';
 
@@ -252,8 +253,36 @@ function PreviewControls({
   );
 }
 
-function PanelPlaceholder() {
+// Element-editor dispatch table. Maps hotspot id → human label + editor component.
+// As each Chunk 5.4.x editor lands, add its row here.
+const ELEMENT_EDITORS: Record<string, { label: string; Component: React.ComponentType }> = {
+  header: { label: 'Header', Component: HeaderEditor },
+};
+
+function ElementPanel() {
   const { selectedElementId } = useDraftStore();
+
+  if (!selectedElementId) {
+    return (
+      <div
+        style={{
+          width: 360,
+          flexShrink: 0,
+          background: '#fff',
+          borderLeft: '1px solid #e5e7eb',
+          padding: 16,
+          overflow: 'auto',
+        }}
+      >
+        <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.6 }}>
+          Select an element in the preview to edit it.
+        </div>
+      </div>
+    );
+  }
+
+  const entry = ELEMENT_EDITORS[selectedElementId];
+
   return (
     <div
       style={{
@@ -265,23 +294,27 @@ function PanelPlaceholder() {
         overflow: 'auto',
       }}
     >
-      <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.6 }}>
-        {selectedElementId ? (
-          <>
-            <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Selected
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginTop: 4 }}>
-              {selectedElementId}
-            </div>
-            <p style={{ marginTop: 16 }}>
-              Element editor for <code>{selectedElementId}</code> will mount here (Chunk 5.4).
-            </p>
-          </>
-        ) : (
-          <p>Select an element in the preview to edit it.</p>
-        )}
+      <div
+        style={{
+          fontSize: 11,
+          color: '#9ca3af',
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          marginBottom: 4,
+        }}
+      >
+        Selected
       </div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 16 }}>
+        {entry?.label ?? selectedElementId}
+      </div>
+      {entry ? (
+        <entry.Component />
+      ) : (
+        <p style={{ fontSize: 13, color: '#6b7280' }}>
+          Editor for <code>{selectedElementId}</code> not implemented yet.
+        </p>
+      )}
     </div>
   );
 }
@@ -308,7 +341,7 @@ function CartEditorInner() {
           <PreviewCanvas previewState={previewState} viewport={viewport} addons={{}} />
           <Overlay hostRef={overlayHostRef} />
         </div>
-        <PanelPlaceholder />
+        <ElementPanel />
       </div>
       <ConflictModal />
     </div>
