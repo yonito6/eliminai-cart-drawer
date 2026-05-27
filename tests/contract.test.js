@@ -2456,6 +2456,58 @@ async function run() {
       'Position "bottom" must look up .ccd-trust to insert before it (so notes sit above the trust row)');
   });
 
+  // CONTRACT: Discount Code Addon (Chunk 4.2)
+  console.log('\nContract: Discount Code Addon');
+
+  test('discountCode addon registered in _addonHandlers with inject + remove', () => {
+    // Registry entry must dispatch to CCD.injectDiscountCode and remove the #ccd-discount-code-row node
+    assertRegex(code, /discountCode\s*:\s*\{\s*inject\s*:\s*function\s*\([^)]*\)\s*\{\s*CCD\.injectDiscountCode/,
+      'Registry must call CCD.injectDiscountCode(c) on inject');
+    var entryMatch = code.match(/discountCode\s*:\s*\{[\s\S]*?ccd-discount-code-row[\s\S]*?\}\s*[,}]/);
+    assert(entryMatch, 'discountCode registry entry must reference #ccd-discount-code-row id');
+    assert(/remove\s*:\s*function/.test(entryMatch[0]),
+      'Registry must define a remove function so toggling the addon off cleans up the DOM');
+    assert(/getElementById\(['"]ccd-discount-code-row['"]\)/.test(entryMatch[0]),
+      'remove() must locate and delete #ccd-discount-code-row');
+  });
+
+  test('CCD.injectDiscountCode renders input + apply button with position class', () => {
+    assertContains(code, 'CCD.injectDiscountCode = function',
+      'injectDiscountCode must be defined on CCD');
+    assertRegex(code, /ccd-discount-row--['"]?\s*\+\s*position/,
+      'Row class must include the position modifier (--top or --bottom)');
+    assertContains(code, "createElement('input')",
+      'Discount row must contain a text input');
+    assertContains(code, "createElement('button')",
+      'Discount row must contain an apply button');
+    assertRegex(code, /id\s*=\s*['"]ccd-discount-code-input['"]/,
+      'Input must have id ccd-discount-code-input so the editor preview and tests can target it');
+    assertRegex(code, /id\s*=\s*['"]ccd-discount-code-apply['"]/,
+      'Apply button must have id ccd-discount-code-apply');
+  });
+
+  test('injectDiscountCode hits /discount/<code>?redirect=/cart.js then refetches /cart.js', () => {
+    // Shopify auto-applies the code when GETing /discount/<code>, redirects to the path we ask for.
+    // We then re-fetch /cart.js to get the updated cart and refresh the drawer.
+    assertRegex(code, /fetch\(\s*['"]\/discount\/['"]\s*\+\s*encodeURIComponent\(\s*code\s*\)\s*\+\s*['"]\?redirect=\/cart\.js['"]/,
+      'Apply handler must call /discount/<encoded code>?redirect=/cart.js');
+    assertRegex(code, /fetch\(\s*['"]\/cart\.js['"]/,
+      'After hitting /discount, must refetch /cart.js to get updated cart');
+    assertContains(code, 'CCD._lastCart = cart',
+      'Updated cart must be cached on CCD._lastCart so other addons see the new totals');
+  });
+
+  test('injectDiscountCode inserts at top/bottom of sticky-footer and renders applied badge', () => {
+    assertContains(code, "querySelector('.ccd-sticky-footer')",
+      'injectDiscountCode must locate .ccd-sticky-footer to anchor the row');
+    assertRegex(code, /insertBefore\(\s*row\s*,\s*footer\.firstChild\s*\)/,
+      'Position "top" must insert as firstChild of sticky-footer');
+    assertContains(code, 'cart_level_discount_applications',
+      'Applied badge must read CCD._lastCart.cart_level_discount_applications (Shopify cart.js field)');
+    assertRegex(code, /showAppliedBadge\s*!==\s*false/,
+      'Badge rendering must be gated on cfg.showAppliedBadge (default true → only skip when explicitly false)');
+  });
+
   // ================================================================
   // RESULTS
   // ================================================================

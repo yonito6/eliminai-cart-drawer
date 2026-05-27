@@ -3905,7 +3905,8 @@
       freeShippingBar:      { inject: function(c) { CCD.injectFreeShippingBar(c); },remove: function() { var e = document.getElementById('ccd-free-shipping-bar'); if (e) e.remove(); } },
       socialProof:          { inject: function(c) { CCD.injectSocialProof(c); },    remove: function() { var e = document.getElementById('ccd-social-proof'); if (e) e.remove(); } },
       upsellRecommendations:{ inject: function(c) { CCD.injectUpsells(c); },        remove: function() { var e = document.getElementById('ccd-upsells'); if (e) e.remove(); } },
-      notes:                { inject: function(c) { CCD.injectNotes(c); },          remove: function() { var e = document.getElementById('ccd-notes-row'); if (e) e.remove(); } }
+      notes:                { inject: function(c) { CCD.injectNotes(c); },          remove: function() { var e = document.getElementById('ccd-notes-row'); if (e) e.remove(); } },
+      discountCode:         { inject: function(c) { CCD.injectDiscountCode(c); },   remove: function() { var e = document.getElementById('ccd-discount-code-row'); if (e) e.remove(); } }
     },
 
     applyExperimentFeatures: function(config) {
@@ -4594,6 +4595,102 @@
         footer.appendChild(row);
       }
     }
+  };
+
+  // ── Discount Code addon ──
+  // Inline discount-code input inside the sticky-footer. On apply, hits
+  // /discount/<code>?redirect=/cart.js (Shopify auto-applies + redirects),
+  // then refetches /cart.js and refreshes the drawer. Shows applied-code
+  // badge from CCD._lastCart.cart_level_discount_applications when
+  // cfg.showAppliedBadge is true.
+  CCD.injectDiscountCode = function(cfg) {
+    cfg = cfg || {};
+    var existing = document.getElementById('ccd-discount-code-row');
+    if (existing) existing.remove();
+    var footer = document.querySelector('.ccd-sticky-footer');
+    if (!footer) return;
+
+    var position = cfg.position === 'top' ? 'top' : 'bottom';
+    var placeholder = typeof cfg.placeholder === 'string' ? cfg.placeholder : 'Discount code';
+    var applyLabel = typeof cfg.applyButtonLabel === 'string' ? cfg.applyButtonLabel : 'Apply';
+    var showBadge = cfg.showAppliedBadge !== false;
+
+    var row = document.createElement('div');
+    row.id = 'ccd-discount-code-row';
+    row.className = 'ccd-discount-row ccd-discount-row--' + position;
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'ccd-discount-code-input';
+    input.className = 'ccd-discount-row__input';
+    input.name = 'discount';
+    input.placeholder = placeholder;
+    input.autocomplete = 'off';
+    row.appendChild(input);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'ccd-discount-code-apply';
+    btn.className = 'ccd-discount-row__apply';
+    btn.textContent = applyLabel;
+    row.appendChild(btn);
+
+    var status = document.createElement('div');
+    status.id = 'ccd-discount-code-status';
+    status.className = 'ccd-discount-row__status';
+    row.appendChild(status);
+
+    function renderAppliedBadge() {
+      if (!showBadge) return;
+      var apps = (CCD._lastCart && CCD._lastCart.cart_level_discount_applications) || [];
+      if (!apps.length) { status.textContent = ''; status.classList.remove('ccd-discount-row__status--applied'); return; }
+      var labels = [];
+      for (var i = 0; i < apps.length; i++) {
+        var a = apps[i] || {};
+        if (a.title || a.code) labels.push(a.title || a.code);
+      }
+      if (labels.length) {
+        status.textContent = '✓ Applied: ' + labels.join(', ');
+        status.classList.add('ccd-discount-row__status--applied');
+      }
+    }
+
+    function applyDiscount() {
+      var code = (input.value || '').trim();
+      if (!code) return;
+      btn.disabled = true;
+      var prevLabel = btn.textContent;
+      btn.textContent = '…';
+      fetch('/discount/' + encodeURIComponent(code) + '?redirect=/cart.js', { credentials: 'same-origin' })
+        .then(function() { return fetch('/cart.js', { credentials: 'same-origin' }); })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(cart) {
+          if (cart) {
+            CCD._lastCart = cart;
+            if (typeof CCD.refresh === 'function') { CCD.refresh(); }
+            renderAppliedBadge();
+            input.value = '';
+          }
+        })
+        .catch(function() {})
+        .then(function() { btn.disabled = false; btn.textContent = prevLabel; });
+    }
+    btn.addEventListener('click', applyDiscount);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); applyDiscount(); }
+    });
+
+    if (position === 'top') {
+      footer.insertBefore(row, footer.firstChild);
+    } else {
+      var trustRow = footer.querySelector('.ccd-trust');
+      if (trustRow) {
+        footer.insertBefore(row, trustRow);
+      } else {
+        footer.appendChild(row);
+      }
+    }
+    renderAppliedBadge();
   };
 
   if (document.readyState === 'loading') {
