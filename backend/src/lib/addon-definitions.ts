@@ -597,6 +597,107 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
     },
   },
 
+  {
+    key: 'lowStockBadge',
+    label: 'Only X Left Badge',
+    icon: '🔥',
+    description:
+      'Show an "Only X left!" scarcity badge on a cart line item. Two modes: Auto (real Shopify inventory) or Fake (auto-attaches to the Nth unique product added).',
+    estimatedImpact: '+3-9% conversion',
+    impactMetric: 'conversion',
+    dimensions: [
+      {
+        key: 'mode',
+        label: 'Mode',
+        type: 'select',
+        testable: true,
+        options: [
+          { value: 'fake', label: 'Fake scarcity (auto-pick Nth product)' },
+          { value: 'auto', label: 'Auto (real Shopify inventory)' },
+        ],
+        default: 'fake',
+      },
+      {
+        key: 'target',
+        label: 'Which product gets the badge (Fake mode)',
+        type: 'select',
+        testable: true,
+        options: [
+          { value: '1', label: '1st different product added' },
+          { value: '2', label: '2nd different product added' },
+          { value: '3', label: '3rd different product added' },
+          { value: 'last', label: 'Last product added' },
+          { value: 'random', label: 'Random product in cart' },
+        ],
+        default: '2',
+      },
+      {
+        key: 'fakeQty',
+        label: 'Number shown in badge (Fake mode)',
+        type: 'number',
+        testable: true,
+        min: 1,
+        max: 20,
+        default: 1,
+      },
+      {
+        key: 'threshold',
+        label: 'Inventory threshold (Auto mode — show badge when stock ≤ this)',
+        type: 'number',
+        testable: true,
+        min: 1,
+        max: 100,
+        default: 5,
+      },
+      {
+        key: 'text',
+        label: 'Badge text',
+        type: 'text',
+        testable: true,
+        default: 'Only {n} left!',
+        placeholder: 'Use {n} for the quantity',
+      },
+      {
+        key: 'icon',
+        label: 'Icon',
+        type: 'select',
+        testable: false,
+        options: [
+          { value: 'fire', label: '🔥 Fire' },
+          { value: 'clock', label: '⏰ Clock' },
+          { value: 'warning', label: '⚠️ Warning' },
+          { value: 'none', label: 'No icon' },
+        ],
+        default: 'fire',
+      },
+      {
+        key: 'blockAddToCart',
+        label: 'Block customer from adding more',
+        type: 'toggle',
+        testable: false,
+        default: true,
+      },
+      {
+        key: 'toastMessage',
+        label: 'Toast shown when block is hit',
+        type: 'text',
+        testable: false,
+        default: 'Only {n} left — already in your cart!',
+        placeholder: 'Use {n} for the quantity',
+      },
+    ],
+    defaultConfig: {
+      mode: 'fake',
+      target: '2',
+      fakeQty: 1,
+      threshold: 5,
+      text: 'Only {n} left!',
+      icon: 'fire',
+      blockAddToCart: true,
+      toastMessage: 'Only {n} left — already in your cart!',
+    },
+  },
+
 ];
 
 // ─── Helper Functions ────────────────────────────────────────────────

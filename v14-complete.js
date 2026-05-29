@@ -545,6 +545,25 @@
   // Restore sticky scarcity lock from sessionStorage (persists across cart open/close and page refreshes)
   var _initScarcityLockedVid = null;
   try { _initScarcityLockedVid = sessionStorage.getItem('ccd_scarcity_locked_vid'); } catch(e) {}
+  // ── Low-stock badge addon config (CFG.addons.lowStockBadge.config) ──
+  // Backward compat: if no addon entry, falls back to legacy CFG.scarcityX keys.
+  var _lsb = (CFG.addons && CFG.addons.lowStockBadge) || {};
+  var _lsbCfg = _lsb.config || {};
+  var LSB_ENABLED;
+  if (_lsb && (_lsb.enabled === true || _lsb.enabled === false)) {
+    LSB_ENABLED = _lsb.enabled === true;
+  } else {
+    LSB_ENABLED = CFG.scarcityEnabled !== false;
+  }
+  var LSB_MODE = _lsbCfg.mode || 'fake';
+  var LSB_TARGET = _lsbCfg.target || CFG.scarcityTarget || '2';
+  var LSB_FAKE_QTY = parseInt(_lsbCfg.fakeQty) || 1;
+  var LSB_THRESHOLD = parseInt(_lsbCfg.threshold) || 5;
+  var LSB_TEXT = _lsbCfg.text || CFG.scarcityText || 'Only {n} left!';
+  var LSB_ICON = _lsbCfg.icon || CFG.scarcityIcon || 'fire';
+  var LSB_BLOCK_ADD = _lsbCfg.blockAddToCart !== false;
+  var LSB_TOAST = _lsbCfg.toastMessage || CFG.scarcityToastMsg || 'Only {n} left — already in your cart!';
+  function lsbText(template, n) { return String(template || '').replace(/\{n\}/g, String(n != null ? n : 1)); }
   var caseDismissed = false;
   try { caseDismissed = sessionStorage.getItem('ccd_case_dismissed') === '1'; } catch(e) {} // locked to first product added this session
   // scarcity computed fresh on every cart refresh — no caching
@@ -1552,11 +1571,11 @@
         window.__ccd_block_rebuild = true;
         window.__ccd_is_removing = true;
       }
-      // Block increasing scarcity item above 1
-      if (scarcityVariantId && qty > 1) {
+      // Block increasing scarcity item above the displayed limit (gated by addon's blockAddToCart)
+      if (LSB_BLOCK_ADD && scarcityVariantId && qty > LSB_FAKE_QTY) {
         var keyVid = String(key).split(':')[0];
         if (keyVid === scarcityVariantId) {
-          CCD.showScarcityToast(CFG.scarcityToastMsg || CFG.scarcityText || 'Only 1 left!');
+          CCD.showScarcityToast(lsbText(LSB_TOAST, LSB_FAKE_QTY));
           return;
         }
       }
@@ -1870,7 +1889,7 @@
       document.addEventListener("submit", function(e) {
         var form = e.target;
         if (!form || !form.action || form.action.indexOf("/cart/add") === -1) return;
-        if (CFG.scarcityEnabled === false) return;
+        if (!LSB_ENABLED || !LSB_BLOCK_ADD) return;
         // Read fresh from sessionStorage every time (not stale closure)
         var sVid = null;
         try { sVid = sessionStorage.getItem("ccd_scarcity_vid"); } catch(ex) {}
@@ -1885,7 +1904,7 @@
         if (formVid === sVid) {
           e.preventDefault();
           e.stopImmediatePropagation();
-          CCD.showScarcityToast(CFG.scarcityToastMsg || CFG.scarcityText || "Only 1 left — already in your cart!");
+          CCD.showScarcityToast(lsbText(LSB_TOAST, LSB_FAKE_QTY));
           return;
         }
       }, true); // useCapture=true to fire BEFORE theme handlers
@@ -2030,7 +2049,7 @@
           // Scarcity check: block adding more of the locked item
           // Read fresh from sessionStorage (not stale closure variable)
           try { scarcityVariantId = sessionStorage.getItem("ccd_scarcity_vid"); } catch(svEx) {}
-          if (CFG.scarcityEnabled !== false && scarcityVariantId) {
+          if (LSB_ENABLED && LSB_BLOCK_ADD && scarcityVariantId) {
             var scBlocked = false;
             try {
               var rawBody = opts.body;
@@ -2050,8 +2069,8 @@
               }
             } catch(ex2) {}
             if (scBlocked) {
-              CCD.showScarcityToast(CFG.scarcityToastMsg || CFG.scarcityText || 'Only 1 left — already in your cart!');
-              return Promise.resolve(new Response(JSON.stringify({status:422, message:"Cart Error", description:"Only 1 left"}), {status: 422, statusText: "Unprocessable Entity", headers: {"Content-Type": "application/json"}}));
+              CCD.showScarcityToast(lsbText(LSB_TOAST, LSB_FAKE_QTY));
+              return Promise.resolve(new Response(JSON.stringify({status:422, message:"Cart Error", description:"Only " + LSB_FAKE_QTY + " left"}), {status: 422, statusText: "Unprocessable Entity", headers: {"Content-Type": "application/json"}}));
             }
           }
 
@@ -2265,7 +2284,7 @@
     xhrProto.send = function(body) {
       if (this._ccdMethod && this._ccdMethod.toUpperCase() === 'POST' && this._ccdUrl && this._ccdUrl.indexOf('/cart/add') !== -1) {
         try { scarcityVariantId = sessionStorage.getItem("ccd_scarcity_vid"); } catch(svEx2) {}
-          if (CFG.scarcityEnabled !== false && scarcityVariantId && body) {
+          if (LSB_ENABLED && LSB_BLOCK_ADD && scarcityVariantId && body) {
           var xhrBlocked = false;
           try {
             if (typeof body === 'string') {
@@ -2280,7 +2299,7 @@
             }
           } catch(ex3) {}
           if (xhrBlocked) {
-            CCD.showScarcityToast(CFG.scarcityToastMsg || CFG.scarcityText || 'Only 1 left — already in your cart!');
+            CCD.showScarcityToast(lsbText(LSB_TOAST, LSB_FAKE_QTY));
             var self = this;
             setTimeout(function() {
               Object.defineProperty(self, "readyState", {get: function(){return 4;}, configurable: true});
@@ -3359,7 +3378,7 @@
     },
 
     getScarcitySvg: function() {
-      var icon = CFG.scarcityIcon || 'fire';
+      var icon = LSB_ICON;
       if (icon === 'fire') return FIRE_SVG;
       if (icon === 'clock') return CLOCK_SVG;
       if (icon === 'warning') return WARN_SVG;
@@ -3367,14 +3386,62 @@
     },
 
     applyScarcity: function(cart) {
-      if (CFG.scarcityEnabled === false) return;
+      if (!LSB_ENABLED) return;
       if (!cart || !cart.items) return;
 
       var realItems = cart.items.filter(function(it) {
         return !CCD._isExcludedHandle(it.handle);
       });
       var targetVid = null;
-      var target = CFG.scarcityTarget || '2';
+      var target = LSB_TARGET;
+
+      // AUTO mode: badge shown on first item with inventory_quantity <= threshold.
+      // Skips Fake-mode Nth-variant logic entirely.
+      if (LSB_MODE === 'auto') {
+        var autoQty = null;
+        for (var ai = 0; ai < realItems.length; ai++) {
+          var invQ = realItems[ai].inventory_quantity;
+          if (typeof invQ === 'number' && invQ > 0 && invQ <= LSB_THRESHOLD) {
+            targetVid = String(realItems[ai].variant_id);
+            autoQty = invQ;
+            break;
+          }
+        }
+        scarcityVariantId = targetVid;
+        try {
+          if (targetVid) { sessionStorage.setItem('ccd_scarcity_vid', targetVid); }
+          else { sessionStorage.removeItem('ccd_scarcity_vid'); }
+        } catch(e) {}
+        var autoItems = document.querySelectorAll('#CCD-Drawer .ccd-item');
+        autoItems.forEach(function(el) {
+          var inp = el.querySelector('.ccd-qty__input');
+          var existingBadge = el.querySelector('.ccd-scarcity-badge');
+          var itemVid = inp ? String(inp.dataset.id).split(':')[0] : '';
+          if (targetVid && inp && itemVid === targetVid) {
+            if (!existingBadge) {
+              var badge = document.createElement('span');
+              badge.className = 'ccd-scarcity-badge';
+              badge.innerHTML = CCD.getScarcitySvg() + ' ' + lsbText(LSB_TEXT, autoQty);
+              var variant = el.querySelector('.ccd-item__variant');
+              if (variant && !variant.parentElement.classList.contains('ccd-item__variant-row')) {
+                var row = document.createElement('div');
+                row.className = 'ccd-item__variant-row';
+                variant.parentElement.insertBefore(row, variant);
+                row.appendChild(variant);
+                row.appendChild(badge);
+              } else if (variant && variant.parentElement.classList.contains('ccd-item__variant-row')) {
+                variant.parentElement.appendChild(badge);
+              } else {
+                var titleRow = el.querySelector('.ccd-item__title-row');
+                if (titleRow) titleRow.after(badge);
+              }
+            }
+          } else if (existingBadge) {
+            existingBadge.remove();
+          }
+        });
+        return;
+      }
 
       // Always recompute target from current cart state (no sticky override)
       if (realItems.length > 0) {
@@ -3428,12 +3495,12 @@
 
         if (idx >= 0) {
           targetVid = String(realItems[idx].variant_id);
-          // Force qty to 1 if target has more than 1
-          if (realItems[idx].quantity > 1) {
+          // Force qty down to displayed limit if block-add is on
+          if (LSB_BLOCK_ADD && realItems[idx].quantity > LSB_FAKE_QTY) {
             fetch('/cart/change.js', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: realItems[idx].key, quantity: 1 })
+              body: JSON.stringify({ id: realItems[idx].key, quantity: LSB_FAKE_QTY })
             }).then(function(r) { return r.json(); })
               .then(function(c) { CCD.refresh(c); });
           }
@@ -3458,7 +3525,7 @@
           if (!existingBadge) {
             var badge = document.createElement('span');
             badge.className = 'ccd-scarcity-badge';
-            badge.innerHTML = CCD.getScarcitySvg() + ' ' + (CFG.scarcityText || 'Only 1 left!');
+            badge.innerHTML = CCD.getScarcitySvg() + ' ' + lsbText(LSB_TEXT, LSB_FAKE_QTY);
             var variant = el.querySelector('.ccd-item__variant');
             if (variant && !variant.parentElement.classList.contains('ccd-item__variant-row')) {
               var row = document.createElement('div');
@@ -3480,7 +3547,7 @@
     },
 
                 lockScarcityQty: function() {
-      if (CFG.scarcityEnabled === false || !scarcityVariantId) return;
+      if (!LSB_ENABLED || !LSB_BLOCK_ADD || !scarcityVariantId) return;
       var items = document.querySelectorAll('#CCD-Drawer .ccd-item');
       items.forEach(function(el) {
         var inp = el.querySelector('.ccd-qty__input');

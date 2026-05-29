@@ -1268,12 +1268,17 @@ async function run() {
   console.log('\n--- Scarcity Badge (robustness) ---');
 
   test('Contract 84: Scarcity default target is 2', () => {
+    // LSB_TARGET is now resolved once at the top of v14-complete.js (with
+    // legacy CFG.scarcityTarget fallback) and used inside applyScarcity.
+    // The "default to 2" contract still holds — just at the LSB constant.
+    assertContains(code, "LSB_TARGET = _lsbCfg.target || CFG.scarcityTarget || '2'",
+      'LSB_TARGET must default to 2 (legacy fallback chain: addon → CFG.scarcityTarget → "2")');
     var scarcitySection = code.substring(
       code.indexOf('applyScarcity: function'),
-      code.indexOf('applyScarcity: function') + 800
+      code.indexOf('applyScarcity: function') + 1500
     );
-    assertContains(scarcitySection, "CFG.scarcityTarget || '2'",
-      'Scarcity target must default to 2 (not 1)');
+    assertContains(scarcitySection, 'LSB_TARGET',
+      'applyScarcity must read the resolved LSB_TARGET (not legacy CFG.scarcityTarget inline)');
   });
 
   test('Contract 85: Scarcity badge renders by matching variant_id in DOM', () => {
@@ -1428,19 +1433,20 @@ async function run() {
   console.log('\n--- Scarcity Badge Placement ---');
 
   test('102: Scarcity badges LAST item in cart (most recently added)', () => {
-    const scarcity = code.substring(code.indexOf('applyScarcity: function'), code.indexOf('applyScarcity: function') + 2000);
+    // Window widened from 2000→5000: applyScarcity grew with AUTO-mode branch at top.
+    const scarcity = code.substring(code.indexOf('applyScarcity: function'), code.indexOf('applyScarcity: function') + 5000);
     assert(scarcity.includes('realItems.length - 1'),
       'Scarcity must use realItems.length - 1 to badge the most recently added item');
   });
 
   test('103: Scarcity checks uniqueCount >= tNum threshold', () => {
-    const scarcity = code.substring(code.indexOf('applyScarcity: function'), code.indexOf('applyScarcity: function') + 3000);
+    const scarcity = code.substring(code.indexOf('applyScarcity: function'), code.indexOf('applyScarcity: function') + 5000);
     assert(scarcity.includes('uniqueCount >= tNum'),
       'Scarcity badge only shows when unique variant count meets threshold');
   });
 
   test('104: Scarcity does NOT use uniqueCount === tNum (wrong)', () => {
-    const scarcity = code.substring(code.indexOf('applyScarcity: function'), code.indexOf('applyScarcity: function') + 3000);
+    const scarcity = code.substring(code.indexOf('applyScarcity: function'), code.indexOf('applyScarcity: function') + 5000);
     assert(!scarcity.includes('uniqueCount === tNum'),
       'Must NOT use === (badges Nth variant instead of last)');
   });
@@ -1461,7 +1467,8 @@ async function run() {
   });
 
   test('105c: Scarcity uses _initScarcityLockedVid as fallback', () => {
-    const scarcity = code.substring(code.indexOf('applyScarcity: function'), code.indexOf('applyScarcity: function') + 3000);
+    // Window widened from 3000→5000: applyScarcity grew with AUTO-mode branch at top.
+    const scarcity = code.substring(code.indexOf('applyScarcity: function'), code.indexOf('applyScarcity: function') + 5000);
     assert(scarcity.includes('_initScarcityLockedVid'),
       'Must use the init-restored locked vid as fallback when CCD._scarcityLockedVid not yet set');
   });
@@ -3293,6 +3300,145 @@ async function run() {
   test('global.behavior stash on CCD._EOBehavior for engine code to read flags later', () => {
     assertContains(code, 'CCD._EOBehavior = g.behavior',
       'behavior subobject must be stashed on CCD._EOBehavior so engine code (openOnAddToCart, etc.) can read flags');
+  });
+
+  // ================================================================
+  // SECTION: Low Stock Badge addon (lowStockBadge) — config + behavior
+  // Two modes (fake/auto), {n} placeholder, blockAddToCart, legacy fallback
+  // ================================================================
+  console.log('\n--- Low Stock Badge Addon ---');
+
+  test('LSB: reads from CFG.addons.lowStockBadge.config with legacy fallback', () => {
+    assertContains(code, "CFG.addons && CFG.addons.lowStockBadge",
+      'Must read primary config from CFG.addons.lowStockBadge');
+    assertContains(code, "_lsbCfg.target || CFG.scarcityTarget || '2'",
+      'LSB_TARGET must fall back to legacy CFG.scarcityTarget then "2"');
+    assertContains(code, "_lsbCfg.text || CFG.scarcityText || 'Only {n} left!'",
+      'LSB_TEXT must fall back to legacy CFG.scarcityText then default copy');
+    assertContains(code, "_lsbCfg.icon || CFG.scarcityIcon || 'fire'",
+      'LSB_ICON must fall back to legacy CFG.scarcityIcon then "fire"');
+  });
+
+  test('LSB: enabled falls back to legacy CFG.scarcityEnabled when addon config absent', () => {
+    assertRegex(code, /LSB_ENABLED\s*=\s*_lsb\.enabled\s*===\s*true/,
+      'LSB_ENABLED must be true when addon explicitly enabled');
+    assertRegex(code, /LSB_ENABLED\s*=\s*CFG\.scarcityEnabled\s*!==\s*false/,
+      'LSB_ENABLED must fall back to CFG.scarcityEnabled !== false when no addon config');
+  });
+
+  test('LSB: mode defaults to "fake", threshold defaults to 5, fakeQty to 1', () => {
+    assertContains(code, "LSB_MODE = _lsbCfg.mode || 'fake'", 'mode default must be "fake"');
+    assertContains(code, 'LSB_FAKE_QTY = parseInt(_lsbCfg.fakeQty) || 1',
+      'fakeQty must default to 1 (Yoni-set value)');
+    assertContains(code, 'LSB_THRESHOLD = parseInt(_lsbCfg.threshold) || 5',
+      'threshold (for auto mode) must default to 5');
+  });
+
+  test('LSB: blockAddToCart defaults to true (opt-out, not opt-in)', () => {
+    assertContains(code, 'LSB_BLOCK_ADD = _lsbCfg.blockAddToCart !== false',
+      'blockAddToCart must default to true — only false if explicitly disabled');
+  });
+
+  test('LSB: lsbText() substitutes {n} placeholder in text/toast', () => {
+    assertContains(code, 'function lsbText(template, n)',
+      'lsbText helper must exist for {n} substitution');
+    assertRegex(code, /lsbText\([\s\S]{0,100}\)\.replace\(\/\\\{n\\\}\/g/,
+      'lsbText must replace {n} placeholder with provided number');
+    // Used at both badge insertion and toast call sites
+    assertContains(code, 'lsbText(LSB_TEXT,', 'badge text must run through lsbText');
+    assertContains(code, 'lsbText(LSB_TOAST,', 'toast message must run through lsbText');
+  });
+
+  test('LSB: Auto mode iterates realItems and triggers on inventory_quantity <= threshold', () => {
+    assertContains(code, "LSB_MODE === 'auto'",
+      'applyScarcity must branch on LSB_MODE === "auto"');
+    assertRegex(code, /invQ\s*>\s*0\s*&&\s*invQ\s*<=\s*LSB_THRESHOLD/,
+      'Auto mode must filter items where inventory_quantity is > 0 and <= LSB_THRESHOLD');
+  });
+
+  test('LSB: Auto mode badge text uses lsbText with the real inventory quantity', () => {
+    assertRegex(code, /badge\.innerHTML\s*=\s*CCD\.getScarcitySvg\(\)\s*\+\s*['"][^'"]*['"]\s*\+\s*lsbText\(LSB_TEXT,\s*autoQty\)/,
+      'Auto mode badge must render with the real autoQty (not a hardcoded number)');
+  });
+
+  test('LSB: Fake mode renders badge with LSB_FAKE_QTY', () => {
+    assertRegex(code, /badge\.innerHTML\s*=\s*CCD\.getScarcitySvg\(\)\s*\+\s*['"][^'"]*['"]\s*\+\s*lsbText\(LSB_TEXT,\s*LSB_FAKE_QTY\)/,
+      'Fake mode badge must render with LSB_FAKE_QTY (not hardcoded 1)');
+  });
+
+  test('LSB: blockAddToCart=true clamps quantity changes past LSB_FAKE_QTY', () => {
+    // Cart-change interceptor must guard on LSB_BLOCK_ADD before showing toast/422
+    assertContains(code, 'LSB_BLOCK_ADD && scarcityVariantId',
+      'Block-from-cart guards must check LSB_BLOCK_ADD flag, not unconditional');
+    assertContains(code, 'qty > LSB_FAKE_QTY',
+      'Quantity changes must be rejected when qty would exceed LSB_FAKE_QTY');
+  });
+
+  test('LSB: blockAddToCart=false skips both fetch and XHR add-to-cart interceptors', () => {
+    // Add-to-cart fetch interceptor
+    assertContains(code, 'LSB_ENABLED && LSB_BLOCK_ADD && scarcityVariantId',
+      'Fetch interceptor must gate block behavior on both LSB_ENABLED and LSB_BLOCK_ADD');
+    // Sticky-lock guard at top of helper also bails when block is off
+    assertContains(code, '!LSB_ENABLED || !LSB_BLOCK_ADD',
+      'Sticky lock guard must early-return when ENABLED or BLOCK_ADD is off');
+  });
+
+  test('LSB: block-rejected /cart/add returns 422 with "Only N left" message', () => {
+    // The fetch interceptor synthesizes a 422 Response when block fires
+    assertRegex(code, /status\s*:\s*422[\s\S]{0,200}Only\s*"\s*\+\s*LSB_FAKE_QTY/,
+      'Blocked add must return synthesized 422 Response with "Only N left" body');
+  });
+
+  test('LSB: blocked add shows scarcity toast with LSB_TOAST template', () => {
+    // Three call sites: fetch interceptor, XHR interceptor, change-qty handler
+    const toastCalls = countOccurrences(code, 'CCD.showScarcityToast(lsbText(LSB_TOAST, LSB_FAKE_QTY))');
+    assert(toastCalls >= 3,
+      `showScarcityToast(lsbText(LSB_TOAST, LSB_FAKE_QTY)) should appear 3+ times (fetch/XHR/change-qty), found ${toastCalls}`);
+  });
+
+  test('LSB: addon definition exists with all required dimensions', () => {
+    const defPath = path.join(__dirname, '..', 'backend', 'src', 'lib', 'addon-definitions.ts');
+    if (!fs.existsSync(defPath)) {
+      throw new Error('addon-definitions.ts not found at expected path');
+    }
+    const defSrc = fs.readFileSync(defPath, 'utf8');
+    assertContains(defSrc, "key: 'lowStockBadge'",
+      'addon-definitions must register lowStockBadge addon key');
+    // Every config field the v14 code reads must be exposed as a dimension
+    assertContains(defSrc, "'mode'", 'Must expose mode dimension (auto/fake)');
+    assertContains(defSrc, "'target'", 'Must expose target dimension (Nth product)');
+    assertContains(defSrc, "'fakeQty'", 'Must expose fakeQty dimension (the {n} number)');
+    assertContains(defSrc, "'threshold'", 'Must expose threshold dimension (auto mode)');
+    assertContains(defSrc, "'text'", 'Must expose text dimension');
+    assertContains(defSrc, "'icon'", 'Must expose icon dimension');
+    assertContains(defSrc, "'blockAddToCart'", 'Must expose blockAddToCart dimension');
+    assertContains(defSrc, "'toastMessage'", 'Must expose toastMessage dimension');
+  });
+
+  test('LSB: hotspot registered for deep-link from cart preview', () => {
+    const hsPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'cart-editor', 'overlay', 'hotspots.ts');
+    if (!fs.existsSync(hsPath)) {
+      throw new Error('hotspots.ts not found at expected path');
+    }
+    const hsSrc = fs.readFileSync(hsPath, 'utf8');
+    assertContains(hsSrc, "'addon.lowStockBadge'",
+      'HotspotId union must include addon.lowStockBadge');
+    assertRegex(hsSrc, /addon\.lowStockBadge[\s\S]{0,200}\.ccd-scarcity-badge[\s\S]{0,200}deep-link/,
+      'HOTSPOTS array must map addon.lowStockBadge → .ccd-scarcity-badge with deep-link target');
+  });
+
+  test('LSB: addon-preview renders live lowStockBadge case (mirrors v14 output)', () => {
+    const previewPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'addon-preview.tsx');
+    if (!fs.existsSync(previewPath)) {
+      throw new Error('addon-preview.tsx not found at expected path');
+    }
+    const previewSrc = fs.readFileSync(previewPath, 'utf8');
+    assertContains(previewSrc, "addonKey === 'lowStockBadge'",
+      'addon-preview must have a dedicated rendering branch for lowStockBadge');
+    assertContains(previewSrc, 'ccd-qty__btn--locked',
+      'Preview must apply lock class when blockAddToCart is true (matches v14 output)');
+    assertRegex(previewSrc, /\{n\}|\\\{n\\\}/,
+      'Preview must substitute the {n} placeholder so the editor reflects fakeQty live');
   });
 
   // ================================================================
