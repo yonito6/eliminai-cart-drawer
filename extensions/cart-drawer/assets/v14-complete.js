@@ -269,6 +269,24 @@
       '.ccd-discount-row__amount { font-size: 15px !important; font-weight: 600 !important; color: #111 !important; }\n' +
       '.ccd-discount-row__promo-name { display: inline-flex !important; align-items: center !important; gap: 4px !important; font-size: 12px !important; font-weight: 600 !important; color: #111 !important; }\n' +
       '.ccd-discount-row__promo-name svg { width: 14px !important; height: 14px !important; fill: #111 !important; flex-shrink: 0 !important; }\n' +
+      // ── Discount Code INPUT row (id-scoped to override the colliding `.ccd-discount-row` totals styles above) ──
+      '#ccd-discount-code-row { display: flex !important; align-items: stretch !important; justify-content: stretch !important; gap: 0 !important; padding: 0 !important; margin: 8px 0 10px !important; position: relative !important; flex-wrap: wrap !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__input { flex: 1 1 auto !important; min-width: 0 !important; padding: 11px 14px !important; border: 1px solid #d4d4d8 !important; border-right: none !important; border-radius: 8px 0 0 8px !important; background: var(--ccd-bg, #fff) !important; color: #111 !important; font-size: 14px !important; line-height: 1.2 !important; outline: none !important; transition: border-color 0.15s, box-shadow 0.15s !important; box-shadow: none !important; -webkit-appearance: none !important; appearance: none !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__input::placeholder { color: #9ca3af !important; opacity: 1 !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__input:focus { border-color: #111 !important; box-shadow: 0 0 0 1px #111 inset !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__apply { flex: 0 0 auto !important; padding: 11px 18px !important; background: var(--ccd-da-bg, #111) !important; color: #fff !important; border: 1px solid var(--ccd-da-bg, #111) !important; border-radius: 0 8px 8px 0 !important; font-size: 13px !important; font-weight: 700 !important; letter-spacing: 0.5px !important; text-transform: uppercase !important; cursor: pointer !important; transition: filter 0.15s !important; white-space: nowrap !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__apply:hover:not(:disabled) { filter: brightness(1.15) !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__apply:active:not(:disabled) { filter: brightness(0.85) !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__apply:disabled { opacity: 0.6 !important; cursor: default !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__status { flex: 0 0 100% !important; min-height: 0 !important; padding: 0 2px !important; margin: 4px 0 0 !important; font-size: 12px !important; color: #6b7280 !important; line-height: 1.3 !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__status:empty { display: none !important; }\n' +
+      '#ccd-discount-code-row .ccd-discount-row__status--applied { color: #047857 !important; font-weight: 600 !important; }\n' +
+      // ── Order Notes row ──
+      '.ccd-notes-row { display: flex !important; flex-direction: column !important; gap: 6px !important; padding: 0 !important; margin: 8px 0 10px !important; }\n' +
+      '.ccd-notes-row__label { font-size: 12px !important; font-weight: 600 !important; color: #374151 !important; letter-spacing: 0.2px !important; }\n' +
+      '.ccd-notes-row__input { width: 100% !important; min-height: 64px !important; padding: 11px 14px !important; border: 1px solid #d4d4d8 !important; border-radius: 8px !important; background: var(--ccd-bg, #fff) !important; color: #111 !important; font-size: 14px !important; font-family: inherit !important; line-height: 1.4 !important; resize: vertical !important; outline: none !important; transition: border-color 0.15s, box-shadow 0.15s !important; box-shadow: none !important; -webkit-appearance: none !important; appearance: none !important; }\n' +
+      '.ccd-notes-row__input::placeholder { color: #9ca3af !important; opacity: 1 !important; }\n' +
+      '.ccd-notes-row__input:focus { border-color: #111 !important; box-shadow: 0 0 0 1px #111 inset !important; }\n' +
       '.ccd-checkout-btn { display: flex !important; align-items: center !important; justify-content: center !important; gap: 8px !important; width: 100% !important; padding: 14px 24px !important; background: #111 !important; color: #fff !important; border: 1px solid #222 !important; border-radius: 8px !important; font-size: 15px !important; font-weight: 700 !important; letter-spacing: 1px !important; text-transform: uppercase !important; cursor: pointer !important; transition: all 0.15s !important; margin-top: 6px !important; }\n' +
       '.ccd-checkout-btn:hover { background: #222 !important; }\n' +
       '.ccd-checkout-btn:active { background: #000 !important; }\n' +
@@ -5088,14 +5106,20 @@
     var footer = document.querySelector('.ccd-sticky-footer');
     if (!footer) return;
 
-    var position = cfg.position === 'top' ? 'top' : 'bottom';
+    var position = cfg.position === 'above-checkout'
+      ? 'above-checkout'
+      : (cfg.position === 'bottom' ? 'bottom' : 'top');
     var placeholder = typeof cfg.placeholder === 'string' ? cfg.placeholder : 'Discount code';
     var applyLabel = typeof cfg.applyButtonLabel === 'string' ? cfg.applyButtonLabel : 'Apply';
+    var applyColor = typeof cfg.applyButtonColor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(cfg.applyButtonColor)
+      ? cfg.applyButtonColor
+      : '';
     var showBadge = cfg.showAppliedBadge !== false;
 
     var row = document.createElement('div');
     row.id = 'ccd-discount-code-row';
     row.className = 'ccd-discount-row ccd-discount-row--' + position;
+    if (applyColor) row.style.setProperty('--ccd-da-bg', applyColor);
 
     var input = document.createElement('input');
     input.type = 'text';
@@ -5160,6 +5184,13 @@
 
     if (position === 'top') {
       footer.insertBefore(row, footer.firstChild);
+    } else if (position === 'above-checkout') {
+      var checkoutBtn = footer.querySelector('.ccd-checkout-btn');
+      if (checkoutBtn && checkoutBtn.parentNode) {
+        checkoutBtn.parentNode.insertBefore(row, checkoutBtn);
+      } else {
+        footer.appendChild(row);
+      }
     } else {
       var trustRow = footer.querySelector('.ccd-trust');
       if (trustRow) {
