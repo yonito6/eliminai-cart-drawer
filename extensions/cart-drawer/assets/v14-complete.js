@@ -5243,6 +5243,14 @@
 
   CCD.injectCustomCode = function(cfg) {
     cfg = cfg || {};
+    // When a merchant seeds their own returns badge here and toggles
+    // hideBuiltInTrustLine, drop ONLY the built-in returns text line so it isn't
+    // shown twice. The payment-badges row is nested in the same trust container
+    // and must survive — so we never remove the whole container here.
+    if (cfg.hideBuiltInTrustLine) {
+      var builtInLine = document.querySelector('.ccd-trust__line');
+      if (builtInLine) builtInLine.remove();
+    }
     var existing = document.getElementById('ccd-custom-code');
     if (existing) existing.remove();
     var footer = document.querySelector('.ccd-sticky-footer');

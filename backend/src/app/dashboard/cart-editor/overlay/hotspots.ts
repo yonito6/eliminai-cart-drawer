@@ -33,7 +33,8 @@ export type HotspotId =
   | 'addon.scarcityTimer'
   | 'addon.lowStockBadge'
   | 'addon.upsellRecommendations'
-  | 'addon.socialProof';
+  | 'addon.socialProof'
+  | 'addon.customCode';
 
 export interface Hotspot {
   id: HotspotId;
@@ -60,6 +61,7 @@ export const HOTSPOTS: ReadonlyArray<Hotspot> = [
   { id: 'addon.lowStockBadge',         selector: '.ccd-scarcity-badge',      label: 'Low Stock Badge',        target: 'deep-link' },
   { id: 'addon.upsellRecommendations', selector: '#ccd-upsell',              label: 'Upsell Recommendations', target: 'deep-link' },
   { id: 'addon.socialProof',           selector: '#ccd-social-proof',        label: 'Social Proof',           target: 'deep-link' },
+  { id: 'addon.customCode',            selector: '#ccd-custom-code, .ccd-custom-code', label: 'Custom HTML',     target: 'deep-link' },
   { id: 'footer',                selector: '.ccd-sticky-footer',          label: 'Footer',           target: 'inline' },
   // Sub-element line-item hotspots — must precede 'lineItem'.
   { id: 'lineItem.image',        selector: '.ccd-item__image',            label: 'Product Image',    target: 'inline' },

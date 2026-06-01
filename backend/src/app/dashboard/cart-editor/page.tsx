@@ -510,6 +510,16 @@ const ELEMENT_EDITORS: Record<string, { label: string; Component: React.Componen
       />
     ),
   },
+  'addon.customCode': {
+    label: 'Custom HTML',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="customCode"
+        title="Edit the Custom HTML addon →"
+        description="Your custom HTML block, its footer position, and the built-in returns line toggle are managed in the Addons tab."
+      />
+    ),
+  },
 };
 
 function ElementPanel() {

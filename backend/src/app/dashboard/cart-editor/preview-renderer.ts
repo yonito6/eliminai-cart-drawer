@@ -36,6 +36,7 @@ import {
   applyLowStockBadge,
   applyNotes,
   applyCustomCode,
+  hideBuiltInTrustLine,
   applyDiscountCode,
   applyTermsCheckbox,
   type PreviewProduct as SharedPreviewProduct,
@@ -538,6 +539,17 @@ export function renderPreview(input: PreviewRenderInput): string {
     }
     if (mb.position === 'aboveCheckout') {
       html = relocateProgressBeforeFooter(html);
+    }
+  }
+
+  // ── Hide built-in returns line ─────────────────────────────────────
+  // When a merchant seeds their own returns badge into the customCode addon and
+  // toggles hideBuiltInTrustLine, drop the built-in `.ccd-trust` returns line so
+  // it isn't shown twice. Default OFF → every other store keeps its line.
+  if (addons) {
+    const cc = getAddon(addons, 'customCode');
+    if (cc.enabled && cc.config?.hideBuiltInTrustLine) {
+      html = hideBuiltInTrustLine(html);
     }
   }
 

@@ -927,6 +927,17 @@ export function applyCustomCode(html: string, config: Record<string, any>): stri
   return html.replace('</div>\n</div>', block + '</div>\n</div>');
 }
 
+// Removes the built-in returns line (.ccd-trust) from the CONTROL_HTML markup.
+// Used when a merchant has seeded their own returns badge into the customCode
+// addon and toggled customCode.config.hideBuiltInTrustLine — otherwise the line
+// would show twice. In CONTROL_HTML, `.ccd-trust` is ONLY the returns line; the
+// payment badges live in a SEPARATE `.ccd-trust-badges` element, so they survive.
+// No-op when there is no `.ccd-trust` line. (v14-complete.js handles its own
+// removal of `.ccd-trust__line` because there the badges are nested inside.)
+export function hideBuiltInTrustLine(html: string): string {
+  return html.replace(/<div class="ccd-trust">[\s\S]*?<\/div>/, '');
+}
+
 // ── Discount Code addon ───────────────────────────────────────────
 // Mirrors CCD.injectDiscountCode in v14-complete.js:
 //   <div id="ccd-discount-code-row" class="ccd-discount-row ccd-discount-row--{position}">

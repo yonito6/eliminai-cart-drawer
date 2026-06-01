@@ -16,6 +16,7 @@ import {
   applyLowStockBadge,
   applyNotes,
   applyCustomCode,
+  hideBuiltInTrustLine,
   applyDiscountCode,
   applyTermsCheckbox,
 } from './addon-transforms';
@@ -842,6 +843,25 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
   }
   if (addonKey === 'termsCheckbox') {
     cartHtml = applyTermsCheckbox(cartHtml, addonConfig);
+  }
+
+  // ── Hide built-in returns line ─────────────────────────────────────
+  // Mirrors renderPreview + v14 CCD.injectCustomCode. When the customCode addon
+  // is enabled with hideBuiltInTrustLine, drop the built-in `.ccd-trust` returns
+  // line so a seeded returns badge isn't shown twice. Runs AFTER every transform
+  // (upsell inserts before .ccd-trust, so this must be last). Default OFF.
+  const customCodeCfg: Record<string, any> | null = addonKey === 'customCode'
+    ? addonConfig
+    : (() => {
+        const raw = liveAddons?.customCode;
+        if (!raw) return null;
+        const isWrapped = typeof raw === 'object' && ('enabled' in raw || 'config' in raw);
+        const enabled = isWrapped ? raw.enabled !== false : true;
+        if (!enabled) return null;
+        return isWrapped ? (raw.config || {}) : (raw as Record<string, any>);
+      })();
+  if (customCodeCfg?.hideBuiltInTrustLine) {
+    cartHtml = hideBuiltInTrustLine(cartHtml);
   }
 
   const focusArea = FOCUS_AREAS[addonKey];

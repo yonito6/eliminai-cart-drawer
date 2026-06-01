@@ -493,11 +493,19 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
         ],
         default: 'above-checkout',
       },
+      {
+        key: 'hideBuiltInTrustLine',
+        label: 'Hide built-in returns line',
+        type: 'toggle',
+        testable: false,
+        default: false,
+      },
     ],
     defaultConfig: {
       enabled: false,
       html: '',
       position: 'above-checkout',
+      hideBuiltInTrustLine: false,
     },
   },
 
