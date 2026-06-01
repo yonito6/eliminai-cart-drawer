@@ -151,6 +151,17 @@ export function sanitizeSvgIcon(raw: unknown): string {
   return s;
 }
 
+// Validates a file-picked svg before it is stored in checkoutButton.iconCustom.
+// Returns the trimmed svg text when the file is a usable <svg> (so it mirrors the
+// paste flow: raw text in, sanitization happens at render via sanitizeSvgIcon),
+// or null when the file is not an svg (PNG bytes, plain text, empty, non-string).
+export function prepareUploadedSvgIcon(text: unknown): string | null {
+  if (typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (!sanitizeSvgIcon(trimmed)) return null;
+  return trimmed;
+}
+
 // Returns the SVG markup for a checkout-button icon. `iconCustom`, when present
 // and the icon is not 'none', overrides the built-in icon. Returns '' for 'none'
 // or an unknown icon.

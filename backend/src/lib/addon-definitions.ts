@@ -473,6 +473,35 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
   },
 
   {
+    key: 'customCode',
+    label: 'Custom HTML',
+    icon: '🧩',
+    description: 'Inject your own HTML block (e.g. a returns badge) at a chosen footer placement.',
+    estimatedImpact: 'Varies by content',
+    impactMetric: 'conversion',
+    dimensions: [
+      { key: 'html', label: 'Custom HTML', type: 'text', testable: false, default: '' },
+      {
+        key: 'position',
+        label: 'Position in footer',
+        type: 'select',
+        testable: true,
+        options: [
+          { value: 'above-checkout', label: 'Above checkout button (recommended)' },
+          { value: 'top', label: 'Top of footer' },
+          { value: 'bottom', label: 'Bottom of footer' },
+        ],
+        default: 'above-checkout',
+      },
+    ],
+    defaultConfig: {
+      enabled: false,
+      html: '',
+      position: 'above-checkout',
+    },
+  },
+
+  {
     key: 'discountCode',
     label: 'Discount Code Field',
     icon: '🏷️',

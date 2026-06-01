@@ -537,45 +537,82 @@ export function applySocialProof(
   );
 }
 
-// ── Express Payments (rich button row with SVG icons) ─────────────
+// ── Express Payments ──────────────────────────────────────────────
+// Mirrors CCD.injectExpressPayments in v14-complete.js (SINGLE SOURCE OF
+// TRUTH). The live storefront reads `providers` as an OBJECT of camelCase
+// keys (from addon-definitions.ts defaultConfig) — NOT an array — so this
+// transform must do the same or the dashboard preview crashes / diverges.
+//   wrap   id=ccd-express-payments  class="ccd-express ccd-express--{pos} ccd-express--{layout}"
+//   btnRow class="ccd-express__buttons ccd-express__buttons--{layout}"
+//   btn    class="ccd-express__btn ccd-express__btn--{key}" data-provider=key
+//          inline --ccd-ep-bg/--ccd-ep-fg + background/color via those vars
+//   sep    class="ccd-express__separator"
+//   above (default): wrap + sep before .ccd-checkout-btn
+//   below:           sep + wrap after the checkout button (before .ccd-trust)
+// NOTE: v14 styles these inline + by class only — there is intentionally NO
+// .ccd-express CSS, so REAL_CART_CSS must not add any (parity).
+const EXPRESS_PROVIDERS: Array<{ key: string; label: string; bg: string; fg: string }> = [
+  { key: 'shopPay', label: 'Shop Pay', bg: '#5a31f4', fg: '#ffffff' },
+  { key: 'googlePay', label: 'Google Pay', bg: '#000000', fg: '#ffffff' },
+  { key: 'paypal', label: 'PayPal', bg: '#ffc439', fg: '#003087' },
+  { key: 'applePay', label: 'Apple Pay', bg: '#000000', fg: '#ffffff' },
+  { key: 'amazonPay', label: 'Amazon Pay', bg: '#ff9900', fg: '#000000' },
+  { key: 'metaPay', label: 'Meta Pay', bg: '#0866ff', fg: '#ffffff' },
+];
+
 export function applyExpressPayments(html: string, config: Record<string, any>): string {
-  const providers: string[] = Array.isArray(config.providers) && config.providers.length > 0
-    ? config.providers
-    : ['apple-pay', 'google-pay', 'shop-pay'];
-  const btnStyle = config.style || 'pill';
-  const layout = config.layout || 'horizontal';
-  const showDivider = config.showDivider !== false;
+  if (!html.includes('class="ccd-checkout-btn"')) return html;
+  // Idempotent: strip any previously injected row.
+  html = html.replace(/<div id="ccd-express-payments"[\s\S]*?<\/div>\s*<\/div>/, '');
+  html = html.replace(/<div class="ccd-express__separator">[\s\S]*?<\/div>/, '');
 
-  const borderRadius = btnStyle === 'pill' ? '20px' : btnStyle === 'rounded' ? '8px' : '4px';
-  const direction = layout === 'vertical' ? 'flex-direction:column' : 'flex-direction:row';
+  // providers is an OBJECT { shopPay:true, ... } in the live cart. Tolerate a
+  // legacy array of camelCase keys too (defensive), but never an array of
+  // kebab-case strings.
+  const rawProviders = config.providers;
+  const isEnabled = (key: string): boolean =>
+    Array.isArray(rawProviders)
+      ? rawProviders.includes(key)
+      : !!(rawProviders && rawProviders[key]);
 
-  const providerButtons: Record<string, string> = {
-    'apple-pay': '<button style="flex:1;padding:10px 16px;background:#000;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px"><svg viewBox="0 0 24 24" width="16" height="16" fill="#fff"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg> Pay</button>',
-    'google-pay': '<button style="flex:1;padding:10px 16px;background:#fff;color:#3C4043;border:1px solid #dadce0;border-radius:' + borderRadius + ';font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC04" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg> Pay</button>',
-    'shop-pay': '<button style="flex:1;padding:10px 16px;background:#5A31F4;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px"><svg viewBox="0 0 24 24" width="16" height="16" fill="#fff"><path d="M4.29 8.56c-.18 0-.32.16-.32.34l-.88 5.22c-.02.08.04.16.14.16h1.52c.18 0 .32-.14.34-.32l.26-1.52c.02-.18.16-.32.34-.32h.76c1.64 0 2.58-.78 2.82-2.34.12-.68.02-1.22-.28-1.6-.34-.42-.94-.62-1.74-.62H4.29zm.82 1.34h.74c.84 0 1.08.32.96 1.02-.1.62-.52 1.02-1.22 1.02h-.74l.26-2.04z"/></svg> Shop Pay</button>',
-    'paypal': '<button style="flex:1;padding:10px 16px;background:#FFC439;color:#003087;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">PayPal</button>',
-    'klarna': '<button style="flex:1;padding:10px 16px;background:#FFB3C7;color:#0A0B09;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Klarna</button>',
-    'afterpay': '<button style="flex:1;padding:10px 16px;background:#B2FCE4;color:#000;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Afterpay</button>',
-    'affirm': '<button style="flex:1;padding:10px 16px;background:#0F1729;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Affirm</button>',
-    'samsung-pay': '<button style="flex:1;padding:10px 16px;background:#1428A0;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Samsung Pay</button>',
-    'amazon-pay': '<button style="flex:1;padding:10px 16px;background:#232F3E;color:#FF9900;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">amazon pay</button>',
-    'venmo': '<button style="flex:1;padding:10px 16px;background:#008CFF;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Venmo</button>',
-    'cashapp': '<button style="flex:1;padding:10px 16px;background:#00D632;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">$ Cash App</button>',
-  };
+  const position = config.position === 'below' ? 'below' : 'above';
+  const layout = config.layout === 'row' ? 'row' : 'stacked';
+  const separatorLabel = typeof config.separatorLabel === 'string' ? config.separatorLabel : '';
 
-  const buttons = providers.map((p) => providerButtons[p] || '').filter(Boolean).join('');
-  const dividerHtml = showDivider
-    ? '<div style="display:flex;align-items:center;gap:8px;margin:8px 0"><div style="flex:1;height:1px;background:#e5e5e5"></div><span style="font-size:11px;color:#999">or</span><div style="flex:1;height:1px;background:#e5e5e5"></div></div>'
+  const enabled = EXPRESS_PROVIDERS.filter((p) => isEnabled(p.key));
+  if (!enabled.length) return html;
+
+  const buttons = enabled
+    .map((p) =>
+      `<button type="button" class="ccd-express__btn ccd-express__btn--${p.key}" data-provider="${p.key}"`
+      + ` style="--ccd-ep-bg:${p.bg};--ccd-ep-fg:${p.fg};background:var(--ccd-ep-bg);color:var(--ccd-ep-fg)">`
+      + `${ccdEscape(p.label)}</button>`,
+    )
+    .join('');
+
+  const wrap =
+    `<div id="ccd-express-payments" class="ccd-express ccd-express--${position} ccd-express--${layout}">`
+    + `<div class="ccd-express__buttons ccd-express__buttons--${layout}">${buttons}</div>`
+    + `</div>`;
+  const sep = separatorLabel
+    ? `<div class="ccd-express__separator">${ccdEscape(separatorLabel)}</div>`
     : '';
-  const expressHtml = '<div id="ccd-express-payments" style="padding:0 0 8px">'
-    + dividerHtml
-    + '<div style="display:flex;' + direction + ';gap:8px">' + buttons + '</div>'
-    + '</div>';
 
-  return html.replace(
-    /<\/button>\s*<div class="ccd-trust">/,
-    '</button>' + expressHtml + '<div class="ccd-trust">',
-  );
+  if (position === 'above') {
+    // v14: insertBefore(wrap) then insertBefore(sep) → order wrap, sep, checkoutBtn
+    if (/<button type="button" class="ccd-checkout-btn"/.test(html)) {
+      return html.replace(
+        /<button type="button" class="ccd-checkout-btn"/,
+        wrap + sep + '<button type="button" class="ccd-checkout-btn"',
+      );
+    }
+    return html.replace(/<button[^>]*class="ccd-checkout-btn"/, wrap + sep + '$&');
+  }
+  // below — after the checkout button. v14 order: checkoutBtn, sep, wrap.
+  if (/<div class="ccd-trust"/.test(html)) {
+    return html.replace(/(<div class="ccd-trust")/, sep + wrap + '$1');
+  }
+  return html.replace(/<\/button>\s*(?=<\/div>)/, '</button>' + sep + wrap);
 }
 
 // ── Low Stock Badge: per-item "Only N left!" badge + optional ATC block ─
@@ -814,6 +851,80 @@ export function applyNotes(html: string, config: Record<string, any>): string {
     );
   }
   return html.replace('</div>\n</div>', row + '</div>\n</div>');
+}
+
+// ── Custom HTML block addon ───────────────────────────────────────
+// Lets a merchant inject arbitrary formatting HTML (e.g. a "30-Day Risk-Free
+// Returns" badge) at a chosen footer placement, like Shopify's own custom-HTML
+// section. The merchant authors the markup, but we still strip script-execution
+// vectors so a lower-priv account cannot store XSS into the storefront.
+// Mirrors CCD.sanitizeCustomHtml + CCD.injectCustomCode in v14-complete.js.
+export function sanitizeCustomHtml(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  let s = raw.trim();
+  if (!s) return '';
+  // Drop executable / framing element blocks (open→close).
+  s = s.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
+  s = s.replace(/<style[\s\S]*?<\/style\s*>/gi, '');
+  s = s.replace(/<iframe[\s\S]*?<\/iframe\s*>/gi, '');
+  s = s.replace(/<object[\s\S]*?<\/object\s*>/gi, '');
+  s = s.replace(/<noscript[\s\S]*?<\/noscript\s*>/gi, '');
+  s = s.replace(/<template[\s\S]*?<\/template\s*>/gi, '');
+  // Drop self-closing / unclosed framing + metadata tags.
+  s = s.replace(/<\/?(?:script|style|iframe|object|embed|noscript|template|link|meta|base)[^>]*>/gi, '');
+  // Drop on* event-handler attributes (double/single/unquoted).
+  s = s.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '');
+  s = s.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '');
+  s = s.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '');
+  // Neutralize dangerous URI schemes.
+  s = s.replace(/javascript:/gi, '');
+  s = s.replace(/vbscript:/gi, '');
+  s = s.replace(/data:text\/html/gi, '');
+  return s.trim();
+}
+
+// Injects a #ccd-custom-code block carrying the sanitized merchant HTML.
+// Placement mirrors applyNotes exactly:
+//   'above-checkout' (DEFAULT) — before .ccd-checkout-btn
+//   'top'                       — firstChild of .ccd-sticky-footer
+//   'bottom'                    — before .ccd-trust (or footer end)
+// No-op when the sanitized HTML is empty (new stores ship empty).
+export function applyCustomCode(html: string, config: Record<string, any>): string {
+  if (!html.includes('class="ccd-sticky-footer"')) return html;
+  // Strip any existing block first (idempotent; flat block like applyNotes).
+  html = html.replace(/<div id="ccd-custom-code"[\s\S]*?<\/div>\s*(?=<)/, '');
+
+  const inner = sanitizeCustomHtml(config.html);
+  if (!inner) return html;
+
+  const rawPosition = config.position;
+  const position = rawPosition === 'top'
+    ? 'top'
+    : rawPosition === 'bottom'
+      ? 'bottom'
+      : 'above-checkout';
+
+  const block =
+    `<div id="ccd-custom-code" class="ccd-custom-code ccd-custom-code--${position}">${inner}</div>`;
+
+  if (position === 'above-checkout') {
+    if (/<button[^>]*class="ccd-checkout-btn"/.test(html)) {
+      return html.replace(/(<button[^>]*class="ccd-checkout-btn")/, block + '$1');
+    }
+    return html.replace('</div>\n</div>', block + '</div>\n</div>');
+  }
+
+  if (position === 'top') {
+    return html.replace(
+      '<div class="ccd-sticky-footer">',
+      '<div class="ccd-sticky-footer">' + block,
+    );
+  }
+  // bottom — insert before .ccd-trust if present, else append before footer's end.
+  if (/<div class="ccd-trust"/.test(html)) {
+    return html.replace(/(<div class="ccd-trust")/, block + '$1');
+  }
+  return html.replace('</div>\n</div>', block + '</div>\n</div>');
 }
 
 // ── Discount Code addon ───────────────────────────────────────────

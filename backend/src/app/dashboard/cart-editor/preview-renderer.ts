@@ -35,6 +35,7 @@ import {
   applyExpressPayments,
   applyLowStockBadge,
   applyNotes,
+  applyCustomCode,
   applyDiscountCode,
   applyTermsCheckbox,
   type PreviewProduct as SharedPreviewProduct,
@@ -456,6 +457,10 @@ export function renderPreview(input: PreviewRenderInput): string {
     const notes = getAddon(addons, 'notes');
     if (notes.enabled) {
       html = applyNotes(html, notes.config);
+    }
+    const customCode = getAddon(addons, 'customCode');
+    if (customCode.enabled) {
+      html = applyCustomCode(html, customCode.config);
     }
     const discountCode = getAddon(addons, 'discountCode');
     if (discountCode.enabled) {

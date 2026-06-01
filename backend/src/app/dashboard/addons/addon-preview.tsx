@@ -15,6 +15,7 @@ import {
   applyExpressPayments,
   applyLowStockBadge,
   applyNotes,
+  applyCustomCode,
   applyDiscountCode,
   applyTermsCheckbox,
 } from './addon-transforms';
@@ -251,8 +252,9 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
       { key: 'lowStockBadge',          apply: (h, c) => applyLowStockBadge(h, c) },
       { key: 'upsellRecommendations',  apply: (h, c) => applyUpsellRecommendations(h, c, { previewProducts: productsForFsb }) },
       { key: 'socialProof',            apply: (h, c) => applySocialProof(h, c, { deterministic: true }) },
-      { key: 'expressPayments',        apply: (h, c) => Array.isArray(c.providers) ? applyExpressPayments(h, c) : h },
+      { key: 'expressPayments',        apply: (h, c) => applyExpressPayments(h, c) },
       { key: 'notes',                  apply: (h, c) => applyNotes(h, c) },
+      { key: 'customCode',             apply: (h, c) => applyCustomCode(h, c) },
       { key: 'discountCode',           apply: (h, c) => applyDiscountCode(h, c) },
       { key: 'termsCheckbox',          apply: (h, c) => applyTermsCheckbox(h, c) },
     ];
@@ -815,36 +817,13 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     }
   }
 
-  // ── Express Payments: dynamic providers, style, layout, divider ────
+  // ── Express Payments — delegated to the shared transform so focused
+  // preview matches the live storefront (v14 CCD.injectExpressPayments):
+  // providers OBJECT, ccd-express* classes, position above/below, layout
+  // stacked/row, separatorLabel. (Fixes the "providers.map is not a
+  // function" crash that came from the old array-based duplicate.)
   if (addonKey === 'expressPayments') {
-    const providers: string[] = addonConfig.providers || ['apple-pay', 'google-pay', 'shop-pay'];
-    const btnStyle = addonConfig.style || 'pill';
-    const layout = addonConfig.layout || 'horizontal';
-    const showDivider = addonConfig.showDivider !== false;
-
-    const borderRadius = btnStyle === 'pill' ? '20px' : btnStyle === 'rounded' ? '8px' : '4px';
-    const direction = layout === 'vertical' ? 'flex-direction:column' : 'flex-direction:row';
-
-    const providerButtons: Record<string, string> = {
-      'apple-pay': '<button style="flex:1;padding:10px 16px;background:#000;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px"><svg viewBox="0 0 24 24" width="16" height="16" fill="#fff"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg> Pay</button>',
-      'google-pay': '<button style="flex:1;padding:10px 16px;background:#fff;color:#3C4043;border:1px solid #dadce0;border-radius:' + borderRadius + ';font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC04" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg> Pay</button>',
-      'shop-pay': '<button style="flex:1;padding:10px 16px;background:#5A31F4;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px"><svg viewBox="0 0 24 24" width="16" height="16" fill="#fff"><path d="M4.29 8.56c-.18 0-.32.16-.32.34l-.88 5.22c-.02.08.04.16.14.16h1.52c.18 0 .32-.14.34-.32l.26-1.52c.02-.18.16-.32.34-.32h.76c1.64 0 2.58-.78 2.82-2.34.12-.68.02-1.22-.28-1.6-.34-.42-.94-.62-1.74-.62H4.29zm.82 1.34h.74c.84 0 1.08.32.96 1.02-.1.62-.52 1.02-1.22 1.02h-.74l.26-2.04z"/></svg> Shop Pay</button>',
-      'paypal': '<button style="flex:1;padding:10px 16px;background:#FFC439;color:#003087;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">PayPal</button>',
-      'klarna': '<button style="flex:1;padding:10px 16px;background:#FFB3C7;color:#0A0B09;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Klarna</button>',
-      'afterpay': '<button style="flex:1;padding:10px 16px;background:#B2FCE4;color:#000;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Afterpay</button>',
-      'affirm': '<button style="flex:1;padding:10px 16px;background:#0F1729;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Affirm</button>',
-      'samsung-pay': '<button style="flex:1;padding:10px 16px;background:#1428A0;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Samsung Pay</button>',
-      'amazon-pay': '<button style="flex:1;padding:10px 16px;background:#232F3E;color:#FF9900;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">amazon pay</button>',
-      'venmo': '<button style="flex:1;padding:10px 16px;background:#008CFF;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">Venmo</button>',
-      'cashapp': '<button style="flex:1;padding:10px 16px;background:#00D632;color:#fff;border:none;border-radius:' + borderRadius + ';font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px">$ Cash App</button>',
-    };
-
-    const buttons = providers.map(p => providerButtons[p] || '').filter(Boolean).join('');
-    const dividerHtml = showDivider ? '<div style="display:flex;align-items:center;gap:8px;margin:8px 0"><div style="flex:1;height:1px;background:#e5e5e5"></div><span style="font-size:11px;color:#999">or</span><div style="flex:1;height:1px;background:#e5e5e5"></div></div>' : '';
-    const expressHtml = '<div id="ccd-express-payments" style="padding:0 0 8px">' + dividerHtml + '<div style="display:flex;' + direction + ';gap:8px">' + buttons + '</div></div>';
-
-    // Insert after checkout button
-    cartHtml = cartHtml.replace(/<\/button>\s*<div class="ccd-trust">/, '</button>' + expressHtml + '<div class="ccd-trust">');
+    cartHtml = applyExpressPayments(cartHtml, addonConfig);
   }
 
   // ── Notes / Discount Code / Terms Checkbox — delegated to shared transforms
@@ -854,6 +833,9 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
   // addon-transforms-footer-zones blast-radius tests.
   if (addonKey === 'notes') {
     cartHtml = applyNotes(cartHtml, addonConfig);
+  }
+  if (addonKey === 'customCode') {
+    cartHtml = applyCustomCode(cartHtml, addonConfig);
   }
   if (addonKey === 'discountCode') {
     cartHtml = applyDiscountCode(cartHtml, addonConfig);

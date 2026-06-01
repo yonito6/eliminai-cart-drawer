@@ -4,12 +4,31 @@
 
 import React from 'react';
 import { useDraftStore, readField } from '../draft-store';
-import { CART_DEFAULTS } from '@/lib/cart-editor/defaults';
+import { CART_DEFAULTS, prepareUploadedSvgIcon } from '@/lib/cart-editor/defaults';
 import { ColorInput, Field, Section, Select, Slider, Textarea, TextInput, Toggle } from './_controls';
 
 export default function CheckoutButtonEditor() {
   const { draft, setField } = useDraftStore();
   const get = <T,>(p: string) => readField<T>(draft, p);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+
+  const handleSvgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!file) return;
+    setUploadError(null);
+    try {
+      const text = await file.text();
+      const svg = prepareUploadedSvgIcon(text);
+      if (!svg) {
+        setUploadError('That file is not a valid SVG. Please upload an .svg file.');
+        return;
+      }
+      setField('checkoutButton.iconCustom', svg);
+    } catch {
+      setUploadError('Could not read that file. Please try again.');
+    }
+  };
 
   return (
     <div>
@@ -45,6 +64,42 @@ export default function CheckoutButtonEditor() {
             rows={3}
             maxLength={20000}
           />
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#7c3aed',
+              }}
+            >
+              <input
+                type="file"
+                accept=".svg,image/svg+xml"
+                onChange={handleSvgUpload}
+                style={{ display: 'none' }}
+              />
+              Upload SVG from your computer
+            </label>
+            {get<string>('checkoutButton.iconCustom') ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadError(null);
+                  setField('checkoutButton.iconCustom', undefined);
+                }}
+                style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          {uploadError ? (
+            <div style={{ marginTop: 4, fontSize: 12, color: '#dc2626' }}>{uploadError}</div>
+          ) : null}
         </Field>
       </Section>
 

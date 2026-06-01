@@ -2463,6 +2463,41 @@ async function run() {
       'Position "bottom" must look up .ccd-trust to insert before it (so notes sit above the trust row)');
   });
 
+  // ================================================================
+  // CONTRACT: Custom HTML Block Addon
+  // ================================================================
+  console.log('\nContract: Custom HTML Block Addon');
+
+  test('customCode addon registered in _addonHandlers with inject + remove', () => {
+    assertRegex(code, /customCode\s*:\s*\{\s*inject\s*:\s*function\s*\([^)]*\)\s*\{\s*CCD\.injectCustomCode/,
+      'customCode handler must call CCD.injectCustomCode(c) when injecting');
+    var entryMatch = code.match(/customCode\s*:\s*\{[\s\S]*?ccd-custom-code[\s\S]*?\}\s*[,}]/);
+    assert(entryMatch, 'customCode registry entry must reference #ccd-custom-code id');
+    assert(/remove\s*:\s*function/.test(entryMatch[0]),
+      'customCode registry entry must define a remove function');
+    assert(/getElementById\(['"]ccd-custom-code['"]\)/.test(entryMatch[0]),
+      'customCode remove handler must look up element by id ccd-custom-code');
+  });
+
+  test('CCD.injectCustomCode builds #ccd-custom-code with position class and sanitized HTML', () => {
+    assertContains(code, 'CCD.injectCustomCode = function', 'CCD.injectCustomCode must be defined');
+    assertContains(code, 'CCD.sanitizeCustomHtml = function', 'CCD.sanitizeCustomHtml must be defined');
+    assertRegex(code, /ccd-custom-code--['"]?\s*\+\s*position/,
+      'Position class (ccd-custom-code--top / --bottom / --above-checkout) must be applied from cfg.position');
+    assertRegex(code, /CCD\.sanitizeCustomHtml\(\s*cfg\.html\s*\)/,
+      'injectCustomCode must sanitize cfg.html before injecting');
+    assertContains(code, "querySelector('.ccd-sticky-footer')",
+      'injectCustomCode must locate .ccd-sticky-footer to anchor the block');
+  });
+
+  test('CCD.sanitizeCustomHtml strips script execution vectors but keeps formatting', () => {
+    assertRegex(code, /<script\[\\s\\S\]\*\?<\\\/script/,
+      'sanitizeCustomHtml must strip <script> blocks');
+    assertRegex(code, /\\son\[a-z\]\+/,
+      'sanitizeCustomHtml must strip on* event handlers');
+    assertContains(code, 'javascript:', 'sanitizeCustomHtml must neutralize javascript: URIs');
+  });
+
   // CONTRACT: Discount Code Addon (Chunk 4.2)
   console.log('\nContract: Discount Code Addon');
 

@@ -35,7 +35,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { renderPreview, type PreviewRenderInput } from '@/app/dashboard/cart-editor/preview-renderer';
-import { CART_DEFAULTS, CHECKOUT_ICON_PATHS, renderCheckoutIcon } from '@/lib/cart-editor/defaults';
+import { CART_DEFAULTS, CHECKOUT_ICON_PATHS, renderCheckoutIcon, prepareUploadedSvgIcon } from '@/lib/cart-editor/defaults';
 import { editorOverridesSchema } from '@/lib/cart-editor/schema';
 
 const baseInput: PreviewRenderInput = {
@@ -195,5 +195,48 @@ describe('checkout-button-editor.tsx — custom SVG icon upload (feature #4)', (
   });
   it('persists the custom icon via setField', () => {
     expect(EDITOR_SRC).toMatch(/setField\(\s*['"]checkoutButton\.iconCustom['"]/);
+  });
+});
+
+// ── Upload-from-PC (Issue #2) ─────────────────────────────────────────
+// BLAST RADIUS MAP — Issue #2: "Custom icon (SVG) should allow upload from PC"
+// Target: checkout-button-editor.tsx (UI) + prepareUploadedSvgIcon in defaults.ts (NEW pure helper)
+// The stored value flows: iconCustom → renderCheckoutIcon → sanitizeSvgIcon (preview + v14, UNCHANGED).
+// Upload mirrors paste: store raw trimmed svg text; render sanitizes. The helper only VALIDATES
+// the picked file is a usable svg (rejects PNG/garbage/empty) before storing — no new render path.
+describe('prepareUploadedSvgIcon — validates a file-picked svg before storing (Issue #2)', () => {
+  it('returns the trimmed svg text for a valid <svg> file', () => {
+    const raw = '\n  <svg viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg>  \n';
+    expect(prepareUploadedSvgIcon(raw)).toBe('<svg viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg>');
+  });
+  it('keeps an svg even if it carries a script (render strips it later)', () => {
+    const raw = '<svg><script>alert(1)</script><path d="M2 2h4v4H2z"/></svg>';
+    const out = prepareUploadedSvgIcon(raw);
+    expect(out).toBe(raw);
+    // and the render path still neutralizes it
+    expect(renderCheckoutIcon('lock', out!)).not.toContain('<script');
+  });
+  it('returns null for a non-svg file (e.g. PNG bytes / plain text)', () => {
+    expect(prepareUploadedSvgIcon('\x89PNG\r\n\x1a\n')).toBeNull();
+    expect(prepareUploadedSvgIcon('just some text')).toBeNull();
+  });
+  it('returns null for empty / whitespace / non-string', () => {
+    expect(prepareUploadedSvgIcon('')).toBeNull();
+    expect(prepareUploadedSvgIcon('   ')).toBeNull();
+    expect(prepareUploadedSvgIcon(undefined)).toBeNull();
+    expect(prepareUploadedSvgIcon(123)).toBeNull();
+  });
+});
+
+describe('checkout-button-editor.tsx — file upload control (Issue #2)', () => {
+  it('renders a file input that accepts svg', () => {
+    expect(EDITOR_SRC).toMatch(/type=["']file["']/);
+    expect(EDITOR_SRC).toMatch(/accept=[^>]*svg/i);
+  });
+  it('reads the picked file (FileReader / readAsText / .text())', () => {
+    expect(EDITOR_SRC).toMatch(/FileReader|readAsText|\.text\(\)/);
+  });
+  it('validates the upload through prepareUploadedSvgIcon before storing', () => {
+    expect(EDITOR_SRC).toMatch(/prepareUploadedSvgIcon/);
   });
 });

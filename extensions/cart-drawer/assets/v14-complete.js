@@ -4011,6 +4011,7 @@
       socialProof:          { inject: function(c) { CCD.injectSocialProof(c); },    remove: function() { var e = document.getElementById('ccd-social-proof'); if (e) e.remove(); } },
       upsellRecommendations:{ inject: function(c) { CCD.injectUpsells(c); },        remove: function() { var e = document.getElementById('ccd-upsells'); if (e) e.remove(); } },
       notes:                { inject: function(c) { CCD.injectNotes(c); },          remove: function() { var e = document.getElementById('ccd-notes-row'); if (e) e.remove(); } },
+      customCode:           { inject: function(c) { CCD.injectCustomCode(c); },     remove: function() { var e = document.getElementById('ccd-custom-code'); if (e) e.remove(); } },
       discountCode:         { inject: function(c) { CCD.injectDiscountCode(c); },   remove: function() { var e = document.getElementById('ccd-discount-code-row'); if (e) e.remove(); } },
       termsCheckbox:        { inject: function(c) { CCD.injectTermsCheckbox(c); },  remove: function() { var e = document.getElementById('ccd-terms-row'); if (e) e.remove(); CCD._termsBlock = null; } },
       expressPayments:      { inject: function(c) { CCD.injectExpressPayments(c); },remove: function() { var e = document.getElementById('ccd-express-payments'); if (e) e.remove(); } }
@@ -5212,6 +5213,62 @@
         footer.insertBefore(row, trustRow);
       } else {
         footer.appendChild(row);
+      }
+    }
+  };
+
+  // ── Custom HTML block addon ──
+  // Injects merchant-authored HTML (e.g. a "30-Day Risk-Free Returns" badge)
+  // at a chosen footer placement. Mirrors sanitizeCustomHtml + applyCustomCode
+  // in backend addon-transforms.ts so the live storefront matches the preview.
+  CCD.sanitizeCustomHtml = function(raw) {
+    if (typeof raw !== 'string') return '';
+    var s = raw.trim();
+    if (!s) return '';
+    s = s.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
+    s = s.replace(/<style[\s\S]*?<\/style\s*>/gi, '');
+    s = s.replace(/<iframe[\s\S]*?<\/iframe\s*>/gi, '');
+    s = s.replace(/<object[\s\S]*?<\/object\s*>/gi, '');
+    s = s.replace(/<noscript[\s\S]*?<\/noscript\s*>/gi, '');
+    s = s.replace(/<template[\s\S]*?<\/template\s*>/gi, '');
+    s = s.replace(/<\/?(?:script|style|iframe|object|embed|noscript|template|link|meta|base)[^>]*>/gi, '');
+    s = s.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '');
+    s = s.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '');
+    s = s.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '');
+    s = s.replace(/javascript:/gi, '');
+    s = s.replace(/vbscript:/gi, '');
+    s = s.replace(/data:text\/html/gi, '');
+    return s.trim();
+  };
+
+  CCD.injectCustomCode = function(cfg) {
+    cfg = cfg || {};
+    var existing = document.getElementById('ccd-custom-code');
+    if (existing) existing.remove();
+    var footer = document.querySelector('.ccd-sticky-footer');
+    if (!footer) return;
+
+    var inner = CCD.sanitizeCustomHtml(cfg.html);
+    if (!inner) return;
+
+    var position = cfg.position === 'top' ? 'top' : (cfg.position === 'bottom' ? 'bottom' : 'above-checkout');
+    var block = document.createElement('div');
+    block.id = 'ccd-custom-code';
+    block.className = 'ccd-custom-code ccd-custom-code--' + position;
+    block.innerHTML = inner;
+
+    if (position === 'above-checkout') {
+      var checkoutBtn = footer.querySelector('.ccd-checkout-btn');
+      if (checkoutBtn) footer.insertBefore(block, checkoutBtn);
+      else footer.appendChild(block);
+    } else if (position === 'top') {
+      footer.insertBefore(block, footer.firstChild);
+    } else {
+      var trustRow = footer.querySelector('.ccd-trust');
+      if (trustRow) {
+        footer.insertBefore(block, trustRow);
+      } else {
+        footer.appendChild(block);
       }
     }
   };
