@@ -79,21 +79,21 @@ describe('ADDON_DEFINITIONS — notes addon', () => {
     expect(dim.default).toBe(250);
   });
 
-  it('position dimension has top + bottom options, default bottom', () => {
+  it('position dimension has above-checkout/top/bottom options, default above-checkout', () => {
     const dim = def().dimensions.find((d) => d.key === 'position')!;
     expect(dim.type).toBe('select');
     expect(dim.testable).toBe(true);
-    expect(dim.options?.map((o) => o.value)).toEqual(['top', 'bottom']);
-    expect(dim.default).toBe('bottom');
+    expect(dim.options?.map((o) => o.value)).toEqual(['above-checkout', 'top', 'bottom']);
+    expect(dim.default).toBe('above-checkout');
   });
 
-  it('defaultConfig disabled, position bottom, maxChars 250', () => {
+  it('defaultConfig disabled, position above-checkout, maxChars 250', () => {
     expect(def().defaultConfig).toEqual({
       enabled: false,
       label: 'Add a note to your order',
       placeholder: '',
       maxChars: 250,
-      position: 'bottom',
+      position: 'above-checkout',
     });
   });
 });
@@ -105,17 +105,23 @@ describe('ADDON_DEFINITIONS — discountCode addon', () => {
     expect(def()).toBeDefined();
   });
 
-  it('has dimensions: placeholder, applyButtonLabel, position, showAppliedBadge', () => {
+  it('has dimensions: placeholder, applyButtonLabel, applyButtonColor, position, showAppliedBadge', () => {
     const keys = def().dimensions.map((d) => d.key);
-    expect(keys).toEqual(['placeholder', 'applyButtonLabel', 'position', 'showAppliedBadge']);
+    expect(keys).toEqual(['placeholder', 'applyButtonLabel', 'applyButtonColor', 'position', 'showAppliedBadge']);
   });
 
-  it('position dimension testable, options top/bottom, default bottom', () => {
+  it('position dimension testable, options above-checkout/top/bottom, default above-checkout', () => {
     const dim = def().dimensions.find((d) => d.key === 'position')!;
     expect(dim.type).toBe('select');
     expect(dim.testable).toBe(true);
-    expect(dim.options?.map((o) => o.value)).toEqual(['top', 'bottom']);
-    expect(dim.default).toBe('bottom');
+    expect(dim.options?.map((o) => o.value)).toEqual(['above-checkout', 'top', 'bottom']);
+    expect(dim.default).toBe('above-checkout');
+  });
+
+  it('applyButtonColor dimension is a color picker with hex default', () => {
+    const dim = def().dimensions.find((d) => d.key === 'applyButtonColor')!;
+    expect(dim.type).toBe('color');
+    expect(String(dim.default)).toMatch(/^#[0-9a-fA-F]{6}$/);
   });
 
   it('showAppliedBadge is a toggle, default true', () => {
@@ -124,14 +130,14 @@ describe('ADDON_DEFINITIONS — discountCode addon', () => {
     expect(dim.default).toBe(true);
   });
 
-  it('defaultConfig has all four fields + enabled:false', () => {
-    expect(def().defaultConfig).toEqual({
-      enabled: false,
-      placeholder: 'Discount code',
-      applyButtonLabel: 'Apply',
-      position: 'bottom',
-      showAppliedBadge: true,
-    });
+  it('defaultConfig has all five fields + enabled:false', () => {
+    const cfg = def().defaultConfig;
+    expect(cfg.enabled).toBe(false);
+    expect(cfg.placeholder).toBe('Discount code');
+    expect(cfg.applyButtonLabel).toBe('Apply');
+    expect(cfg.position).toBe('above-checkout');
+    expect(cfg.showAppliedBadge).toBe(true);
+    expect(String(cfg.applyButtonColor)).toMatch(/^#[0-9a-fA-F]{6}$/);
   });
 });
 

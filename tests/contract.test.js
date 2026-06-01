@@ -2709,15 +2709,13 @@ async function run() {
       'bgColor must be assigned to headerEl.style.backgroundColor');
   });
 
-  test('Header padding override applies ccd-header--{padding} modifier class', () => {
-    assertContains(code, "'ccd-header--compact'",
-      'compact padding modifier class must be removed before reapply (resets stale state)');
-    assertContains(code, "'ccd-header--comfortable'",
-      'comfortable padding modifier class must be tracked');
-    assertContains(code, "'ccd-header--roomy'",
-      'roomy padding modifier class must be tracked');
-    assertContains(code, "'ccd-header--' + h.padding",
-      'Padding must be applied as a modifier class (ccd-header--{value})');
+  test('Header padding override applies inline via CCD_HEADER_PADDING (no broken modifier class)', () => {
+    assertContains(code, 'CCD_HEADER_PADDING',
+      'padding must use the CCD_HEADER_PADDING map (compact/comfortable/roomy)');
+    assertRegex(code, /headerEl\.style\.padding\s*=\s*CCD_HEADER_PADDING/,
+      'padding must be applied as an inline style (the modifier class had NO CSS — silent no-op)');
+    assertNotContains(code, "'ccd-header--' + h.padding",
+      'broken modifier-class padding (no CSS existed) must be removed');
   });
 
   test('Header headingLevel override swaps title element tag (h2/h3/h4)', () => {
@@ -2761,19 +2759,17 @@ async function run() {
       'Static bgColor must also assign inline backgroundColor (fallback for browsers/themes ignoring the CSS var)');
   });
 
-  test('Close button iconColor + iconSize (S/M/L) modifier class', () => {
+  test('Close button iconColor + iconSize applied inline (no broken modifier class)', () => {
     assertRegex(code, /typeof\s+cb\.iconColor\s*===\s*['"]string['"]/,
       'iconColor must be typeof-checked');
     assertRegex(code, /btn\.style\.color\s*=\s*cb\.iconColor/,
-      'iconColor maps to button color (SVG uses stroke="currentColor" so this drives the X color)');
-    assertContains(code, "'ccd-close-btn--s'",
-      'Small icon size class must be referenced');
-    assertContains(code, "'ccd-close-btn--m'",
-      'Medium icon size class must be referenced');
-    assertContains(code, "'ccd-close-btn--l'",
-      'Large icon size class must be referenced');
-    assertRegex(code, /cb\.iconSize\s*===\s*['"]L['"]/,
-      'iconSize === "L" must apply the large modifier class');
+      'iconColor maps to button color (SVG uses stroke="currentColor" so this drives the icon color)');
+    assertContains(code, 'CCD_CLOSE_ICON_SIZE',
+      'iconSize must use the CCD_CLOSE_ICON_SIZE map (S/M/L → px)');
+    assertRegex(code, /\.style\.width\s*=\s*CCD_CLOSE_ICON_SIZE/,
+      'iconSize must set the svg width inline (the modifier class had NO CSS — silent no-op)');
+    assertNotContains(code, "btn.classList.add('ccd-close-btn--s')",
+      'broken iconSize modifier-class (no CSS existed) must be removed');
   });
 
   test('Close button strokeWeight + border style + borderColor', () => {
@@ -3015,15 +3011,18 @@ async function run() {
   // CONTRACT: editorOverrides Checkout Button (Chunk 4.9)
   console.log('\nContract: editorOverrides Checkout Button');
 
-  test('checkoutButton.label updates leading text node (preserves .ccd-checkout-total span)', () => {
+  test('checkoutButton.label updates the button text node (preserves .ccd-checkout-total span)', () => {
     assertRegex(code, /typeof\s+cbtn\.label\s*===\s*['"]string['"]/,
       'label must be typeof-checked as string');
-    assertContains(code, 'btnEl.firstChild',
-      'label must walk to firstChild to preserve the total span sibling');
-    assertRegex(code, /first\.nodeType\s*===\s*3/,
-      'label must guard that firstChild is a text node (nodeType === 3) before writing');
-    assertRegex(code, /first\.textContent\s*=\s*cbtn\.label/,
-      'label must be assigned via textContent (XSS-safe)');
+    // Button structure is [svg][text node][span.ccd-checkout-total]. The leading
+    // child is the SVG element (nodeType 1), so we must walk childNodes to find
+    // the first TEXT node (nodeType 3) and write into it.
+    assertContains(code, 'btnEl.childNodes',
+      'label must walk childNodes to locate the text node (firstChild is the svg)');
+    assertRegex(code, /nodeType\s*===\s*3/,
+      'label must find a text node (nodeType === 3) to write into');
+    assertRegex(code, /textContent\s*=\s*['"] ['"]\s*\+\s*cbtn\.label\s*\+\s*['"] \u00b7 ['"]/,
+      'label must be assigned as " " + cbtn.label + " \u00b7 " (XSS-safe, preserves separator)');
   });
 
   test('checkoutButton.bgColor/bgHoverColor/textColor apply inline + CSS vars', () => {
@@ -3037,30 +3036,36 @@ async function run() {
       'textColor must set inline color');
   });
 
-  test('checkoutButton.radius (sharp/soft/rounded/pill) maps to modifier class', () => {
-    assertContains(code, 'ccd-checkout-btn--sharp',
-      'radius=sharp must map to .ccd-checkout-btn--sharp');
-    assertContains(code, 'ccd-checkout-btn--soft',
-      'radius=soft must map to .ccd-checkout-btn--soft');
-    assertContains(code, 'ccd-checkout-btn--rounded',
-      'radius=rounded must map to .ccd-checkout-btn--rounded');
-    assertContains(code, 'ccd-checkout-btn--pill',
-      'radius=pill must map to .ccd-checkout-btn--pill');
-    assertRegex(code, /classList\.remove\(\s*['"]ccd-checkout-btn--sharp['"]\s*,\s*['"]ccd-checkout-btn--soft['"]\s*,\s*['"]ccd-checkout-btn--rounded['"]\s*,\s*['"]ccd-checkout-btn--pill['"]/,
-      'Previous radius modifier classes must be removed before applying new one');
+  test('checkoutButton.radius (sharp/soft/rounded/pill) maps to inline border-radius', () => {
+    // v14 ships NO ccd-checkout-btn--<radius> CSS, so modifier classes were a
+    // silent no-op. Radius must be applied as an inline border-radius pixel value
+    // (matching CHECKOUT_RADIUS_PX in defaults.ts so preview === live).
+    assertContains(code, "sharp: '0'",
+      'radius map must define sharp: 0');
+    assertContains(code, "soft: '8px'",
+      'radius map must define soft: 8px');
+    assertContains(code, "rounded: '14px'",
+      'radius map must define rounded: 14px');
+    assertContains(code, "pill: '999px'",
+      'radius map must define pill: 999px');
+    assertRegex(code, /btnEl\.style\.borderRadius\s*=/,
+      'radius must be applied as inline btnEl.style.borderRadius (not a modifier class)');
   });
 
-  test('checkoutButton.height (S/M/L/XL) maps to lowercase modifier class', () => {
-    assertContains(code, 'ccd-checkout-btn--h-s',
-      'height=S must map to .ccd-checkout-btn--h-s');
-    assertContains(code, 'ccd-checkout-btn--h-m',
-      'height=M must map to .ccd-checkout-btn--h-m');
-    assertContains(code, 'ccd-checkout-btn--h-l',
-      'height=L must map to .ccd-checkout-btn--h-l');
-    assertContains(code, 'ccd-checkout-btn--h-xl',
-      'height=XL must map to .ccd-checkout-btn--h-xl');
-    assertContains(code, 'cbtn.height.toLowerCase()',
-      'height must be lowercased before being appended to the class name');
+  test('checkoutButton.height (S/M/L/XL) maps to inline padding', () => {
+    // v14 ships NO ccd-checkout-btn--h-<size> CSS, so modifier classes were a
+    // silent no-op. Height must be applied as inline padding (matching
+    // CHECKOUT_HEIGHT_PADDING in defaults.ts so preview === live).
+    assertContains(code, "S: '10px 24px'",
+      'height map must define S: 10px 24px');
+    assertContains(code, "M: '14px 24px'",
+      'height map must define M: 14px 24px');
+    assertContains(code, "L: '18px 24px'",
+      'height map must define L: 18px 24px');
+    assertContains(code, "XL: '22px 24px'",
+      'height map must define XL: 22px 24px');
+    assertRegex(code, /btnEl\.style\.padding\s*=/,
+      'height must be applied as inline btnEl.style.padding (not a modifier class)');
   });
 
   test('checkoutButton.fontWeight (number) sets inline font-weight', () => {
@@ -3077,11 +3082,21 @@ async function run() {
       'letterSpacing must append px unit');
   });
 
-  test('checkoutButton.icon (none/arrow/lock/cart) sets data-icon attribute', () => {
-    assertRegex(code, /cbtn\.icon\s*===\s*['"]none['"][\s\S]{0,400}cbtn\.icon\s*===\s*['"]arrow['"][\s\S]{0,400}cbtn\.icon\s*===\s*['"]lock['"][\s\S]{0,400}cbtn\.icon\s*===\s*['"]cart['"]/,
-      'All 4 icon enum values must be validated');
-    assertRegex(code, /btnEl\.setAttribute\(\s*['"]data-icon['"]\s*,\s*cbtn\.icon\s*\)/,
-      'icon must be applied as data-icon attribute (CSS swaps visual — string never enters innerHTML)');
+  test('checkoutButton.icon (none/arrow/lock/cart) + iconCustom swaps the rendered SVG', () => {
+    // data-icon had NO CSS rule to swap the visual, so changing the icon was a
+    // silent no-op live. Fix: actually swap the SVG markup in the DOM. Must fire
+    // when EITHER icon or iconCustom is provided, sanitize any custom SVG, and
+    // insert the new icon at the front of the button (before the label text node).
+    assertRegex(code, /cbtn\.icon\s*!==\s*undefined\s*\|\|\s*cbtn\.iconCustom\s*!==\s*undefined/,
+      'icon swap must trigger when icon OR iconCustom is set');
+    assertContains(code, 'ccdSanitizeSvg',
+      'custom icon SVG must be sanitized before insertion (strip script/on*/javascript:)');
+    assertContains(code, 'ccdRenderIcon',
+      'a shared ccdRenderIcon helper must produce the icon SVG markup');
+    assertRegex(code, /insertAdjacentHTML\(\s*['"]afterbegin['"]/,
+      'new icon must be inserted at the front of the button via insertAdjacentHTML(afterbegin)');
+    assertNotContains(code, "btnEl.setAttribute('data-icon', cbtn.icon)",
+      'the broken data-icon no-op must be removed');
   });
 
   test('checkoutButton.fullWidth=false adds ccd-checkout-btn--auto-width class', () => {
@@ -3435,10 +3450,21 @@ async function run() {
     const previewSrc = fs.readFileSync(previewPath, 'utf8');
     assertContains(previewSrc, "addonKey === 'lowStockBadge'",
       'addon-preview must have a dedicated rendering branch for lowStockBadge');
-    assertContains(previewSrc, 'ccd-qty__btn--locked',
-      'Preview must apply lock class when blockAddToCart is true (matches v14 output)');
-    assertRegex(previewSrc, /\{n\}|\\\{n\\\}/,
-      'Preview must substitute the {n} placeholder so the editor reflects fakeQty live');
+    // The lock-class + {n} substitution now live in the shared applyLowStockBadge
+    // transform (addon-transforms.ts). The preview's responsibility is to delegate
+    // to that shared transform so the focused preview, background ORDER loop, and
+    // cart-editor preview all stay byte-for-byte in sync.
+    assertContains(previewSrc, 'applyLowStockBadge',
+      'addon-preview must delegate to the shared applyLowStockBadge transform');
+    const transformsPath = path.join(__dirname, '..', 'backend', 'src', 'app', 'dashboard', 'addons', 'addon-transforms.ts');
+    if (!fs.existsSync(transformsPath)) {
+      throw new Error('addon-transforms.ts not found at expected path');
+    }
+    const transformsSrc = fs.readFileSync(transformsPath, 'utf8');
+    assertContains(transformsSrc, 'ccd-qty__btn--locked',
+      'Shared applyLowStockBadge transform must apply lock class when blockAddToCart is true (matches v14 output)');
+    assertRegex(transformsSrc, /\{n\}|\\\{n\\\}/,
+      'Shared applyLowStockBadge transform must substitute the {n} placeholder so the editor reflects fakeQty live');
   });
 
   // ================================================================

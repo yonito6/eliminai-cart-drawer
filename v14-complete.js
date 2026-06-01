@@ -150,17 +150,18 @@
       '#CCD-Drawer .ccd-fixed-header::after { display: none !important; }\n' +
       '#CCD-Drawer .ccd-header { display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 20px 20px 8px 20px !important; width: 100% !important; overflow: visible !important; border-bottom: none !important; }\n' +
       '#CCD-Drawer .ccd-title { font-size: 22px !important; font-weight: 700 !important; color: #111 !important; letter-spacing: 0 !important; text-transform: none !important; margin: 0 !important; line-height: 1 !important; }\n' +
+      '#CCD-Drawer .ccd-title-badge { display: inline-flex !important; align-items: center !important; justify-content: center !important; min-width: 20px !important; height: 20px !important; padding: 0 6px !important; margin-left: 8px !important; border-radius: 999px !important; background: #eeeeee !important; color: #111 !important; font-size: 12px !important; font-weight: 600 !important; line-height: 1 !important; }\n' +
       '#CCD-Drawer .ccd-close { display: flex !important; align-items: center !important; gap: 4px !important; position: static !important; flex-shrink: 0 !important; width: auto !important; vertical-align: initial !important; text-align: right !important; }\n' +
       '#CCD-Drawer .ccd-close-btn { background: none !important; border: none !important; color: #111 !important; cursor: pointer !important; padding: 8px !important; margin-right: 0 !important; line-height: 0 !important; display: flex !important; align-items: center !important; justify-content: center !important; position: static !important; right: auto !important; left: auto !important; height: auto !important; }\n' +
       '#CCD-Drawer .ccd-close-btn svg { width: 22px !important; height: 22px !important; stroke: #111 !important; stroke-width: 2.5 !important; }\n' +
       '#CCD-Drawer .ccd-sr-only { position: absolute !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; height: 1px !important; width: 1px !important; margin: -1px !important; padding: 0 !important; border: 0 !important; }\n' +
       '.ccd-progress { padding: 10px 24px 14px !important; background: #f9f9f9 !important; border-bottom: none !important; }\n' +
-      '.ccd-progress__message { text-align: center !important; font-size: 15px !important; margin-bottom: 10px !important; line-height: 1.4 !important; }\n' +
+      '.ccd-progress__message { text-align: center !important; font-size: var(--ccd-progress-text-size, 15px) !important; font-weight: var(--ccd-progress-text-weight, 400) !important; margin-bottom: 10px !important; line-height: 1.4 !important; }\n' +
       '.ccd-progress__message strong { font-weight: 700 !important; }\n' +
       '.ccd-progress__bar-wrap { display: flex !important; align-items: flex-start !important; gap: 0 !important; position: relative !important; }\n' +
-      '.ccd-progress__line { display: block !important; flex: 1 !important; height: 3px !important; background: var(--ccd-progress-bg, #ddd) !important; margin-top: 21px !important; border-radius: 0 !important; transition: background 0.4s !important; margin-left: -3px !important; margin-right: -3px !important; position: relative !important; z-index: 0 !important; }\n' +
+      '.ccd-progress__line { display: block !important; flex: 1 !important; height: var(--ccd-progress-height, 3px) !important; background: var(--ccd-progress-bg, #ddd) !important; margin-top: 21px !important; border-radius: 0 !important; transition: background 0.4s !important; margin-left: -3px !important; margin-right: -3px !important; position: relative !important; z-index: 0 !important; }\n' +
       '.ccd-progress__line--filled { background: #ddd !important; }\n' +
-      '.ccd-progress__line::after { content: "" !important; position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; background: var(--ccd-primary, #111) !important; border-radius: 0 !important; transform: scaleX(0) !important; transform-origin: left !important; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1) !important; }\n' +
+      '.ccd-progress__line::after { content: "" !important; position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; background: var(--ccd-progress-fill, var(--ccd-primary, #111)) !important; border-radius: 0 !important; transform: scaleX(0) !important; transform-origin: left !important; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1) !important; }\n' +
       '.ccd-progress__line--filled::after { transform: scaleX(1) !important; }\n' +
       '.ccd-progress__line--half::after { transform: scaleX(0.5) !important; }\n' +
       '.ccd-progress--instant .ccd-progress__line::after { transition: none !important; }\n' +
@@ -168,7 +169,7 @@
       '.ccd-progress--instant .ccd-progress__line { transition: none !important; }\n' +
       '.ccd-progress__milestone { display: flex !important; flex-direction: column !important; align-items: center !important; gap: 6px !important; z-index: 1 !important; flex-shrink: 0 !important; width: 44px !important; overflow: visible !important; }\n' +
       '.ccd-progress__icon { width: 44px !important; height: 44px !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; background: var(--ccd-progress-bg, #ddd) !important; transition: all 0.4s !important; }\n' +
-      '.ccd-progress__icon--reached { background: #111 !important; }\n' +
+      '.ccd-progress__icon--reached { background: var(--ccd-progress-fill, #111) !important; }\n' +
       '.ccd-progress__icon svg { width: 22px !important; height: 22px !important; fill: #999 !important; transition: fill 0.4s !important; }\n' +
       '.ccd-progress__icon--reached svg { fill: #fff !important; }\n' +
       '.ccd-progress__label { font-size: 14px !important; color: #888 !important; text-align: center !important; letter-spacing: 0.3px !important; line-height: 1.3 !important; font-weight: 500 !important; max-width: 80px !important; word-wrap: break-word !important; }\n' +
@@ -178,6 +179,7 @@
       '@keyframes ccdMilestoneHeartbeat { 0%, 100% { transform: scale(1); } 14% { transform: scale(1.15); } 28% { transform: scale(1); } 42% { transform: scale(1.1); } 56% { transform: scale(1); } }\n' +
       '@keyframes ccdMilestoneShake { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(-10deg); } 30% { transform: rotate(10deg); } 45% { transform: rotate(-6deg); } 60% { transform: rotate(6deg); } 75% { transform: rotate(-2deg); } }\n' +
       '.ccd-progress__icon--reached { animation: ccdMilestonePulse 1.8s ease-in-out infinite; }\n' +
+      '.ccd-progress--no-celebrate .ccd-progress__icon--reached { animation: none !important; }\n' +
       '#CCD-Drawer .ccd-contents, #CCD-Drawer .ccd-drawer-contents { display: flex !important; flex-direction: column !important; flex: 1 1 0% !important; min-height: 0 !important; background: #fff !important; overflow: hidden !important; }\n' +
       '#CCD-Drawer .ccd-inner { background: var(--ccd-bg, #fff) !important; display: flex !important; flex-direction: column !important; flex: 1 1 0% !important; min-height: 0 !important; overflow: hidden !important; position: relative !important; }\n' +
       '#CCD-Drawer .ccd-scrollable { flex: 1 1 0% !important; overflow-y: auto !important; padding: 0 20px !important; -webkit-overflow-scrolling: touch !important; min-height: 0 !important; }\n' +
@@ -284,7 +286,7 @@
       // ── Order Notes row ──
       '.ccd-notes-row { display: flex !important; flex-direction: column !important; gap: 6px !important; padding: 0 !important; margin: 8px 0 10px !important; }\n' +
       '.ccd-notes-row__label { font-size: 12px !important; font-weight: 600 !important; color: #374151 !important; letter-spacing: 0.2px !important; }\n' +
-      '.ccd-notes-row__input { width: 100% !important; min-height: 64px !important; padding: 11px 14px !important; border: 1px solid #d4d4d8 !important; border-radius: 8px !important; background: var(--ccd-bg, #fff) !important; color: #111 !important; font-size: 14px !important; font-family: inherit !important; line-height: 1.4 !important; resize: vertical !important; outline: none !important; transition: border-color 0.15s, box-shadow 0.15s !important; box-shadow: none !important; -webkit-appearance: none !important; appearance: none !important; }\n' +
+      '.ccd-notes-row__input { width: 100% !important; min-height: 44px !important; padding: 11px 14px !important; border: 1px solid #d4d4d8 !important; border-radius: 8px !important; background: var(--ccd-bg, #fff) !important; color: #111 !important; font-size: 14px !important; font-family: inherit !important; line-height: 1.4 !important; resize: vertical !important; outline: none !important; transition: border-color 0.15s, box-shadow 0.15s !important; box-shadow: none !important; -webkit-appearance: none !important; appearance: none !important; }\n' +
       '.ccd-notes-row__input::placeholder { color: #9ca3af !important; opacity: 1 !important; }\n' +
       '.ccd-notes-row__input:focus { border-color: #111 !important; box-shadow: 0 0 0 1px #111 inset !important; }\n' +
       '.ccd-checkout-btn { display: flex !important; align-items: center !important; justify-content: center !important; gap: 8px !important; width: 100% !important; padding: 14px 24px !important; background: #111 !important; color: #fff !important; border: 1px solid #222 !important; border-radius: 8px !important; font-size: 15px !important; font-weight: 700 !important; letter-spacing: 1px !important; text-transform: uppercase !important; cursor: pointer !important; transition: all 0.15s !important; margin-top: 6px !important; }\n' +
@@ -3656,15 +3658,31 @@
 
       var msgEl = document.querySelector('[data-ccd-progress-msg]');
       if (msgEl) {
+        // Editor template overrides (set on .ccd-progress via applyEditorOverrides).
+        // When present they REPLACE the default message; vars: {{amount}} (remaining
+        // toward the goal) and {{tierName}} (the relevant tier label).
+        var progElForTpl = document.querySelector('.ccd-progress');
+        var preUnlockTpl = progElForTpl ? (progElForTpl.getAttribute('data-pre-unlock') || '') : '';
+        var unlockedTpl = progElForTpl ? (progElForTpl.getAttribute('data-unlocked') || '') : '';
         if (allReached) {
-          msgEl.innerHTML = ALL_REWARDS_TEXT;
+          if (unlockedTpl) {
+            msgEl.innerHTML = unlockedTpl
+              .replace(/\{\{amount\}\}/g, '<strong>0</strong>')
+              .replace(/\{\{tierName\}\}/g, '<strong>' + (lastTier.label || '') + '</strong>');
+          } else {
+            msgEl.innerHTML = ALL_REWARDS_TEXT;
+          }
           msgEl.classList.add('ccd-progress__message--done');
         } else {
           var nextTier = null;
           for (var ti = 0; ti < tiers.length; ti++) { if (currentValue < tiers[ti].goal) { nextTier = tiers[ti]; break; } }
-          if (nextTier && nextTier.beforeText) {
-            var tierRem = Math.max(0, nextTier.goal - currentValue);
-            var unit = THRESHOLD_MODE === 'dollars' ? '$' + tierRem.toFixed(0) : tierRem;
+          var tierRem = nextTier ? Math.max(0, nextTier.goal - currentValue) : overallRemaining;
+          var unit = THRESHOLD_MODE === 'dollars' ? '$' + tierRem.toFixed(0) : tierRem;
+          if (preUnlockTpl) {
+            msgEl.innerHTML = preUnlockTpl
+              .replace(/\{\{amount\}\}/g, '<strong>' + unit + '</strong>')
+              .replace(/\{\{tierName\}\}/g, '<strong>' + (nextTier && nextTier.label ? nextTier.label : '') + '</strong>');
+          } else if (nextTier && nextTier.beforeText) {
             msgEl.innerHTML = nextTier.beforeText.replace('{remaining}', '<strong>' + unit + '</strong>');
           } else {
             msgEl.innerHTML = 'Add <strong>' + overallRemaining + '</strong> more for <strong>FREE</strong>';
@@ -4056,6 +4074,47 @@
       var drawer = document.getElementById('CCD-Drawer');
       if (!drawer) return;
 
+      // ── Checkout-button icon helpers (mirror src/lib/cart-editor/defaults.ts ──
+      //    so the dashboard preview and this live drawer render byte-identical icons).
+      var CCD_ICON_PATHS = {
+        lock: 'M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z',
+        arrow: 'M16.01 11H4v2h12.01v3L20 12l-3.99-4z',
+        cart: 'M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z'
+      };
+      var CCD_RADIUS_PX = { sharp: '0', soft: '8px', rounded: '14px', pill: '999px' };
+      var CCD_HEIGHT_PAD = { S: '10px 24px', M: '14px 24px', L: '18px 24px', XL: '22px 24px' };
+      var CCD_HEADER_PADDING = { compact: '12px 20px 6px', comfortable: '20px 20px 8px', roomy: '28px 20px 12px' };
+      var CCD_HEADER_MIN_HEIGHT = { slim: 'auto', tall: '72px' };
+      var CCD_CLOSE_ICON_SIZE = { S: '18px', M: '22px', L: '28px' };
+      var CCD_CLOSE_ICON_SVG = {
+        x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+        chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg>',
+        arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>'
+      };
+      function ccdSanitizeSvg(raw) {
+        if (typeof raw !== 'string') return '';
+        var s = raw.trim();
+        if (!/^<svg[\s>]/i.test(s)) return '';
+        s = s.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
+        s = s.replace(/<\/?script[^>]*>/gi, '');
+        s = s.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '');
+        s = s.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '');
+        s = s.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '');
+        s = s.replace(/javascript:/gi, '');
+        return s;
+      }
+      function ccdRenderIcon(icon, iconCustom) {
+        if (icon === 'none') return '';
+        if (iconCustom) {
+          var clean = ccdSanitizeSvg(iconCustom);
+          if (clean) return clean;
+        }
+        var key = icon || 'lock';
+        var path = CCD_ICON_PATHS[key];
+        if (!path) return '';
+        return '<svg viewBox="0 0 24 24"><path d="' + path + '"></path></svg>';
+      }
+
       // ── HEADER ──
       if (eo.header && typeof eo.header === 'object') {
         var h = eo.header;
@@ -4091,10 +4150,42 @@
 
         if (headerEl) {
           if (typeof h.bgColor === 'string') headerEl.style.backgroundColor = h.bgColor;
-          // Padding via modifier class (compact / comfortable / roomy)
-          headerEl.classList.remove('ccd-header--compact', 'ccd-header--comfortable', 'ccd-header--roomy');
-          if (h.padding === 'compact' || h.padding === 'comfortable' || h.padding === 'roomy') {
-            headerEl.classList.add('ccd-header--' + h.padding);
+          // Padding applied inline (no modifier CSS exists)
+          if (h.padding && CCD_HEADER_PADDING[h.padding]) {
+            headerEl.style.padding = CCD_HEADER_PADDING[h.padding];
+          }
+          // Height preset → min-height (slim = auto, tall = taller header)
+          if (h.heightPreset && CCD_HEADER_MIN_HEIGHT[h.heightPreset]) {
+            headerEl.style.minHeight = CCD_HEADER_MIN_HEIGHT[h.heightPreset];
+          }
+          // Border style: none / line (1px bottom in title color) / shadow
+          if (h.borderStyle === 'none') {
+            headerEl.style.borderBottom = 'none';
+            headerEl.style.boxShadow = 'none';
+          } else if (h.borderStyle === 'line') {
+            headerEl.style.borderBottom = '1px solid ' + (h.titleColor || '#111111');
+            headerEl.style.boxShadow = 'none';
+          } else if (h.borderStyle === 'shadow') {
+            headerEl.style.borderBottom = 'none';
+            headerEl.style.boxShadow = '0 2px 8px rgba(0,0,0,.08)';
+          }
+        }
+
+        // ── ITEM-COUNT BADGE ── small pill next to the title
+        if (titleEl) {
+          var badgeEl = drawer.querySelector('.ccd-title-badge');
+          if (h.showItemCountBadge === true) {
+            if (!badgeEl) {
+              badgeEl = document.createElement('span');
+              badgeEl.className = 'ccd-title-badge';
+              titleEl.parentNode.insertBefore(badgeEl, titleEl.nextSibling);
+            }
+            var bqty = (CCD._lastCart && CCD._lastCart.item_count) || 0;
+            badgeEl.textContent = String(bqty);
+            if (typeof h.badgeColor === 'string') badgeEl.style.backgroundColor = h.badgeColor;
+            badgeEl.style.display = '';
+          } else if (badgeEl) {
+            badgeEl.style.display = 'none';
           }
         }
 
@@ -4103,6 +4194,10 @@
           var cb = h.closeButton;
           var btn = drawer.querySelector('.ccd-close-btn');
           if (btn) {
+            // Swap the close icon (x / chevron / arrow) before styling the svg
+            if (h.closeIcon === 'x' || h.closeIcon === 'chevron' || h.closeIcon === 'arrow') {
+              btn.innerHTML = CCD_CLOSE_ICON_SVG[h.closeIcon];
+            }
             if (typeof cb.bgColor === 'string') {
               btn.style.setProperty('--ccd-cb-bg', cb.bgColor);
               btn.style.backgroundColor = cb.bgColor;
@@ -4111,13 +4206,13 @@
               btn.style.setProperty('--ccd-cb-bg-hover', cb.bgHoverColor);
             }
             if (typeof cb.iconColor === 'string') btn.style.color = cb.iconColor;
-            // Icon size class (S / M / L)
-            btn.classList.remove('ccd-close-btn--s', 'ccd-close-btn--m', 'ccd-close-btn--l');
-            if (cb.iconSize === 'S') btn.classList.add('ccd-close-btn--s');
-            else if (cb.iconSize === 'M') btn.classList.add('ccd-close-btn--m');
-            else if (cb.iconSize === 'L') btn.classList.add('ccd-close-btn--l');
-            // Stroke weight on the SVG (normal=2, thick=3)
+            // Icon size applied inline (no modifier CSS exists)
             var svg = btn.querySelector('svg');
+            if (svg && cb.iconSize && CCD_CLOSE_ICON_SIZE[cb.iconSize]) {
+              svg.style.width = CCD_CLOSE_ICON_SIZE[cb.iconSize];
+              svg.style.height = CCD_CLOSE_ICON_SIZE[cb.iconSize];
+            }
+            // Stroke weight on the SVG (normal=2, thick=3)
             if (svg) {
               if (cb.strokeWeight === 'thick') svg.setAttribute('stroke-width', '3');
               else if (cb.strokeWeight === 'normal') svg.setAttribute('stroke-width', '2');
@@ -4290,16 +4385,18 @@
         var cbtn = eo.checkoutButton;
         var btnEl = drawer.querySelector('.ccd-checkout-btn');
         if (btnEl) {
-          // label — XSS-safe textContent on the leading text node only
+          // label — XSS-safe textContent on the button's TEXT node. firstChild is
+          // the SVG element, so walk childNodes to find the first text node
+          // (nodeType 3) and preserve the trailing .ccd-checkout-total span.
           if (typeof cbtn.label === 'string') {
-            // The button contains: "{label} · <span class=ccd-checkout-total>$X.XX</span>"
-            // Preserve the total span by walking children and updating only the first text node.
-            var first = btnEl.firstChild;
-            if (first && first.nodeType === 3) {
-              first.textContent = cbtn.label + ' · ';
+            var tn = null;
+            for (var ci = 0; ci < btnEl.childNodes.length; ci++) {
+              if (btnEl.childNodes[ci].nodeType === 3) { tn = btnEl.childNodes[ci]; break; }
+            }
+            if (tn) {
+              tn.textContent = ' ' + cbtn.label + ' · ';
             } else {
-              // No leading text node — set a data attribute for CSS pseudo-content if needed
-              btnEl.setAttribute('data-label', cbtn.label);
+              btnEl.insertBefore(document.createTextNode(' ' + cbtn.label + ' · '), btnEl.firstChild);
             }
           }
           // colors
@@ -4313,15 +4410,13 @@
           if (typeof cbtn.textColor === 'string') {
             btnEl.style.color = cbtn.textColor;
           }
-          // radius enum -> modifier class
-          btnEl.classList.remove('ccd-checkout-btn--sharp', 'ccd-checkout-btn--soft', 'ccd-checkout-btn--rounded', 'ccd-checkout-btn--pill');
-          if (cbtn.radius === 'sharp' || cbtn.radius === 'soft' || cbtn.radius === 'rounded' || cbtn.radius === 'pill') {
-            btnEl.classList.add('ccd-checkout-btn--' + cbtn.radius);
+          // radius enum -> inline border-radius (v14 ships no modifier-class CSS)
+          if (cbtn.radius && CCD_RADIUS_PX[cbtn.radius]) {
+            btnEl.style.borderRadius = CCD_RADIUS_PX[cbtn.radius];
           }
-          // height enum -> modifier class
-          btnEl.classList.remove('ccd-checkout-btn--h-s', 'ccd-checkout-btn--h-m', 'ccd-checkout-btn--h-l', 'ccd-checkout-btn--h-xl');
-          if (cbtn.height === 'S' || cbtn.height === 'M' || cbtn.height === 'L' || cbtn.height === 'XL') {
-            btnEl.classList.add('ccd-checkout-btn--h-' + cbtn.height.toLowerCase());
+          // height enum -> inline padding (v14 ships no modifier-class CSS)
+          if (cbtn.height && CCD_HEIGHT_PAD[cbtn.height]) {
+            btnEl.style.padding = CCD_HEIGHT_PAD[cbtn.height];
           }
           // fontWeight (100-900)
           if (typeof cbtn.fontWeight === 'number') {
@@ -4331,9 +4426,14 @@
           if (typeof cbtn.letterSpacing === 'number') {
             btnEl.style.letterSpacing = cbtn.letterSpacing + 'px';
           }
-          // icon enum -> data attribute (CSS swaps the icon)
-          if (cbtn.icon === 'none' || cbtn.icon === 'arrow' || cbtn.icon === 'lock' || cbtn.icon === 'cart') {
-            btnEl.setAttribute('data-icon', cbtn.icon);
+          // icon — actually swap the SVG markup (data-icon had no CSS to swap it,
+          // so it was a silent no-op). Fires when icon OR a custom svg is provided;
+          // custom svg is sanitized by ccdRenderIcon before insertion.
+          if (cbtn.icon !== undefined || cbtn.iconCustom !== undefined) {
+            var oldSvg = btnEl.querySelector('svg');
+            if (oldSvg && oldSvg.parentNode) oldSvg.parentNode.removeChild(oldSvg);
+            var iconHtml = ccdRenderIcon(cbtn.icon, cbtn.iconCustom);
+            if (iconHtml) btnEl.insertAdjacentHTML('afterbegin', iconHtml);
           }
           // fullWidth boolean -> modifier class
           if (cbtn.fullWidth === false) btnEl.classList.add('ccd-checkout-btn--auto-width');
@@ -4383,6 +4483,24 @@
       }
 
       // ----- editorOverrides.milestoneBar -----
+      // Moves the .ccd-progress bar element to match the editor's position setting.
+      // top/underHeader = its default home (inside .ccd-fixed-header, after the header);
+      // aboveCheckout = insertBefore the sticky footer so it sits right above checkout.
+      function CCD_relocateProgress(progEl, position, drawer) {
+        if (!progEl) return;
+        if (position === 'aboveCheckout') {
+          var footer = drawer.querySelector('[data-ccd-footer]');
+          if (footer && footer.parentNode && progEl !== footer.previousElementSibling) {
+            footer.parentNode.insertBefore(progEl, footer);
+          }
+        } else {
+          // top / underHeader → restore to default home inside the fixed header
+          var fixedHeader = drawer.querySelector('.ccd-fixed-header');
+          if (fixedHeader && progEl.parentNode !== fixedHeader) {
+            fixedHeader.appendChild(progEl);
+          }
+        }
+      }
       if (eo.milestoneBar && typeof eo.milestoneBar === 'object') {
         var mb = eo.milestoneBar;
         var progEl = drawer.querySelector('.ccd-progress');
@@ -4397,6 +4515,7 @@
           if (typeof mb.height === 'number') drawer.style.setProperty('--ccd-progress-height', mb.height + 'px');
           if (mb.position === 'top' || mb.position === 'underHeader' || mb.position === 'aboveCheckout') {
             progEl.setAttribute('data-position', mb.position);
+            CCD_relocateProgress(progEl, mb.position, drawer);
           }
           if (typeof mb.textSize === 'number') drawer.style.setProperty('--ccd-progress-text-size', mb.textSize + 'px');
           if (typeof mb.textWeight === 'number') drawer.style.setProperty('--ccd-progress-text-weight', String(mb.textWeight));
@@ -5038,7 +5157,7 @@
     var footer = document.querySelector('.ccd-sticky-footer');
     if (!footer) return;
 
-    var position = cfg.position === 'top' ? 'top' : 'bottom';
+    var position = cfg.position === 'top' ? 'top' : (cfg.position === 'bottom' ? 'bottom' : 'above-checkout');
     var label = typeof cfg.label === 'string' ? cfg.label : 'Add a note to your order';
     var placeholder = typeof cfg.placeholder === 'string' ? cfg.placeholder : '';
     var maxChars = typeof cfg.maxChars === 'number' ? cfg.maxChars : 250;
@@ -5081,7 +5200,11 @@
       CCD._notesDebounce = setTimeout(saveNote, 500);
     });
 
-    if (position === 'top') {
+    if (position === 'above-checkout') {
+      var checkoutBtn = footer.querySelector('.ccd-checkout-btn');
+      if (checkoutBtn) footer.insertBefore(row, checkoutBtn);
+      else footer.appendChild(row);
+    } else if (position === 'top') {
       footer.insertBefore(row, footer.firstChild);
     } else {
       var trustRow = footer.querySelector('.ccd-trust');
@@ -5106,9 +5229,9 @@
     var footer = document.querySelector('.ccd-sticky-footer');
     if (!footer) return;
 
-    var position = cfg.position === 'above-checkout'
-      ? 'above-checkout'
-      : (cfg.position === 'bottom' ? 'bottom' : 'top');
+    var position = cfg.position === 'top'
+      ? 'top'
+      : (cfg.position === 'bottom' ? 'bottom' : 'above-checkout');
     var placeholder = typeof cfg.placeholder === 'string' ? cfg.placeholder : 'Discount code';
     var applyLabel = typeof cfg.applyButtonLabel === 'string' ? cfg.applyButtonLabel : 'Apply';
     var applyColor = typeof cfg.applyButtonColor === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(cfg.applyButtonColor)

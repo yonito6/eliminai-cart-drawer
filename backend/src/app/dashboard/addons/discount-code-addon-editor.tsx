@@ -2,10 +2,13 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 
+type DiscountCodePosition = 'above-checkout' | 'top' | 'bottom';
+
 interface DiscountCodeConfig {
   placeholder?: string;
   applyButtonLabel?: string;
-  position?: 'top' | 'bottom';
+  applyButtonColor?: string;
+  position?: DiscountCodePosition;
   showAppliedBadge?: boolean;
 }
 
@@ -45,7 +48,8 @@ export default function DiscountCodeAddonEditor({
 }: DiscountCodeAddonEditorProps) {
   const [placeholder, setPlaceholder] = useState<string>(config.placeholder ?? 'Discount code');
   const [applyButtonLabel, setApplyButtonLabel] = useState<string>(config.applyButtonLabel ?? 'Apply');
-  const [position, setPosition] = useState<'top' | 'bottom'>(config.position ?? 'bottom');
+  const [applyButtonColor, setApplyButtonColor] = useState<string>(config.applyButtonColor ?? '#111111');
+  const [position, setPosition] = useState<DiscountCodePosition>(config.position ?? 'above-checkout');
   const [showAppliedBadge, setShowAppliedBadge] = useState<boolean>(config.showAppliedBadge !== false);
 
   const savedRef = useRef<string>('');
@@ -56,6 +60,7 @@ export default function DiscountCodeAddonEditor({
     return {
       placeholder: overrides.placeholder ?? placeholder,
       applyButtonLabel: overrides.applyButtonLabel ?? applyButtonLabel,
+      applyButtonColor: overrides.applyButtonColor ?? applyButtonColor,
       position: overrides.position ?? position,
       showAppliedBadge: overrides.showAppliedBadge ?? showAppliedBadge,
     };
@@ -85,7 +90,8 @@ export default function DiscountCodeAddonEditor({
     const saved = JSON.parse(savedRef.current) as DiscountCodeConfig;
     setPlaceholder(saved.placeholder ?? 'Discount code');
     setApplyButtonLabel(saved.applyButtonLabel ?? 'Apply');
-    setPosition(saved.position ?? 'bottom');
+    setApplyButtonColor(saved.applyButtonColor ?? '#111111');
+    setPosition(saved.position ?? 'above-checkout');
     setShowAppliedBadge(saved.showAppliedBadge !== false);
     onPreviewChange(saved);
     setIsDirty(false);
@@ -120,16 +126,53 @@ export default function DiscountCodeAddonEditor({
       </div>
 
       <div>
+        <label style={labelStyle}>Apply button color</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input
+            type="color"
+            value={applyButtonColor}
+            onChange={(e) => {
+              setApplyButtonColor(e.target.value);
+              pushPreview({ applyButtonColor: e.target.value });
+            }}
+            style={{
+              width: 44,
+              height: 32,
+              padding: 0,
+              border: '1px solid #d1d5db',
+              borderRadius: 6,
+              background: '#fff',
+              cursor: 'pointer',
+            }}
+          />
+          <input
+            type="text"
+            value={applyButtonColor}
+            onChange={(e) => {
+              const v = e.target.value;
+              setApplyButtonColor(v);
+              if (/^#[0-9a-fA-F]{3,8}$/.test(v)) {
+                pushPreview({ applyButtonColor: v });
+              }
+            }}
+            style={{ ...inputStyle, flex: 1, fontFamily: 'monospace' }}
+            placeholder="#111111"
+          />
+        </div>
+      </div>
+
+      <div>
         <label style={labelStyle}>Position</label>
         <select
           value={position}
           onChange={(e) => {
-            const v = e.target.value as 'top' | 'bottom';
+            const v = e.target.value as DiscountCodePosition;
             setPosition(v);
             pushPreview({ position: v });
           }}
           style={inputStyle}
         >
+          <option value="above-checkout">Above checkout button (recommended)</option>
           <option value="top">Top of footer</option>
           <option value="bottom">Bottom of footer</option>
         </select>

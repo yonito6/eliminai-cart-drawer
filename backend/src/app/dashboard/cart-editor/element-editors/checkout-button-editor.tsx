@@ -4,7 +4,8 @@
 
 import React from 'react';
 import { useDraftStore, readField } from '../draft-store';
-import { ColorInput, Field, Section, Select, Slider, TextInput, Toggle } from './_controls';
+import { CART_DEFAULTS } from '@/lib/cart-editor/defaults';
+import { ColorInput, Field, Section, Select, Slider, Textarea, TextInput, Toggle } from './_controls';
 
 export default function CheckoutButtonEditor() {
   const { draft, setField } = useDraftStore();
@@ -15,7 +16,7 @@ export default function CheckoutButtonEditor() {
       <Section title="Label">
         <Field label="Button label">
           <TextInput
-            value={get<string>('checkoutButton.label')}
+            value={get<string>('checkoutButton.label') ?? CART_DEFAULTS.checkoutButton.label}
             onChange={(v) => setField('checkoutButton.label', v || undefined)}
             placeholder="Checkout"
             maxLength={200}
@@ -23,7 +24,7 @@ export default function CheckoutButtonEditor() {
         </Field>
         <Field label="Icon">
           <Select
-            value={get<'none' | 'arrow' | 'lock' | 'cart'>('checkoutButton.icon')}
+            value={get<'none' | 'arrow' | 'lock' | 'cart'>('checkoutButton.icon') ?? CART_DEFAULTS.checkoutButton.icon}
             options={[
               { value: 'none', label: 'No icon' },
               { value: 'arrow', label: '→ Arrow' },
@@ -33,24 +34,36 @@ export default function CheckoutButtonEditor() {
             onChange={(v) => setField('checkoutButton.icon', v)}
           />
         </Field>
+        <Field
+          label="Custom icon (SVG)"
+          hint="Paste an <svg>…</svg>. It overrides the icon above and is recolored to match the button text. Scripts are stripped."
+        >
+          <Textarea
+            value={get<string>('checkoutButton.iconCustom')}
+            onChange={(v) => setField('checkoutButton.iconCustom', v || undefined)}
+            placeholder='<svg viewBox="0 0 24 24"><path d="…" /></svg>'
+            rows={3}
+            maxLength={20000}
+          />
+        </Field>
       </Section>
 
       <Section title="Colors">
         <Field label="Background">
           <ColorInput
-            value={get<string>('checkoutButton.bgColor')}
+            value={get<string>('checkoutButton.bgColor') ?? CART_DEFAULTS.checkoutButton.bgColor}
             onChange={(v) => setField('checkoutButton.bgColor', v)}
           />
         </Field>
         <Field label="Background (hover)">
           <ColorInput
-            value={get<string>('checkoutButton.bgHoverColor')}
+            value={get<string>('checkoutButton.bgHoverColor') ?? CART_DEFAULTS.checkoutButton.bgHoverColor}
             onChange={(v) => setField('checkoutButton.bgHoverColor', v)}
           />
         </Field>
         <Field label="Text color">
           <ColorInput
-            value={get<string>('checkoutButton.textColor')}
+            value={get<string>('checkoutButton.textColor') ?? CART_DEFAULTS.checkoutButton.textColor}
             onChange={(v) => setField('checkoutButton.textColor', v)}
           />
         </Field>
@@ -59,7 +72,7 @@ export default function CheckoutButtonEditor() {
       <Section title="Shape & size">
         <Field label="Corner radius">
           <Select
-            value={get<'sharp' | 'soft' | 'rounded' | 'pill'>('checkoutButton.radius')}
+            value={get<'sharp' | 'soft' | 'rounded' | 'pill'>('checkoutButton.radius') ?? CART_DEFAULTS.checkoutButton.radius}
             options={[
               { value: 'sharp', label: 'Sharp' },
               { value: 'soft', label: 'Soft' },
@@ -71,7 +84,7 @@ export default function CheckoutButtonEditor() {
         </Field>
         <Field label="Height">
           <Select
-            value={get<'S' | 'M' | 'L' | 'XL'>('checkoutButton.height')}
+            value={get<'S' | 'M' | 'L' | 'XL'>('checkoutButton.height') ?? CART_DEFAULTS.checkoutButton.height}
             options={[
               { value: 'S', label: 'Small' },
               { value: 'M', label: 'Medium' },
@@ -83,7 +96,7 @@ export default function CheckoutButtonEditor() {
         </Field>
         <Field label="Full width">
           <Toggle
-            value={get<boolean>('checkoutButton.fullWidth')}
+            value={get<boolean>('checkoutButton.fullWidth') ?? CART_DEFAULTS.checkoutButton.fullWidth}
             onChange={(v) => setField('checkoutButton.fullWidth', v)}
             label="Stretch button to the drawer width"
           />
@@ -93,7 +106,7 @@ export default function CheckoutButtonEditor() {
       <Section title="Typography">
         <Field label="Font weight">
           <Slider
-            value={get<number>('checkoutButton.fontWeight')}
+            value={get<number>('checkoutButton.fontWeight') ?? CART_DEFAULTS.checkoutButton.fontWeight}
             min={100}
             max={900}
             step={100}
@@ -102,7 +115,7 @@ export default function CheckoutButtonEditor() {
         </Field>
         <Field label="Letter spacing">
           <Slider
-            value={get<number>('checkoutButton.letterSpacing')}
+            value={get<number>('checkoutButton.letterSpacing') ?? CART_DEFAULTS.checkoutButton.letterSpacing}
             min={-2}
             max={10}
             step={0.1}
@@ -118,7 +131,7 @@ export default function CheckoutButtonEditor() {
           hint="Shown after the customer clicks Checkout, while the page is loading"
         >
           <Select
-            value={get<'spinner' | 'dots' | 'shimmer'>('checkoutButton.loadingAnim')}
+            value={get<'spinner' | 'dots' | 'shimmer'>('checkoutButton.loadingAnim') ?? CART_DEFAULTS.checkoutButton.loadingAnim}
             options={[
               { value: 'spinner', label: 'Spinner' },
               { value: 'dots', label: 'Bouncing dots' },

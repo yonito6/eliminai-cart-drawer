@@ -116,6 +116,12 @@ const checkoutButtonSchema = z.object({
   fontWeight: z.number().int().min(100).max(900).optional(),
   letterSpacing: z.number().min(-2).max(10).optional(),
   icon: z.enum(['none', 'arrow', 'lock', 'cart']).optional(),
+  // Merchant-supplied custom SVG icon (sanitized at render time). Capped to keep
+  // the editorOverrides JSON small; must look like an <svg> element.
+  iconCustom: z.string().max(20000).refine(
+    (v) => v === '' || /^<svg[\s>]/i.test(v.trim()),
+    { message: 'iconCustom must be an <svg> string' },
+  ).optional(),
   fullWidth: z.boolean().optional(),
   loadingAnim: z.enum(['spinner', 'dots', 'shimmer']).optional(),
 }).strict();

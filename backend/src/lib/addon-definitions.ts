@@ -456,10 +456,11 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
         type: 'select',
         testable: true,
         options: [
+          { value: 'above-checkout', label: 'Above checkout button (recommended)' },
           { value: 'top', label: 'Top of footer' },
           { value: 'bottom', label: 'Bottom of footer' },
         ],
-        default: 'bottom',
+        default: 'above-checkout',
       },
     ],
     defaultConfig: {
@@ -467,7 +468,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       label: 'Add a note to your order',
       placeholder: '',
       maxChars: 250,
-      position: 'bottom',
+      position: 'above-checkout',
     },
   },
 
@@ -481,16 +482,18 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
     dimensions: [
       { key: 'placeholder', label: 'Input placeholder', type: 'text', testable: false, default: 'Discount code' },
       { key: 'applyButtonLabel', label: 'Apply button label', type: 'text', testable: false, default: 'Apply' },
+      { key: 'applyButtonColor', label: 'Apply button color', type: 'color', testable: false, default: '#111111' },
       {
         key: 'position',
         label: 'Position',
         type: 'select',
         testable: true,
         options: [
+          { value: 'above-checkout', label: 'Above checkout button (recommended)' },
           { value: 'top', label: 'Top of footer' },
           { value: 'bottom', label: 'Bottom of footer' },
         ],
-        default: 'bottom',
+        default: 'above-checkout',
       },
       { key: 'showAppliedBadge', label: 'Show applied-discount badge', type: 'toggle', testable: false, default: true },
     ],
@@ -498,7 +501,8 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       enabled: false,
       placeholder: 'Discount code',
       applyButtonLabel: 'Apply',
-      position: 'bottom',
+      applyButtonColor: '#111111',
+      position: 'above-checkout',
       showAppliedBadge: true,
     },
   },

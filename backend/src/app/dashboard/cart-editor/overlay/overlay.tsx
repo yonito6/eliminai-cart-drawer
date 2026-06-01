@@ -11,6 +11,7 @@
 // happen when the draft store mutates.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useDraftStore } from '../draft-store';
 import {
   HOTSPOTS,
@@ -19,6 +20,10 @@ import {
   findHotspotElement,
   resolveHotspotFromPoint,
 } from './hotspots';
+
+function hotspotSelector(id: HotspotId): string | null {
+  return HOTSPOTS.find((h) => h.id === id)?.selector ?? null;
+}
 
 interface Rect {
   top: number;
@@ -47,11 +52,19 @@ interface OverlayProps {
 }
 
 export default function Overlay({ hostRef }: OverlayProps) {
+  const router = useRouter();
   const { selectedElementId, selectElement } = useDraftStore();
   const [hovered, setHovered] = useState<Hotspot | null>(null);
   const [hoverRect, setHoverRect] = useState<Rect | null>(null);
   const [selectRect, setSelectRect] = useState<Rect | null>(null);
   const rafRef = useRef<number | null>(null);
+  // Remember the exact clicked element (and its index among same-selector
+  // siblings) so the selection ring tracks the SPECIFIC instance the user
+  // clicked — not the first DOM match. The element ref is used while it
+  // remains in the DOM; on re-render it goes stale, and the index ref
+  // kicks in as a stable fallback.
+  const clickedElRef = useRef<HTMLElement | null>(null);
+  const instanceIndexRef = useRef<number>(0);
 
   // Recompute the selection ring's rect — called on selection change AND on
   // every draft mutation (the preview re-renders, swapping the DOM nodes).
@@ -69,7 +82,18 @@ export default function Overlay({ hostRef }: OverlayProps) {
       setSelectRect(null);
       return;
     }
-    const el = findHotspotElement(previewRoot, selectedElementId as HotspotId);
+    const hint = clickedElRef.current;
+    let el = findHotspotElement(previewRoot, selectedElementId as HotspotId, hint);
+    // If the original clicked element was swapped out by a re-render, fall
+    // back to the same instance-index so the ring stays on the right row.
+    if (instanceIndexRef.current > 0 && (!hint || !previewRoot.contains(hint))) {
+      const sel = hotspotSelector(selectedElementId as HotspotId);
+      if (sel) {
+        const all = previewRoot.querySelectorAll<HTMLElement>(sel);
+        const byIdx = all[instanceIndexRef.current];
+        if (byIdx) el = byIdx;
+      }
+    }
     setSelectRect(el ? rectFromEl(el, host) : null);
   }, [hostRef, selectedElementId]);
 
@@ -128,6 +152,7 @@ export default function Overlay({ hostRef }: OverlayProps) {
   }, [hostRef]);
 
   // Click → select hotspot, or clear selection if click missed everything.
+  // Deep-link hotspots (addon.*) navigate directly to the matching Addons card.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -136,20 +161,53 @@ export default function Overlay({ hostRef }: OverlayProps) {
       if (!hostEl) return;
       const previewRoot = hostEl.querySelector<HTMLElement>('#ce-preview-host');
       if (!previewRoot) return;
-      const hs = resolveHotspotFromPoint(previewRoot, { x: e.clientX, y: e.clientY });
       // Only intercept clicks that land inside the preview root.
       const stack = (hostEl.ownerDocument || document).elementsFromPoint(e.clientX, e.clientY);
       const insidePreview = stack.some((el) => previewRoot.contains(el));
       if (!insidePreview) {
-        // Click outside — clear selection only if click was inside the host.
         selectElement(null);
         return;
+      }
+      // Always swallow the click so <a href="#"> wrappers in the cart HTML
+      // don't navigate the dashboard URL to "#" on every selection.
+      e.preventDefault();
+      e.stopPropagation();
+      const hs = resolveHotspotFromPoint(previewRoot, { x: e.clientX, y: e.clientY });
+      if (hs && hs.target === 'deep-link' && hs.id.startsWith('addon.')) {
+        const addonKey = hs.id.slice('addon.'.length);
+        router.push(`/dashboard/addons?expand=${encodeURIComponent(addonKey)}`);
+        return;
+      }
+      // Capture the SPECIFIC element under the cursor so the selection ring
+      // tracks the clicked instance (line item #5), not the first DOM match.
+      if (hs) {
+        let matched: HTMLElement | null = null;
+        for (const el of stack) {
+          if (!previewRoot.contains(el)) continue;
+          const ancestor = (el as HTMLElement).closest<HTMLElement>(hs.selector);
+          if (ancestor && previewRoot.contains(ancestor)) {
+            matched = ancestor;
+            break;
+          }
+        }
+        clickedElRef.current = matched;
+        if (matched) {
+          const siblings = Array.from(
+            previewRoot.querySelectorAll<HTMLElement>(hs.selector),
+          );
+          instanceIndexRef.current = Math.max(0, siblings.indexOf(matched));
+        } else {
+          instanceIndexRef.current = 0;
+        }
+      } else {
+        clickedElRef.current = null;
+        instanceIndexRef.current = 0;
       }
       selectElement(hs ? hs.id : null);
     }
     host.addEventListener('click', onClick, true);
     return () => host.removeEventListener('click', onClick, true);
-  }, [hostRef, selectElement]);
+  }, [hostRef, selectElement, router]);
 
   // Recompute selection rect on selection change.
   useEffect(() => {
@@ -224,14 +282,16 @@ export default function Overlay({ hostRef }: OverlayProps) {
         <div
           style={{
             position: 'absolute',
-            top: selectRect.top - 2,
-            left: selectRect.left - 2,
-            width: selectRect.width + 4,
-            height: selectRect.height + 4,
-            border: `2px solid ${PURPLE}`,
+            top: selectRect.top - 3,
+            left: selectRect.left - 3,
+            width: selectRect.width + 6,
+            height: selectRect.height + 6,
+            // Dashed border (per design: same language as hover halo, but
+            // thicker + halo so the user knows what they're editing).
+            border: `3px dashed ${PURPLE}`,
             borderRadius: 6,
             pointerEvents: 'none',
-            boxShadow: `0 0 0 4px rgba(124, 58, 237, 0.15)`,
+            boxShadow: `0 0 0 4px rgba(124, 58, 237, 0.18)`,
           }}
         />
       )}

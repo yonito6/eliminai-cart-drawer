@@ -5,6 +5,19 @@ import { REAL_CART_CSS, CONTROL_HTML } from '../cart-constants';
 import { REWARD_ICONS, RewardTier } from '@/lib/addon-definitions';
 import { getProtectionIconSvg } from '@/lib/protection-icons';
 import { normalizeBlockColorWrap, applyDefaultColor } from './rich-text-editor';
+import {
+  applyTrustBadges,
+  applyScarcityTimer,
+  applyShippingProtection,
+  applyFreeShippingBar,
+  applyUpsellRecommendations,
+  applySocialProof,
+  applyExpressPayments,
+  applyLowStockBadge,
+  applyNotes,
+  applyDiscountCode,
+  applyTermsCheckbox,
+} from './addon-transforms';
 
 const FOCUS_AREAS: Record<string, { scrollTo: string; height: number }> = {
   trustBadges: { scrollTo: 'ccd-trust-badges', height: 220 },
@@ -15,6 +28,9 @@ const FOCUS_AREAS: Record<string, { scrollTo: string; height: number }> = {
   upsellRecommendations: { scrollTo: 'cart__items', height: 200 },
   socialProof: { scrollTo: 'ccd-trust', height: 160 },
   expressPayments: { scrollTo: 'ccd-express-payments', height: 160 },
+  notes: { scrollTo: 'ccd-notes-row', height: 160 },
+  discountCode: { scrollTo: 'ccd-discount-code-row', height: 160 },
+  termsCheckbox: { scrollTo: 'ccd-terms-row', height: 140 },
 };
 
 // Real payment provider SVGs for trust badges preview
@@ -88,12 +104,28 @@ function buildTrustBadgesHtml(config: Record<string, any> | undefined): string {
 export default function AddonPreview({ addonKey, addonConfig, mode, themeSettings, stagingHint, storeId }: AddonPreviewProps) {
   const [iframeHeight, setIframeHeight] = useState(mode === 'full' ? 680 : (FOCUS_AREAS[addonKey]?.height || 200));
   const [previewProducts, setPreviewProducts] = useState<PreviewProduct[]>([]);
+  // Live addon configs for all OTHER enabled addons — so the preview shows the
+  // full storefront cart, not just the focused addon. The focused addon stays
+  // inline (live-edits without a fetch round-trip).
+  const [liveAddons, setLiveAddons] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
     if (!storeId) return;
     fetch(`/api/stores/${storeId}/products/preview?_t=${Date.now()}`)
       .then(r => r.json())
       .then(data => { if (data.products?.length) setPreviewProducts(data.products); })
+      .catch(() => {});
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!storeId) return;
+    fetch(`/api/stores/${storeId}/addons?target=demo&_t=${Date.now()}`)
+      .then(r => r.json())
+      .then(data => {
+        // API returns either { addons: {...} } or the map directly.
+        const map = data?.addons ?? data;
+        if (map && typeof map === 'object') setLiveAddons(map);
+      })
       .catch(() => {});
   }, [storeId]);
 
@@ -180,6 +212,67 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
         }
       }
     }
+  }
+
+  // ── Background addons: render every OTHER enabled addon so the preview
+  //    matches the live storefront cart. The focused addon (addonKey) is
+  //    skipped here and rendered by its dedicated inline block below — that
+  //    block reads `addonConfig` from props so live-edits update instantly
+  //    without re-fetching /addons.
+  //
+  //    Order mirrors v14-complete.js and preview-renderer.ts:
+  //      freeShippingBar → shippingProtection → trustBadges → scarcityTimer
+  //      → lowStockBadge → upsellRecommendations → socialProof → expressPayments
+  if (liveAddons) {
+    const getEntry = (k: string): { enabled: boolean; config: Record<string, any> } => {
+      const raw = liveAddons[k];
+      if (!raw) return { enabled: false, config: {} };
+      // API shape: { enabled, config }. Legacy: flat object.
+      if (typeof raw === 'object' && ('enabled' in raw || 'config' in raw)) {
+        return { enabled: raw.enabled !== false, config: raw.config || {} };
+      }
+      return { enabled: true, config: raw as Record<string, any> };
+    };
+    const productsForFsb = previewProducts.length
+      ? previewProducts.map(p => ({
+          title: p.title,
+          image: p.image,
+          variant: p.variant,
+          price: p.price,
+          compareAtPrice: p.compareAtPrice,
+        }))
+      : undefined;
+
+    const ORDER: Array<{ key: string; apply: (h: string, c: Record<string, any>) => string }> = [
+      { key: 'freeShippingBar',        apply: (h, c) => applyFreeShippingBar(h, c, { previewProducts: productsForFsb }) },
+      { key: 'shippingProtection',     apply: (h, c) => applyShippingProtection(h, c) },
+      { key: 'trustBadges',            apply: (h, c) => applyTrustBadges(h, c) },
+      { key: 'scarcityTimer',          apply: (h, c) => applyScarcityTimer(h, c) },
+      { key: 'lowStockBadge',          apply: (h, c) => applyLowStockBadge(h, c) },
+      { key: 'upsellRecommendations',  apply: (h, c) => applyUpsellRecommendations(h, c, { previewProducts: productsForFsb }) },
+      { key: 'socialProof',            apply: (h, c) => applySocialProof(h, c, { deterministic: true }) },
+      { key: 'expressPayments',        apply: (h, c) => Array.isArray(c.providers) ? applyExpressPayments(h, c) : h },
+      { key: 'notes',                  apply: (h, c) => applyNotes(h, c) },
+      { key: 'discountCode',           apply: (h, c) => applyDiscountCode(h, c) },
+      { key: 'termsCheckbox',          apply: (h, c) => applyTermsCheckbox(h, c) },
+    ];
+
+    for (const { key, apply } of ORDER) {
+      if (key === addonKey) continue; // focused addon rendered below
+      const entry = getEntry(key);
+      if (!entry.enabled) continue;
+      try {
+        cartHtml = apply(cartHtml, entry.config);
+      } catch {
+        // Skip a failing transform — never block the preview render.
+      }
+    }
+  }
+
+  // Always strip the trust badge placeholder if trustBadges isn't going to
+  // inject it (either disabled, or focused but disabled in props).
+  if (addonKey !== 'trustBadges' && (!liveAddons || liveAddons.trustBadges?.enabled === false)) {
+    cartHtml = cartHtml.replace('<!-- TRUST_BADGES_PLACEHOLDER -->', '');
   }
 
   // ── Trust Badges: dynamic icons + text + position ──────────────────
@@ -284,106 +377,13 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     }
   }
 
-  // ── Low Stock Badge: per-item "Only N left!" badge + optional ATC block ─
-  // Source of truth: addon-definitions.ts → CFG.addons.lowStockBadge.config →
-  // CCD.applyScarcity in v14-complete.js. Preview must produce the SAME badge
-  // markup the live cart renders (class="ccd-scarcity-badge", same icon SVG,
-  // same {n} substitution, same .ccd-qty__btn--locked when blockAddToCart=true).
+  // ── Low Stock Badge — delegated to the shared applyLowStockBadge transform
+  // so this focused branch stays byte-for-byte identical to the cart-editor
+  // preview AND the background ORDER loop. The shared transform also handles
+  // the variant-less injection case (items with no .ccd-item__variant div),
+  // which the previous inline implementation missed.
   if (addonKey === 'lowStockBadge') {
-    // 1) Strip the hardcoded scarcity badge + locked button from the base template
-    //    so config drives everything (no stale "Only 1 left" on item 2 by default).
-    cartHtml = cartHtml.replace(/\s*<span class="ccd-scarcity-badge">[\s\S]*?<\/span>/g, '');
-    cartHtml = cartHtml.replace(/\s*ccd-qty__btn--locked/g, '');
-    // Unwrap any now-empty variant-row back to a plain variant.
-    cartHtml = cartHtml.replace(
-      /<div class="ccd-item__variant-row">\s*<div class="ccd-item__variant">([^<]*)<\/div>\s*<\/div>/g,
-      '<div class="ccd-item__variant">$1</div>'
-    );
-
-    const mode = addonConfig.mode || 'fake';
-    const targetSetting = String(addonConfig.target || '2');
-    const fakeQty = Math.max(1, parseInt(String(addonConfig.fakeQty)) || 1);
-    const threshold = Math.max(1, parseInt(String(addonConfig.threshold)) || 5);
-    const textTpl = String(addonConfig.text || 'Only {n} left!');
-    const iconId = addonConfig.icon || 'fire';
-    const blockAddToCart = addonConfig.blockAddToCart !== false;
-
-    // Icon markup must match v14-complete.js CCD.getScarcitySvg() exactly.
-    const FIRE_EMOJI = '🔥';
-    const CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>';
-    const TAG_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>';
-    const WARN_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>';
-    const iconMarkup = iconId === 'clock' ? CLOCK_SVG
-      : iconId === 'tag' ? TAG_SVG
-      : iconId === 'warn' || iconId === 'warning' ? WARN_SVG
-      : FIRE_EMOJI;
-
-    // Displayed quantity: Fake mode → user's fakeQty. Auto mode → mock real
-    // inventory_quantity at min(threshold, 3) (preview can't read live Shopify stock).
-    const displayQty = mode === 'auto'
-      ? Math.max(1, Math.min(threshold, 3))
-      : fakeQty;
-    const badgeText = textTpl.replace(/\{n\}/g, String(displayQty));
-
-    // Find each <div class="ccd-item">…</div> block (depth-aware) and pick the
-    // target one based on `target` ('1'/'2'/'3'/'last'/'random'). Random is
-    // deterministic in preview to keep the staged view stable.
-    const itemBlocks: { start: number; end: number }[] = [];
-    let cursor = 0;
-    while (true) {
-      const start = cartHtml.indexOf('<div class="ccd-item">', cursor);
-      if (start === -1) break;
-      let depth = 0;
-      let end = -1;
-      for (let i = start; i < cartHtml.length; i++) {
-        if (cartHtml.startsWith('<div', i)) depth++;
-        if (cartHtml.startsWith('</div>', i)) {
-          depth--;
-          if (depth === 0) { end = i + 6; break; }
-        }
-      }
-      if (end === -1) break;
-      itemBlocks.push({ start, end });
-      cursor = end;
-    }
-
-    if (itemBlocks.length > 0) {
-      let idx: number;
-      if (targetSetting === 'last') idx = itemBlocks.length - 1;
-      else if (targetSetting === 'random') idx = 0;
-      else {
-        const n = parseInt(targetSetting) || 2;
-        idx = Math.min(itemBlocks.length - 1, Math.max(0, n - 1));
-      }
-
-      const block = itemBlocks[idx];
-      let itemHtml = cartHtml.substring(block.start, block.end);
-
-      const badgeHtml = '<span class="ccd-scarcity-badge">' + iconMarkup + ' ' + badgeText + '</span>';
-
-      // Inject the badge inline with the variant (wrap in variant-row if needed).
-      if (/<div class="ccd-item__variant-row">/.test(itemHtml)) {
-        itemHtml = itemHtml.replace(
-          /(<div class="ccd-item__variant">[^<]*<\/div>)/,
-          '$1' + badgeHtml
-        );
-      } else {
-        itemHtml = itemHtml.replace(
-          /<div class="ccd-item__variant">([^<]*)<\/div>/,
-          '<div class="ccd-item__variant-row"><div class="ccd-item__variant">$1</div>' + badgeHtml + '</div>'
-        );
-      }
-
-      // Lock the plus button when blockAddToCart is on (matches live cart).
-      if (blockAddToCart) {
-        itemHtml = itemHtml.replace(
-          /class="ccd-qty__btn ccd-qty__btn--plus"/,
-          'class="ccd-qty__btn ccd-qty__btn--plus ccd-qty__btn--locked"'
-        );
-      }
-
-      cartHtml = cartHtml.substring(0, block.start) + itemHtml + cartHtml.substring(block.end);
-    }
+    cartHtml = applyLowStockBadge(cartHtml, addonConfig);
   }
 
   // ── Shipping Protection: dynamic price, description, icon ─────────
@@ -845,6 +845,21 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
 
     // Insert after checkout button
     cartHtml = cartHtml.replace(/<\/button>\s*<div class="ccd-trust">/, '</button>' + expressHtml + '<div class="ccd-trust">');
+  }
+
+  // ── Notes / Discount Code / Terms Checkbox — delegated to shared transforms
+  // so focused preview produces the SAME footer-row class names + IDs the live
+  // storefront (v14-complete.js) injects (#ccd-notes-row / #ccd-discount-code-row
+  // / #ccd-terms-row). Matches the class-name contract enforced by the
+  // addon-transforms-footer-zones blast-radius tests.
+  if (addonKey === 'notes') {
+    cartHtml = applyNotes(cartHtml, addonConfig);
+  }
+  if (addonKey === 'discountCode') {
+    cartHtml = applyDiscountCode(cartHtml, addonConfig);
+  }
+  if (addonKey === 'termsCheckbox') {
+    cartHtml = applyTermsCheckbox(cartHtml, addonConfig);
   }
 
   const focusArea = FOCUS_AREAS[addonKey];

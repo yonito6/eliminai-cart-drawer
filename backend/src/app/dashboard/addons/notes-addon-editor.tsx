@@ -6,7 +6,7 @@ interface NotesConfig {
   label?: string;
   placeholder?: string;
   maxChars?: number;
-  position?: 'top' | 'bottom';
+  position?: 'above-checkout' | 'top' | 'bottom';
 }
 
 export interface NotesAddonEditorProps {
@@ -44,7 +44,7 @@ export default function NotesAddonEditor({ config, onPreviewChange, onSave }: No
   const [maxChars, setMaxChars] = useState<number>(
     typeof config.maxChars === 'number' ? config.maxChars : 250,
   );
-  const [position, setPosition] = useState<'top' | 'bottom'>(config.position ?? 'bottom');
+  const [position, setPosition] = useState<'above-checkout' | 'top' | 'bottom'>(config.position ?? 'above-checkout');
 
   const savedRef = useRef<string>('');
   const [isDirty, setIsDirty] = useState(false);
@@ -84,7 +84,7 @@ export default function NotesAddonEditor({ config, onPreviewChange, onSave }: No
     setLabel(saved.label ?? 'Add a note to your order');
     setPlaceholder(saved.placeholder ?? '');
     setMaxChars(typeof saved.maxChars === 'number' ? saved.maxChars : 250);
-    setPosition(saved.position ?? 'bottom');
+    setPosition(saved.position ?? 'above-checkout');
     onPreviewChange(saved);
     setIsDirty(false);
   };
@@ -139,12 +139,13 @@ export default function NotesAddonEditor({ config, onPreviewChange, onSave }: No
         <select
           value={position}
           onChange={(e) => {
-            const v = e.target.value as 'top' | 'bottom';
+            const v = e.target.value as 'above-checkout' | 'top' | 'bottom';
             setPosition(v);
             pushPreview({ position: v });
           }}
           style={inputStyle}
         >
+          <option value="above-checkout">Above checkout button (recommended)</option>
           <option value="top">Top of footer</option>
           <option value="bottom">Bottom of footer</option>
         </select>

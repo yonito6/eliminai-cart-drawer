@@ -14,6 +14,11 @@ import Overlay from './overlay/overlay';
 import HeaderEditor from './element-editors/header-editor';
 import MilestoneEditor from './element-editors/milestone-editor';
 import LineItemEditor from './element-editors/line-item-editor';
+import LineItemImageEditor from './element-editors/line-item-image-editor';
+import LineItemNameEditor from './element-editors/line-item-name-editor';
+import LineItemQuantityEditor from './element-editors/line-item-quantity-editor';
+import LineItemRemoveEditor from './element-editors/line-item-remove-editor';
+import LineItemPriceEditor from './element-editors/line-item-price-editor';
 import EmptyStateEditor from './element-editors/empty-state-editor';
 import FooterEditor from './element-editors/footer-editor';
 import CheckoutButtonEditor from './element-editors/checkout-button-editor';
@@ -402,6 +407,11 @@ const ELEMENT_EDITORS: Record<string, { label: string; Component: React.Componen
   header: { label: 'Header', Component: HeaderEditor },
   milestoneBar: { label: 'Milestone Bar', Component: MilestoneEditor },
   lineItem: { label: 'Line Item', Component: LineItemEditor },
+  'lineItem.image': { label: 'Product Image', Component: LineItemImageEditor },
+  'lineItem.name': { label: 'Product Name', Component: LineItemNameEditor },
+  'lineItem.quantity': { label: 'Quantity Control', Component: LineItemQuantityEditor },
+  'lineItem.remove': { label: 'Remove Button', Component: LineItemRemoveEditor },
+  'lineItem.price': { label: 'Price', Component: LineItemPriceEditor },
   emptyState: { label: 'Empty State', Component: EmptyStateEditor },
   footer: { label: 'Footer', Component: FooterEditor },
   checkoutButton: { label: 'Checkout Button', Component: CheckoutButtonEditor },
@@ -447,6 +457,56 @@ const ELEMENT_EDITORS: Record<string, { label: string; Component: React.Componen
         addonKey="expressPayments"
         title="Edit the Express Payments addon →"
         description="Apple Pay / Google Pay / Shop Pay buttons are managed in the Addons tab."
+      />
+    ),
+  },
+  'addon.trustBadges': {
+    label: 'Trust Badges',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="trustBadges"
+        title="Edit the Trust Badges addon →"
+        description="Payment / shipping / guarantee badges, layout, and visibility live in the Addons tab."
+      />
+    ),
+  },
+  'addon.shippingProtection': {
+    label: 'Shipping Protection',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="shippingProtection"
+        title="Edit the Shipping Protection addon →"
+        description="Title, price, icon, description, and default-on behavior are managed in the Addons tab."
+      />
+    ),
+  },
+  'addon.scarcityTimer': {
+    label: 'Scarcity Timer',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="scarcityTimer"
+        title="Edit the Scarcity Timer addon →"
+        description="Timer duration, position, text, and styling live in the Addons tab."
+      />
+    ),
+  },
+  'addon.upsellRecommendations': {
+    label: 'Upsell Recommendations',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="upsellRecommendations"
+        title="Edit the Upsell Recommendations addon →"
+        description="Recommended products, layout, and visibility rules live in the Addons tab."
+      />
+    ),
+  },
+  'addon.socialProof': {
+    label: 'Social Proof',
+    Component: () => (
+      <AddonDeepLink
+        addonKey="socialProof"
+        title="Edit the Social Proof addon →"
+        description="Reviews, ratings, recent purchases, and position are managed in the Addons tab."
       />
     ),
   },
@@ -532,7 +592,7 @@ function CartEditorInner() {
           ref={overlayHostRef}
           style={{ flex: 1, position: 'relative', overflow: 'hidden' }}
         >
-          <PreviewCanvas previewState={previewState} viewport={viewport} addons={{}} />
+          <PreviewCanvas previewState={previewState} viewport={viewport} />
           <Overlay hostRef={overlayHostRef} />
         </div>
         <ElementPanel />

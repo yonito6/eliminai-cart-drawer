@@ -250,7 +250,7 @@ function run() {
   });
 
   test('SHIELD-027: Reached milestones have dark background', function() {
-    assertContains(css, '.ccd-progress__icon--reached { background: #111', 'Reached icons must be dark #111');
+    assertContains(css, '.ccd-progress__icon--reached { background: var(--ccd-progress-fill, #111)', 'Reached icons must default to dark #111 (overridable via --ccd-progress-fill)');
   });
 
   test('SHIELD-028: Progress line fills with animation', function() {

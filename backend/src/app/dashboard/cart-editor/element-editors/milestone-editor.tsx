@@ -7,6 +7,7 @@ import React from 'react';
 import { useDraftStore, readField } from '../draft-store';
 import AddonDeepLink from '../addon-deep-link';
 import { ColorInput, Field, Section, Select, Slider, TextInput, Toggle } from './_controls';
+import { CART_DEFAULTS } from '@/lib/cart-editor/defaults';
 
 export default function MilestoneEditor() {
   const { draft, setField } = useDraftStore();
@@ -26,7 +27,7 @@ export default function MilestoneEditor() {
           hint="Variables: {{amount}}, {{tierName}}"
         >
           <TextInput
-            value={get<string>('milestoneBar.preUnlockTemplate')}
+            value={get<string>('milestoneBar.preUnlockTemplate') ?? CART_DEFAULTS.milestoneBar.preUnlockTemplate}
             onChange={(v) => setField('milestoneBar.preUnlockTemplate', v || undefined)}
             placeholder="Spend {{amount}} more for {{tierName}}"
             maxLength={200}
@@ -37,7 +38,7 @@ export default function MilestoneEditor() {
           hint="Shown when the highest tier is reached"
         >
           <TextInput
-            value={get<string>('milestoneBar.unlockedTemplate')}
+            value={get<string>('milestoneBar.unlockedTemplate') ?? CART_DEFAULTS.milestoneBar.unlockedTemplate}
             onChange={(v) => setField('milestoneBar.unlockedTemplate', v || undefined)}
             placeholder="🎉 You've unlocked {{tierName}}!"
             maxLength={200}
@@ -45,7 +46,7 @@ export default function MilestoneEditor() {
         </Field>
         <Field label="Celebration animation">
           <Toggle
-            value={get<boolean>('milestoneBar.celebrationAnim')}
+            value={get<boolean>('milestoneBar.celebrationAnim') ?? CART_DEFAULTS.milestoneBar.celebrationAnim}
             onChange={(v) => setField('milestoneBar.celebrationAnim', v)}
             label="Play a brief animation when a tier unlocks"
           />
@@ -55,19 +56,19 @@ export default function MilestoneEditor() {
       <Section title="Bar appearance">
         <Field label="Fill color">
           <ColorInput
-            value={get<string>('milestoneBar.fillColor')}
+            value={get<string>('milestoneBar.fillColor') ?? CART_DEFAULTS.milestoneBar.fillColor}
             onChange={(v) => setField('milestoneBar.fillColor', v)}
           />
         </Field>
         <Field label="Track color">
           <ColorInput
-            value={get<string>('milestoneBar.trackColor')}
+            value={get<string>('milestoneBar.trackColor') ?? CART_DEFAULTS.milestoneBar.trackColor}
             onChange={(v) => setField('milestoneBar.trackColor', v)}
           />
         </Field>
         <Field label="Bar height">
           <Slider
-            value={get<number>('milestoneBar.height')}
+            value={get<number>('milestoneBar.height') ?? CART_DEFAULTS.milestoneBar.height}
             min={2}
             max={40}
             onChange={(v) => setField('milestoneBar.height', v)}
@@ -76,7 +77,7 @@ export default function MilestoneEditor() {
         </Field>
         <Field label="Position">
           <Select
-            value={get<'top' | 'underHeader' | 'aboveCheckout'>('milestoneBar.position')}
+            value={get<'top' | 'underHeader' | 'aboveCheckout'>('milestoneBar.position') ?? CART_DEFAULTS.milestoneBar.position}
             options={[
               { value: 'top', label: 'Top of drawer' },
               { value: 'underHeader', label: 'Under header' },
@@ -90,7 +91,7 @@ export default function MilestoneEditor() {
       <Section title="Text">
         <Field label="Text size">
           <Slider
-            value={get<number>('milestoneBar.textSize')}
+            value={get<number>('milestoneBar.textSize') ?? CART_DEFAULTS.milestoneBar.textSize}
             min={8}
             max={32}
             step={0.5}
@@ -100,7 +101,7 @@ export default function MilestoneEditor() {
         </Field>
         <Field label="Text weight">
           <Slider
-            value={get<number>('milestoneBar.textWeight')}
+            value={get<number>('milestoneBar.textWeight') ?? CART_DEFAULTS.milestoneBar.textWeight}
             min={100}
             max={900}
             step={100}
