@@ -818,11 +818,11 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     }
   }
 
-  // ── Express Payments — delegated to the shared transform so focused
-  // preview matches the live storefront (v14 CCD.injectExpressPayments):
-  // providers OBJECT, ccd-express* classes, position above/below, layout
-  // stacked/row, separatorLabel. (Fixes the "providers.map is not a
-  // function" crash that came from the old array-based duplicate.)
+  // ── Express Payments — delegated to the shared transform. Native Shopify
+  // wallets can't be rendered without the Shopify SDK, so the preview shows an
+  // honest placeholder note (ccd-express--native) positioned below/above the
+  // checkout button. The live storefront (v14 CCD.injectExpressPayments)
+  // relocates the real #ccd-native-express-host into the same slot.
   if (addonKey === 'expressPayments') {
     cartHtml = applyExpressPayments(cartHtml, addonConfig);
   }

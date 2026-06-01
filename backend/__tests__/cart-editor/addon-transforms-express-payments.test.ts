@@ -1,60 +1,42 @@
 /**
- * BLAST RADIUS MAP — Issue #3: "providers.map is not a function" crash + diverged preview
+ * BLAST RADIUS MAP — Express Checkout Buttons redesign → NATIVE Shopify wallets
  *
- * USER REPORT (2026-06-01): "I enabled the expressPayments and it says:
- *   Dashboard Error / providers.map is not a function"
+ * USER REQUEST (2026-06-01): "redesign the express checkout buttons, only allow
+ *   the ones the user's shop allows (check it) — for me I don't have Shop Pay
+ *   AVAILABLE. They need to be BELOW the checkout button and WITHOUT the OR."
  *
- * ROOT CAUSE:
- *   The dashboard express-payments preview was written against a COMPLETELY
- *   different config shape than the live storefront (v14-complete.js
- *   CCD.injectExpressPayments, the SINGLE SOURCE OF TRUTH):
- *     - live: providers is an OBJECT { shopPay:true, googlePay:true, ... }
- *       (camelCase keys, from addon-definitions.ts defaultConfig)
- *     - dashboard preview/transform: expected an ARRAY of kebab-case strings
- *       ['apple-pay','google-pay','shop-pay'] → `.map` crashes on the object,
- *       and even the transform's Array.isArray fallback renders the WRONG
- *       buttons (default array) ignoring the user's object entirely.
+ * DECISION (user picked "Native Shopify button"):
+ *   Stop rendering FAKE styled buttons (which advertised wallets the shop may
+ *   not have, e.g. Shop Pay). Instead the live storefront renders Shopify's
+ *   REAL dynamic-checkout buttons via Liquid:
+ *     app-embed.liquid → hidden #ccd-native-express-host inside {% form 'cart' %}
+ *       {{ form | payment_button }}                  (Shop Pay — only if enabled)
+ *       {{ content_for_additional_checkout_buttons }} (PayPal/Apple/Google/Amazon)
+ *   Shopify only emits the wallets the shop + device actually support, so the
+ *   "only allow the ones the shop allows" requirement is satisfied natively.
+ *   v14 CCD.injectExpressPayments RELOCATES that hydrated host into the footer
+ *   BELOW the checkout button, no separator.
  *
- * SOURCE OF TRUTH — v14 CCD.injectExpressPayments (extensions/.../v14-complete.js):
- *   _EXPRESS_PROVIDERS = [
- *     {key:'shopPay',  label:'Shop Pay',  bg:'#5a31f4', fg:'#ffffff'},
- *     {key:'googlePay',label:'Google Pay',bg:'#000000', fg:'#ffffff'},
- *     {key:'paypal',   label:'PayPal',    bg:'#ffc439', fg:'#003087'},
- *     {key:'applePay', label:'Apple Pay', bg:'#000000', fg:'#ffffff'},
- *     {key:'amazonPay',label:'Amazon Pay',bg:'#ff9900', fg:'#000000'},
- *     {key:'metaPay',  label:'Meta Pay',  bg:'#0866ff', fg:'#ffffff'}
- *   ]
- *   providers = cfg.providers || {}            (OBJECT, camelCase)
- *   position  = cfg.position==='below'?'below':'above'   (default above)
- *   layout    = cfg.layout==='row'?'row':'stacked'        (default stacked)
- *   separatorLabel = string (default '')
- *   wrap   id=ccd-express-payments  class="ccd-express ccd-express--{position} ccd-express--{layout}"
- *   btnRow class="ccd-express__buttons ccd-express__buttons--{layout}"
- *   btn    class="ccd-express__btn ccd-express__btn--{key}" data-provider=key
- *          style --ccd-ep-bg/--ccd-ep-fg + background:var(--ccd-ep-bg);color:var(--ccd-ep-fg)
- *          textContent = label
- *   sep    class="ccd-express__separator" textContent=separatorLabel
- *   above: footer.insertBefore(wrap, checkoutBtn); insertBefore(sep, checkoutBtn)
- *          → order: wrap, sep, checkoutBtn
- *   below: insert after checkoutBtn → order: checkoutBtn, sep, wrap
- *   NOTE: v14 has NO .ccd-express CSS — styling is inline + class-only.
- *         REAL_CART_CSS must therefore NOT add .ccd-express rules (parity).
+ * TARGET:
+ *   - addon-transforms.ts → applyExpressPayments (dashboard + cart-editor preview)
+ *   - v14-complete.js → CCD.injectExpressPayments (root + extension copies)
+ *   - app-embed.liquid (native host)
  *
- * TARGET: backend/src/app/dashboard/addons/addon-transforms.ts → applyExpressPayments
+ * CALLERS / DUPLICATES (must all agree):
+ *   - addon-preview.tsx ORDER[expressPayments] + focused block → applyExpressPayments
+ *   - cart-editor/preview-renderer.ts → applyExpressPayments
+ *   - express-payments-addon-editor.tsx (config shape: { position })
  *
- * CALLERS / DUPLICATES (all must agree with v14):
- *   - addon-preview.tsx pipeline ORDER[expressPayments] (line ~254) — currently
- *     guarded by Array.isArray(c.providers) → SKIPS object → never renders.
- *   - addon-preview.tsx focused block (line ~818-848) — duplicated diverged copy,
- *     calls providers.map → CRASH on object.
+ * PREVIEW LIMITATION: the dashboard has no Shopify SDK, so the preview CANNOT
+ *   render real wallet buttons. It renders an honest placeholder note instead of
+ *   fake brand buttons. This is MORE faithful than before (the old fake buttons
+ *   showed Shop Pay even when the shop had none).
  *
- * SHARED STATE: Store.config.addons.expressPayments.config (providers object).
- *
- * CROSS-PATH RISK:
- *   - If transform mirrors v14 but preview block keeps its own copy → preview
- *     still crashes. Fix MUST delegate both preview paths to applyExpressPayments.
+ * CROSS-PATH RISK: if v14 keeps building fake buttons but the editor/definitions
+ *   drop providers → divergence. Fix touches all copies + both v14 files.
  */
 
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -69,89 +51,97 @@ function makeCartHtml(): string {
   ].join('');
 }
 
-const DEFAULT_PROVIDERS = {
-  shopPay: true,
-  googlePay: true,
-  paypal: true,
-  applePay: true,
-  amazonPay: false,
-  metaPay: false,
-};
-
-describe('applyExpressPayments — does not crash on object providers (RED for #3)', () => {
-  it('accepts providers as an OBJECT without throwing', () => {
-    expect(() => applyExpressPayments(makeCartHtml(), { providers: DEFAULT_PROVIDERS })).not.toThrow();
+describe('applyExpressPayments — NATIVE preview (no fake brand buttons)', () => {
+  it('does not throw regardless of config', () => {
+    expect(() => applyExpressPayments(makeCartHtml(), {})).not.toThrow();
+    expect(() => applyExpressPayments(makeCartHtml(), { position: 'below' })).not.toThrow();
+    // legacy stored config with providers/separator must be tolerated + ignored
+    expect(() =>
+      applyExpressPayments(makeCartHtml(), {
+        providers: { shopPay: true },
+        separatorLabel: 'or',
+        layout: 'row',
+      }),
+    ).not.toThrow();
   });
 
-  it('renders only the enabled providers as ccd-express__btn--<camelKey>', () => {
-    const out = applyExpressPayments(makeCartHtml(), { providers: DEFAULT_PROVIDERS });
-    // enabled
-    expect(out).toContain('ccd-express__btn--shopPay');
-    expect(out).toContain('ccd-express__btn--googlePay');
-    expect(out).toContain('ccd-express__btn--paypal');
-    expect(out).toContain('ccd-express__btn--applePay');
-    // disabled
-    expect(out).not.toContain('ccd-express__btn--amazonPay');
-    expect(out).not.toContain('ccd-express__btn--metaPay');
-    // never the old kebab-case button shape
-    expect(out).not.toContain('apple-pay');
-    expect(out).not.toContain('google-pay');
-  });
-});
-
-describe('applyExpressPayments — mirrors v14 contract (LOCK)', () => {
-  it('wrap has the ccd-express + position + layout classes (defaults: above + stacked)', () => {
-    const out = applyExpressPayments(makeCartHtml(), { providers: { shopPay: true } });
-    expect(out).toMatch(/id="ccd-express-payments"/);
-    expect(out).toContain('ccd-express ccd-express--above ccd-express--stacked');
-    expect(out).toContain('ccd-express__buttons ccd-express__buttons--stacked');
+  it('renders a native express wrapper, NOT fake per-wallet buttons', () => {
+    const out = applyExpressPayments(makeCartHtml(), { position: 'below' });
+    expect(out).toContain('id="ccd-express-payments"');
+    expect(out).toContain('ccd-express--native');
+    // NO fake brand buttons anymore
+    expect(out).not.toContain('ccd-express__btn--shopPay');
+    expect(out).not.toContain('ccd-express__btn--paypal');
+    expect(out).not.toContain('data-provider=');
   });
 
-  it('row layout reflected in classes', () => {
-    const out = applyExpressPayments(makeCartHtml(), { providers: { shopPay: true }, layout: 'row' });
-    expect(out).toContain('ccd-express--row');
-    expect(out).toContain('ccd-express__buttons--row');
+  it('NEVER renders an "or" separator (user asked to remove it)', () => {
+    const out = applyExpressPayments(makeCartHtml(), { separatorLabel: 'or' });
+    expect(out).not.toContain('ccd-express__separator');
+    expect(out).not.toContain('>or<');
   });
 
-  it('buttons carry data-provider + brand CSS vars + label text', () => {
-    const out = applyExpressPayments(makeCartHtml(), { providers: { shopPay: true } });
-    expect(out).toContain('data-provider="shopPay"');
-    expect(out).toContain('--ccd-ep-bg:#5a31f4');
-    expect(out).toContain('--ccd-ep-fg:#ffffff');
-    expect(out).toContain('background:var(--ccd-ep-bg)');
-    expect(out).toContain('color:var(--ccd-ep-fg)');
-    expect(out).toContain('>Shop Pay<');
-  });
-
-  it('default (no position) places the row ABOVE the checkout button', () => {
-    const out = applyExpressPayments(makeCartHtml(), { providers: { shopPay: true } });
+  it('defaults to BELOW the checkout button', () => {
+    const out = applyExpressPayments(makeCartHtml(), {});
     const wrapIdx = out.indexOf('id="ccd-express-payments"');
     const checkoutIdx = out.indexOf('class="ccd-checkout-btn"');
     expect(wrapIdx).toBeGreaterThan(-1);
-    expect(wrapIdx).toBeLessThan(checkoutIdx);
+    expect(wrapIdx).toBeGreaterThan(checkoutIdx);
+    expect(out).toContain('ccd-express--below');
   });
 
-  it('position="below" places the row AFTER the checkout button', () => {
-    const out = applyExpressPayments(makeCartHtml(), { providers: { shopPay: true }, position: 'below' });
+  it('honors position="above" if explicitly stored', () => {
+    const out = applyExpressPayments(makeCartHtml(), { position: 'above' });
     const wrapIdx = out.indexOf('id="ccd-express-payments"');
     const checkoutIdx = out.indexOf('class="ccd-checkout-btn"');
-    expect(wrapIdx).toBeGreaterThan(checkoutIdx);
+    expect(wrapIdx).toBeLessThan(checkoutIdx);
+    expect(out).toContain('ccd-express--above');
   });
 
-  it('separatorLabel renders a ccd-express__separator with the label', () => {
-    const out = applyExpressPayments(makeCartHtml(), { providers: { shopPay: true }, separatorLabel: 'or' });
-    expect(out).toContain('ccd-express__separator');
-    expect(out).toContain('>or<');
+  it('is idempotent — re-applying does not stack wrappers', () => {
+    let out = applyExpressPayments(makeCartHtml(), { position: 'below' });
+    out = applyExpressPayments(out, { position: 'below' });
+    const matches = out.match(/id="ccd-express-payments"/g) || [];
+    expect(matches.length).toBe(1);
   });
 
-  it('no separator element when separatorLabel is empty', () => {
-    const out = applyExpressPayments(makeCartHtml(), { providers: { shopPay: true }, separatorLabel: '' });
-    expect(out).not.toContain('ccd-express__separator');
-  });
-
-  it('renders nothing when no providers are enabled', () => {
-    const out = applyExpressPayments(makeCartHtml(), { providers: { shopPay: false } });
+  it('no-op when there is no checkout button', () => {
+    const out = applyExpressPayments('<div class="ccd-sticky-footer"></div>', { position: 'below' });
     expect(out).not.toContain('ccd-express-payments');
+  });
+});
+
+describe('v14 CCD.injectExpressPayments — NATIVE relocation contract (LOCK)', () => {
+  const v14 = readFileSync(
+    resolve(__dirname, '../../../extensions/cart-drawer/assets/v14-complete.js'),
+    'utf8',
+  );
+
+  it('relocates the native host instead of building fake provider buttons', () => {
+    expect(v14).toContain('ccd-native-express-host');
+    // the fake provider catalogue must be gone
+    expect(v14).not.toContain('_EXPRESS_PROVIDERS');
+  });
+
+  it('does not redirect to /checkout?payment= (fake button behavior removed)', () => {
+    expect(v14).not.toContain('/checkout?payment=');
+  });
+
+  it('marks the relocated wrapper as native', () => {
+    expect(v14).toContain('ccd-express--native');
+  });
+});
+
+describe('app-embed.liquid — native host rendered from Liquid', () => {
+  const embed = readFileSync(
+    resolve(__dirname, '../../../extensions/cart-drawer/blocks/app-embed.liquid'),
+    'utf8',
+  );
+
+  it('renders the native host inside a cart form', () => {
+    expect(embed).toContain('ccd-native-express-host');
+    expect(embed).toContain('content_for_additional_checkout_buttons');
+    expect(embed).toMatch(/form ['"]cart['"]/);
   });
 });
 
@@ -161,7 +151,6 @@ describe('CSS parity — REAL_CART_CSS must NOT add .ccd-express rules (v14 has 
       resolve(__dirname, '../../../extensions/cart-drawer/assets/v14-complete.js'),
       'utf8',
     );
-    // .ccd-express appears only inside JS (className assignment), never as a CSS rule
     expect(v14).not.toMatch(/\.ccd-express\s*\{/);
     expect(v14).not.toMatch(/\.ccd-express__btn\s*\{/);
   });

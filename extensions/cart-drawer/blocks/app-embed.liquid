@@ -36,6 +36,22 @@ cart-drawer .drawer__inner, cart-drawer .drawer__header, cart-drawer .drawer__co
 }
 </style>
 
+{% comment %}
+  Native express-wallet host. Shopify renders ONLY the dynamic-checkout
+  wallets this shop + device actually support (Shop Pay via payment_button,
+  plus PayPal/Apple Pay/Google Pay/Amazon via content_for_additional_checkout_buttons).
+  Kept hidden here; v14-complete.js (CCD.injectExpressPayments) relocates this
+  node into the cart-drawer footer below the checkout button when the
+  Express Checkout Buttons addon is enabled. If the shop has no express wallets
+  enabled, this stays empty and nothing is shown.
+{% endcomment %}
+<div id="ccd-native-express-host" hidden aria-hidden="true" style="display:none">
+  {% form 'cart', cart %}
+    {{ form | payment_button }}
+    {% if additional_checkout_buttons %}{{ content_for_additional_checkout_buttons }}{% endif %}
+  {% endform %}
+</div>
+
 <script>
 (function() {
   if (window.__eliminai_cart_loaded) return;

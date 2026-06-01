@@ -537,82 +537,54 @@ export function applySocialProof(
   );
 }
 
-// ── Express Payments ──────────────────────────────────────────────
+// ── Express Payments — NATIVE Shopify wallets ─────────────────────
 // Mirrors CCD.injectExpressPayments in v14-complete.js (SINGLE SOURCE OF
-// TRUTH). The live storefront reads `providers` as an OBJECT of camelCase
-// keys (from addon-definitions.ts defaultConfig) — NOT an array — so this
-// transform must do the same or the dashboard preview crashes / diverges.
-//   wrap   id=ccd-express-payments  class="ccd-express ccd-express--{pos} ccd-express--{layout}"
-//   btnRow class="ccd-express__buttons ccd-express__buttons--{layout}"
-//   btn    class="ccd-express__btn ccd-express__btn--{key}" data-provider=key
-//          inline --ccd-ep-bg/--ccd-ep-fg + background/color via those vars
-//   sep    class="ccd-express__separator"
-//   above (default): wrap + sep before .ccd-checkout-btn
-//   below:           sep + wrap after the checkout button (before .ccd-trust)
-// NOTE: v14 styles these inline + by class only — there is intentionally NO
-// .ccd-express CSS, so REAL_CART_CSS must not add any (parity).
-const EXPRESS_PROVIDERS: Array<{ key: string; label: string; bg: string; fg: string }> = [
-  { key: 'shopPay', label: 'Shop Pay', bg: '#5a31f4', fg: '#ffffff' },
-  { key: 'googlePay', label: 'Google Pay', bg: '#000000', fg: '#ffffff' },
-  { key: 'paypal', label: 'PayPal', bg: '#ffc439', fg: '#003087' },
-  { key: 'applePay', label: 'Apple Pay', bg: '#000000', fg: '#ffffff' },
-  { key: 'amazonPay', label: 'Amazon Pay', bg: '#ff9900', fg: '#000000' },
-  { key: 'metaPay', label: 'Meta Pay', bg: '#0866ff', fg: '#ffffff' },
-];
-
+// TRUTH). The live storefront does NOT render fake brand buttons anymore —
+// Shopify's real dynamic-checkout buttons (Shop Pay payment_button +
+// content_for_additional_checkout_buttons) are rendered as a hidden host by
+// app-embed.liquid and RELOCATED into the footer by v14. Shopify only emits
+// the wallets the shop + device actually support, so we never advertise a
+// wallet the merchant hasn't enabled (e.g. Shop Pay when it's off).
+//
+// The dashboard/cart-editor preview has NO Shopify SDK, so it cannot render
+// real wallets. It shows an honest placeholder note instead of fake buttons —
+// strictly more faithful than the old behavior (which showed Shop Pay even for
+// stores without it). No "OR" separator. Default position = BELOW the checkout
+// button. Legacy stored config (providers / layout / separatorLabel) is ignored.
+//   wrap  id=ccd-express-payments  class="ccd-express ccd-express--{pos} ccd-express--native"
+//   above: wrap before .ccd-checkout-btn ; below (default): wrap before .ccd-trust / appended
+// NOTE: v14 styles these by class only — REAL_CART_CSS must not add .ccd-express
+// rules (parity).
 export function applyExpressPayments(html: string, config: Record<string, any>): string {
   if (!html.includes('class="ccd-checkout-btn"')) return html;
-  // Idempotent: strip any previously injected row.
+  // Idempotent: strip any previously injected row + any legacy separator.
   html = html.replace(/<div id="ccd-express-payments"[\s\S]*?<\/div>\s*<\/div>/, '');
   html = html.replace(/<div class="ccd-express__separator">[\s\S]*?<\/div>/, '');
 
-  // providers is an OBJECT { shopPay:true, ... } in the live cart. Tolerate a
-  // legacy array of camelCase keys too (defensive), but never an array of
-  // kebab-case strings.
-  const rawProviders = config.providers;
-  const isEnabled = (key: string): boolean =>
-    Array.isArray(rawProviders)
-      ? rawProviders.includes(key)
-      : !!(rawProviders && rawProviders[key]);
+  const position = config.position === 'above' ? 'above' : 'below';
 
-  const position = config.position === 'below' ? 'below' : 'above';
-  const layout = config.layout === 'row' ? 'row' : 'stacked';
-  const separatorLabel = typeof config.separatorLabel === 'string' ? config.separatorLabel : '';
-
-  const enabled = EXPRESS_PROVIDERS.filter((p) => isEnabled(p.key));
-  if (!enabled.length) return html;
-
-  const buttons = enabled
-    .map((p) =>
-      `<button type="button" class="ccd-express__btn ccd-express__btn--${p.key}" data-provider="${p.key}"`
-      + ` style="--ccd-ep-bg:${p.bg};--ccd-ep-fg:${p.fg};background:var(--ccd-ep-bg);color:var(--ccd-ep-fg)">`
-      + `${ccdEscape(p.label)}</button>`,
-    )
-    .join('');
-
+  const note =
+    'Your store&rsquo;s real express wallets (Shop Pay, Apple Pay, PayPal, Google Pay&hellip;) '
+    + 'appear here on your live storefront &mdash; only the ones your Shopify checkout supports.';
   const wrap =
-    `<div id="ccd-express-payments" class="ccd-express ccd-express--${position} ccd-express--${layout}">`
-    + `<div class="ccd-express__buttons ccd-express__buttons--${layout}">${buttons}</div>`
+    `<div id="ccd-express-payments" class="ccd-express ccd-express--${position} ccd-express--native">`
+    + `<div class="ccd-express__native-note">${note}</div>`
     + `</div>`;
-  const sep = separatorLabel
-    ? `<div class="ccd-express__separator">${ccdEscape(separatorLabel)}</div>`
-    : '';
 
   if (position === 'above') {
-    // v14: insertBefore(wrap) then insertBefore(sep) → order wrap, sep, checkoutBtn
     if (/<button type="button" class="ccd-checkout-btn"/.test(html)) {
       return html.replace(
         /<button type="button" class="ccd-checkout-btn"/,
-        wrap + sep + '<button type="button" class="ccd-checkout-btn"',
+        wrap + '<button type="button" class="ccd-checkout-btn"',
       );
     }
-    return html.replace(/<button[^>]*class="ccd-checkout-btn"/, wrap + sep + '$&');
+    return html.replace(/<button[^>]*class="ccd-checkout-btn"/, wrap + '$&');
   }
-  // below — after the checkout button. v14 order: checkoutBtn, sep, wrap.
+  // below (default) — after the checkout button, before the trust line if present.
   if (/<div class="ccd-trust"/.test(html)) {
-    return html.replace(/(<div class="ccd-trust")/, sep + wrap + '$1');
+    return html.replace(/(<div class="ccd-trust")/, wrap + '$1');
   }
-  return html.replace(/<\/button>\s*(?=<\/div>)/, '</button>' + sep + wrap);
+  return html.replace(/<\/button>\s*(?=<\/div>)/, '</button>' + wrap);
 }
 
 // ── Low Stock Badge: per-item "Only N left!" badge + optional ATC block ─

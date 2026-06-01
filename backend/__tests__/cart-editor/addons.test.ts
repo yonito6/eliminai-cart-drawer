@@ -175,55 +175,28 @@ describe('ADDON_DEFINITIONS — expressPayments addon', () => {
     expect(def()).toBeDefined();
   });
 
-  it('has dimensions: providers, position, layout, separatorLabel', () => {
+  it('NATIVE: only dimension is position (providers/layout/separator removed)', () => {
     const keys = def().dimensions.map((d) => d.key);
-    expect(keys).toEqual(['providers', 'position', 'layout', 'separatorLabel']);
+    expect(keys).toEqual(['position']);
+    // legacy fake-button dimensions must be gone
+    expect(keys).not.toContain('providers');
+    expect(keys).not.toContain('layout');
+    expect(keys).not.toContain('separatorLabel');
   });
 
-  it('providers dimension is checkboxes with 6 providers', () => {
-    const dim = def().dimensions.find((d) => d.key === 'providers')!;
-    expect(dim.type).toBe('checkboxes');
-    const optionValues = dim.checkboxOptions!.map((o) => o.value);
-    expect(optionValues).toEqual([
-      'shopPay',
-      'googlePay',
-      'paypal',
-      'applePay',
-      'amazonPay',
-      'metaPay',
-    ]);
-  });
-
-  it('providers default has shopPay/googlePay/paypal/applePay true, amazonPay/metaPay false', () => {
-    const dim = def().dimensions.find((d) => d.key === 'providers')!;
-    expect(dim.default).toEqual({
-      shopPay: true,
-      googlePay: true,
-      paypal: true,
-      applePay: true,
-      amazonPay: false,
-      metaPay: false,
-    });
-  });
-
-  it('position options above/below, default above', () => {
+  it('position options below/above, default below', () => {
     const dim = def().dimensions.find((d) => d.key === 'position')!;
-    expect(dim.options?.map((o) => o.value)).toEqual(['above', 'below']);
-    expect(dim.default).toBe('above');
+    expect(dim.options?.map((o) => o.value)).toEqual(['below', 'above']);
+    expect(dim.default).toBe('below');
   });
 
-  it('layout options stacked/row, default stacked', () => {
-    const dim = def().dimensions.find((d) => d.key === 'layout')!;
-    expect(dim.options?.map((o) => o.value)).toEqual(['stacked', 'row']);
-    expect(dim.default).toBe('stacked');
-  });
-
-  it('defaultConfig enabled:true (only addon that is on by default), separatorLabel "or"', () => {
+  it('defaultConfig enabled:true (on by default), position below, NO providers/layout/separator', () => {
     const cfg = def().defaultConfig;
     expect(cfg.enabled).toBe(true);
-    expect(cfg.separatorLabel).toBe('or');
-    expect(cfg.position).toBe('above');
-    expect(cfg.layout).toBe('stacked');
+    expect(cfg.position).toBe('below');
+    expect(cfg.separatorLabel).toBeUndefined();
+    expect(cfg.layout).toBeUndefined();
+    expect(cfg.providers).toBeUndefined();
   });
 });
 
