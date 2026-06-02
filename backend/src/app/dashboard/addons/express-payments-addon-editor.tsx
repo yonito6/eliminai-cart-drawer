@@ -4,7 +4,15 @@ import React, { useState, useRef, useEffect } from 'react';
 
 interface ExpressPaymentsConfig {
   position?: 'above' | 'below';
+  hiddenWallets?: string[];
 }
+
+const WALLETS: Array<{ key: string; label: string }> = [
+  { key: 'shopPay', label: 'Shop Pay' },
+  { key: 'applePay', label: 'Apple Pay' },
+  { key: 'googlePay', label: 'Google Pay' },
+  { key: 'paypal', label: 'PayPal' },
+];
 
 export interface ExpressPaymentsAddonEditorProps {
   config: ExpressPaymentsConfig;
@@ -41,6 +49,9 @@ export default function ExpressPaymentsAddonEditor({
   onSave,
 }: ExpressPaymentsAddonEditorProps) {
   const [position, setPosition] = useState<'above' | 'below'>(config.position ?? 'below');
+  const [hiddenWallets, setHiddenWallets] = useState<string[]>(
+    Array.isArray(config.hiddenWallets) ? config.hiddenWallets : [],
+  );
 
   const savedRef = useRef<string>('');
   const [isDirty, setIsDirty] = useState(false);
@@ -49,7 +60,18 @@ export default function ExpressPaymentsAddonEditor({
   function buildPayload(overrides: Record<string, any> = {}) {
     return {
       position: overrides.position ?? position,
+      hiddenWallets: overrides.hiddenWallets ?? hiddenWallets,
     };
+  }
+
+  function toggleWallet(key: string, show: boolean) {
+    const next = show
+      ? hiddenWallets.filter((k) => k !== key)
+      : hiddenWallets.includes(key)
+        ? hiddenWallets
+        : [...hiddenWallets, key];
+    setHiddenWallets(next);
+    pushPreview({ hiddenWallets: next });
   }
 
   useEffect(() => {
@@ -75,6 +97,7 @@ export default function ExpressPaymentsAddonEditor({
   const handleDiscard = () => {
     const saved = JSON.parse(savedRef.current) as ExpressPaymentsConfig;
     setPosition(saved.position ?? 'below');
+    setHiddenWallets(Array.isArray(saved.hiddenWallets) ? saved.hiddenWallets : []);
     onPreviewChange(saved);
     setIsDirty(false);
   };
@@ -95,8 +118,48 @@ export default function ExpressPaymentsAddonEditor({
       >
         Express wallets are rendered by Shopify natively — only the ones your
         store&rsquo;s checkout actually supports appear (e.g. Shop Pay, Apple Pay,
-        PayPal, Google Pay). There&rsquo;s nothing to toggle: if your shop
-        doesn&rsquo;t offer a wallet, it never shows.
+        PayPal, Google Pay). Use the toggles below to hide a specific wallet from
+        the cart even when your checkout offers it.
+      </div>
+
+      {/* Per-wallet Show/Hide */}
+      <div>
+        <label style={labelStyle}>Wallets to show</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {WALLETS.map((w) => {
+            const shown = !hiddenWallets.includes(w.key);
+            return (
+              <label
+                key={w.key}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: GRAY_TEXT, cursor: 'pointer' }}
+              >
+                <input
+                  type="checkbox"
+                  checked={shown}
+                  onChange={(e) => toggleWallet(w.key, e.target.checked)}
+                />
+                {w.label}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* PayPal caveat */}
+      <div
+        style={{
+          padding: 10,
+          background: '#fffbeb',
+          border: '1px solid #fde68a',
+          borderRadius: 8,
+          fontSize: 12,
+          lineHeight: 1.5,
+          color: '#92400e',
+        }}
+      >
+        Heads up: PayPal renders inside its own iframe. We hide its container, which
+        works in most themes, but PayPal can occasionally resist being hidden by
+        CSS. If it still shows after hiding, it&rsquo;s the iframe — let us know.
       </div>
 
       {/* Position */}

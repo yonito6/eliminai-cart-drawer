@@ -5568,6 +5568,36 @@
       if (host.parentNode !== wrap) wrap.appendChild(host);
     }
 
+    // Per-wallet hide toggles (cfg.hiddenWallets). The shop owner may use Stripe
+    // (not Shopify Payments) and thus can't drop wallets server-side, so we hide
+    // them client-side with display:none CSS scoped to the native host. These are
+    // best-effort selectors — Shopify's wallet markup is not a stable contract.
+    // CAVEAT: PayPal renders inside a cross-origin iframe; we can only hide its
+    // container element (.paypal-buttons), not anything inside the iframe.
+    var WALLET_SELECTORS = {
+      shopPay:   ['shop-pay-button', '[aria-label*="Shop Pay" i]'],
+      applePay:  ['[aria-label*="Apple Pay" i]', '.shopify-payment-button__button--apple-pay', '.apple-pay'],
+      googlePay: ['[aria-label*="Google Pay" i]', 'google-pay-button', '.google-pay'],
+      paypal:    ['[aria-label*="PayPal" i]', '.paypal-buttons', '[data-funding-source="paypal"]']
+    };
+    var hiddenWallets = Array.isArray(cfg.hiddenWallets) ? cfg.hiddenWallets : [];
+    var hideCss = '';
+    for (var hw = 0; hw < hiddenWallets.length; hw++) {
+      var sels = WALLET_SELECTORS[hiddenWallets[hw]];
+      if (!sels) continue;
+      var scoped = [];
+      for (var s = 0; s < sels.length; s++) scoped.push('#ccd-native-express-host ' + sels[s]);
+      hideCss += scoped.join(',') + '{display:none !important;}';
+    }
+    var hideStyle = document.getElementById('ccd-express-hide-style');
+    if (hideCss) {
+      if (!hideStyle) { hideStyle = document.createElement('style'); hideStyle.id = 'ccd-express-hide-style'; }
+      hideStyle.textContent = hideCss;
+      wrap.appendChild(hideStyle);
+    } else if (hideStyle && hideStyle.parentNode) {
+      hideStyle.parentNode.removeChild(hideStyle);
+    }
+
     if (position === 'above') {
       if (wrap.parentNode !== footer || wrap.nextSibling !== checkoutBtn) {
         footer.insertBefore(wrap, checkoutBtn);

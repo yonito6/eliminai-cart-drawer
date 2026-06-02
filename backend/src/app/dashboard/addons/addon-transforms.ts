@@ -593,16 +593,21 @@ export function applyExpressPayments(html: string, config: Record<string, any>):
   // PREVIEW-ONLY representative wallet buttons. Inline-styled (no CSS classes)
   // so v14/REAL_CART_CSS parity holds. Live storefront renders the real native
   // wallets via v14 — these are illustrative only.
-  const wallets: Array<{ label: string; bg: string; fg: string; border?: string }> = [
-    { label: 'Shop Pay', bg: '#5a31f4', fg: '#ffffff' },
-    { label: 'PayPal', bg: '#ffc439', fg: '#003087' },
-    { label: 'Apple Pay', bg: '#000000', fg: '#ffffff' },
-    { label: 'Google Pay', bg: '#ffffff', fg: '#3c4043', border: '#dadce0' },
+  const wallets: Array<{ key: string; label: string; bg: string; fg: string; border?: string }> = [
+    { key: 'shopPay', label: 'Shop Pay', bg: '#5a31f4', fg: '#ffffff' },
+    { key: 'paypal', label: 'PayPal', bg: '#ffc439', fg: '#003087' },
+    { key: 'applePay', label: 'Apple Pay', bg: '#000000', fg: '#ffffff' },
+    { key: 'googlePay', label: 'Google Pay', bg: '#ffffff', fg: '#3c4043', border: '#dadce0' },
   ];
+  // Per-wallet hide toggles. Merchants on Stripe (not Shopify Payments) can't
+  // control the wallet set server-side, so hidden wallets are dropped here in the
+  // preview and hidden via scoped CSS on the live storefront (v14).
+  const hidden = Array.isArray(config.hiddenWallets) ? config.hiddenWallets : [];
   const btns = wallets
+    .filter((w) => !hidden.includes(w.key))
     .map(
       (w) =>
-        `<div class="ccd-express__example" style="width:100%;height:46px;display:flex;`
+        `<div class="ccd-express__example" data-wallet="${w.key}" style="width:100%;height:46px;display:flex;`
         + `align-items:center;justify-content:center;background:${w.bg};color:${w.fg};`
         + `border-radius:6px;font-size:14px;font-weight:600;`
         + (w.border ? `border:1px solid ${w.border};` : '')
