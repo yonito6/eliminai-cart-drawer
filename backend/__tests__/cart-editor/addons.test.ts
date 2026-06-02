@@ -190,9 +190,9 @@ describe('ADDON_DEFINITIONS — expressPayments addon', () => {
     expect(dim.default).toBe('below');
   });
 
-  it('defaultConfig enabled:true (on by default), position below, NO providers/layout/separator', () => {
+  it('defaultConfig enabled:false (off by default per tenant), position below, NO providers/layout/separator', () => {
     const cfg = def().defaultConfig;
-    expect(cfg.enabled).toBe(true);
+    expect(cfg.enabled).toBe(false);
     expect(cfg.position).toBe('below');
     expect(cfg.separatorLabel).toBeUndefined();
     expect(cfg.layout).toBeUndefined();

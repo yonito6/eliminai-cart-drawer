@@ -603,7 +603,7 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
       },
     ],
     defaultConfig: {
-      enabled: true,
+      enabled: false,
       position: 'below',
     },
   },

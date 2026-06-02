@@ -5566,52 +5566,27 @@
       host.removeAttribute('aria-hidden');
       host.style.display = '';
       if (host.parentNode !== wrap) wrap.appendChild(host);
-      // Native wallet web components (Google/Apple Pay) size themselves internally
-      // (button-size-mode), not via container CSS — nudge them to fill the width so
-      // a lone remaining button isn't left at its default ~240px static size.
-      try {
-        var gp = host.querySelectorAll('google-pay-button');
-        for (var g = 0; g < gp.length; g++) { gp[g].setAttribute('button-size-mode', 'fill'); gp[g].style.width = '100%'; gp[g].style.display = 'block'; }
-        var ap = host.querySelectorAll('apple-pay-button');
-        for (var a = 0; a < ap.length; a++) { ap[a].style.setProperty('--apple-pay-button-width', '100%'); ap[a].style.width = '100%'; ap[a].style.display = 'block'; }
-      } catch (e) {}
     }
 
-    // Per-wallet hide toggles (cfg.hiddenWallets). The shop owner may use Stripe
-    // (not Shopify Payments) and thus can't drop wallets server-side, so we hide
-    // them client-side with display:none CSS scoped to the native host. These are
-    // best-effort selectors — Shopify's wallet markup is not a stable contract.
-    // CAVEAT: PayPal renders inside a cross-origin iframe; we can only hide its
-    // container element (.paypal-buttons), not anything inside the iframe.
-    var WALLET_SELECTORS = {
-      shopPay:   ['shop-pay-button', '[aria-label*="Shop Pay" i]'],
-      applePay:  ['[aria-label*="Apple Pay" i]', '.shopify-payment-button__button--apple-pay', '.apple-pay'],
-      googlePay: ['[aria-label*="Google Pay" i]', 'google-pay-button', '.google-pay'],
-      paypal:    ['[aria-label*="PayPal" i]', '.paypal-buttons', '[data-funding-source="paypal"]']
-    };
+    // Per-wallet hide (cfg.hiddenWallets). ONLY PayPal is reachable: it renders as
+    // a light-DOM <shopify-paypal-button> element, so we can hide it with scoped
+    // CSS. Apple Pay, Google Pay and Shop Pay are rendered INSIDE Shopify's
+    // <shopify-accelerated-checkout-cart> CLOSED shadow root and CANNOT be hidden
+    // or restyled by this app — those are managed in Shopify checkout settings.
+    // (Verified 2026-06-02 against the live storefront DOM: queries for the
+    // Google/Apple Pay custom elements return empty, the shadow root is closed.)
     var hiddenWallets = Array.isArray(cfg.hiddenWallets) ? cfg.hiddenWallets : [];
     var hideCss = '';
-    for (var hw = 0; hw < hiddenWallets.length; hw++) {
-      var sels = WALLET_SELECTORS[hiddenWallets[hw]];
-      if (!sels) continue;
-      var scoped = [];
-      for (var s = 0; s < sels.length; s++) scoped.push('#ccd-native-express-host ' + sels[s]);
-      hideCss += scoped.join(',') + '{display:none !important;}';
+    if (hiddenWallets.indexOf('paypal') !== -1) {
+      hideCss = '#ccd-native-express-host shopify-paypal-button{display:none !important;}';
     }
-    // Base layout: normalize the native wallets to full-width, stacked, so that
-    // when wallets are hidden the remaining buttons stretch to fill the cart width
-    // instead of leaving a gap. Best-effort across Shopify dynamic-checkout markup.
+    // Stack the reachable light-DOM wallets full-width.
     var baseCss =
       '#ccd-native-express-host{display:flex;flex-direction:column;gap:8px;width:100%;}'
       + '#ccd-native-express-host>*,'
-      + '#ccd-native-express-host .shopify-payment-button,'
-      + '#ccd-native-express-host .additional-checkout-buttons,'
-      + '#ccd-native-express-host .additional-checkout-button,'
-      + '#ccd-native-express-host [data-shopify="dynamic-checkout-cart"],'
-      + '#ccd-native-express-host .dynamic-checkout__content'
-      + '{width:100% !important;max-width:100% !important;margin-left:0 !important;margin-right:0 !important;}'
-      + '#ccd-native-express-host .additional-checkout-buttons ul{display:flex !important;flex-direction:column !important;gap:8px !important;width:100% !important;margin:0 !important;padding:0 !important;list-style:none !important;}'
-      + '#ccd-native-express-host .additional-checkout-buttons li{width:100% !important;}';
+      + '#ccd-native-express-host .dynamic-checkout__content,'
+      + '#ccd-native-express-host shopify-paypal-button'
+      + '{width:100% !important;max-width:100% !important;margin-left:0 !important;margin-right:0 !important;}';
     var hideStyle = document.getElementById('ccd-express-hide-style');
     if (!hideStyle) { hideStyle = document.createElement('style'); hideStyle.id = 'ccd-express-hide-style'; }
     hideStyle.textContent = baseCss + hideCss;

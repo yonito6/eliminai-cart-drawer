@@ -7,10 +7,11 @@ interface ExpressPaymentsConfig {
   hiddenWallets?: string[];
 }
 
+// Only PayPal can be controlled by this app. Apple Pay, Google Pay and Shop Pay
+// are rendered inside Shopify's <shopify-accelerated-checkout-cart> closed shadow
+// root and are unreachable from the storefront — those are managed in Shopify
+// checkout settings, not here.
 const WALLETS: Array<{ key: string; label: string }> = [
-  { key: 'shopPay', label: 'Shop Pay' },
-  { key: 'applePay', label: 'Apple Pay' },
-  { key: 'googlePay', label: 'Google Pay' },
   { key: 'paypal', label: 'PayPal' },
 ];
 
@@ -116,15 +117,15 @@ export default function ExpressPaymentsAddonEditor({
           color: '#4c1d95',
         }}
       >
-        Express wallets are rendered by Shopify natively — only the ones your
-        store&rsquo;s checkout actually supports appear (e.g. Shop Pay, Apple Pay,
-        PayPal, Google Pay). Use the toggles below to hide a specific wallet from
-        the cart even when your checkout offers it.
+        Express wallets are rendered by Shopify natively. Apple Pay, Google Pay and
+        Shop Pay live inside Shopify&rsquo;s sealed checkout component and can only
+        be turned on/off in your Shopify checkout settings &mdash; not here. PayPal
+        is the one wallet this app can hide directly, with the toggle below.
       </div>
 
-      {/* Per-wallet Show/Hide */}
+      {/* PayPal Show/Hide */}
       <div>
-        <label style={labelStyle}>Wallets to show</label>
+        <label style={labelStyle}>PayPal button</label>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {WALLETS.map((w) => {
             const shown = !hiddenWallets.includes(w.key);

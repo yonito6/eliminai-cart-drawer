@@ -243,35 +243,43 @@ describe('CSS — no FAKE-button styling, but wrapper carries spacing so it does
 /**
  * BLAST RADIUS MAP — per-wallet HIDE toggles (config.hiddenWallets)
  *
- * USER REQUEST (2026-06-02): merchant uses STRIPE (not Shopify Payments) so the
- *   wallet set cannot be controlled server-side. Add Show/Hide checkboxes per
- *   wallet (Shop Pay / Apple Pay / Google Pay / PayPal). Hidden wallets stored in
- *   config.hiddenWallets:string[] using camelCase keys
- *   ('shopPay'|'applePay'|'googlePay'|'paypal').
+ * REVISED 2026-06-02 after verifying the LIVE storefront DOM (headless-Chrome CDP
+ * dump + the merchant's own signed-in console dump):
+ *   - Apple Pay, Google Pay and Shop Pay are rendered by Shopify's
+ *     <shopify-accelerated-checkout-cart> web component, whose shadow root is
+ *     CLOSED (shadowOpen:false, two instances). document.querySelectorAll for
+ *     google-pay-button / apple-pay-button returns []. They are UNREACHABLE from
+ *     light DOM — this app CANNOT hide or restyle them. (Manage via Shopify
+ *     checkout settings.)
+ *   - PayPal is the ONLY reachable wallet: it renders as a light-DOM
+ *     <shopify-paypal-button> element, so it CAN be hidden with scoped CSS. Its
+ *     button is in a cross-origin paypal.com iframe that sizes to its container.
  *
- * TARGET / PATHS (all must agree):
- *   - addon-transforms.ts applyExpressPayments — PREVIEW: tag each example button
- *       with data-wallet and DROP the ones in hiddenWallets so the merchant sees
- *       the effect.
+ * Therefore the honest feature: the editor offers ONE working toggle (PayPal);
+ *   the live v14 hide CSS targets <shopify-paypal-button> only. The dead 4-wallet
+ *   selectors + the google-pay-button/button-size-mode "stretch" nudge are REMOVED
+ *   (they targeted light-DOM elements that don't exist → no-ops).
+ *
+ * TARGET / PATHS (must agree):
+ *   - addon-transforms.ts applyExpressPayments — PREVIEW: still renders all four
+ *       representative example buttons (the storefront DOES show them) and filters
+ *       by hiddenWallets generically; only 'paypal' is ever written now.
  *   - v14-complete.js CCD.injectExpressPayments (root + extension copies) — LIVE:
- *       inject a <style id="ccd-express-hide-style"> with display:none!important
- *       rules scoped to #ccd-native-express-host for each hidden wallet
- *       (best-effort selectors).
- *   - express-payments-addon-editor.tsx — UI: 4 Show/Hide checkboxes →
+ *       <style id="ccd-express-hide-style"> hides #ccd-native-express-host
+ *       shopify-paypal-button when paypal is hidden; base CSS stacks reachable
+ *       light-DOM wallets full-width.
+ *   - express-payments-addon-editor.tsx — UI: a single PayPal Show/Hide toggle →
  *       config.hiddenWallets; buildPayload MUST include hiddenWallets.
  *
  * PERSISTENCE: addons route merges config as freeform JSON (no schema strip), so
  *   hiddenWallets survives. page.tsx express wiring is generic. No change there.
  *
  * CROSS-PATH RISK:
- *   - preview drops buttons / live hides via CSS — different mechanisms, same
- *     config. Lock both.
+ *   - preview filters / live hides via CSS — same config key. Lock both.
  *   - two v14 copies must carry IDENTICAL hide logic (lock equivalence).
- *   - PAYPAL CAVEAT: PayPal renders inside a cross-origin iframe. We can only hide
- *     its container element from the parent page; if PayPal's wrapper isn't one of
- *     our selectors, CSS cannot reach inside the iframe. Editor must warn the user.
  */
 
+// Preview still mocks all four representative buttons.
 const WALLET_KEYS = ['shopPay', 'applePay', 'googlePay', 'paypal'] as const;
 
 describe('applyExpressPayments — per-wallet HIDE toggles (hiddenWallets)', () => {
@@ -338,33 +346,40 @@ describe('v14 CCD.injectExpressPayments — per-wallet hide CSS (hiddenWallets)'
     expect(extV14).toMatch(/display\s*:\s*none\s*!important/);
   });
 
-  it('RED: has best-effort selectors for each wallet (incl. PayPal iframe container)', () => {
-    expect(extV14).toContain('shop-pay-button');
-    expect(extV14).toContain('Apple Pay');
-    expect(extV14).toContain('Google Pay');
-    expect(extV14).toContain('PayPal');
-    // PayPal lives in a cross-origin iframe — we target its container instead.
-    expect(extV14).toContain('paypal-buttons');
+  it('targets ONLY the reachable PayPal element (<shopify-paypal-button>)', () => {
+    // PayPal is the only wallet that exists in light DOM, so it's the only one we
+    // can hide. The hide CSS must target shopify-paypal-button scoped to the host.
+    expect(extV14).toContain('shopify-paypal-button');
+    expect(extV14).toMatch(/#ccd-native-express-host shopify-paypal-button\s*\{[^}]*display\s*:\s*none/);
   });
 
-  it('RED: normalizes native wallets to full-width so remaining buttons stretch when others are hidden', () => {
-    // When a wallet is hidden the remaining native buttons must grow to fill the
-    // cart width (no leftover gap). We force the native containers full-width and
-    // stack them, scoped to the host. Best-effort across Shopify wallet markup.
-    expect(extV14).toContain('additional-checkout-buttons');
+  it('does NOT ship the dead light-DOM selectors / button-size-mode nudge (closed shadow DOM)', () => {
+    // Apple/Google/Shop Pay live in Shopify's CLOSED accelerated-checkout shadow
+    // root — selectors targeting them never matched. They must be gone so we don't
+    // carry no-op CSS/JS that implies a feature that doesn't work.
+    expect(extV14).not.toContain('button-size-mode');
+    expect(extV14).not.toContain('google-pay-button');
+    expect(extV14).not.toContain('apple-pay-button');
+    expect(extV14).not.toContain('paypal-buttons');
+    expect(extV14).not.toContain('additional-checkout-buttons');
+  });
+
+  it('stacks reachable light-DOM wallets full-width (host layout)', () => {
     expect(extV14).toMatch(/#ccd-native-express-host\s*\{[^}]*flex-direction\s*:\s*column/);
     expect(extV14).toMatch(/width\s*:\s*100%\s*!important/);
-    // web-component wallets (Google/Apple Pay) need a JS nudge to fill width
-    expect(extV14).toContain('button-size-mode');
-    expect(extV14).toContain('google-pay-button');
   });
 
   it('LOCK: root and extension v14 carry IDENTICAL hide logic (copies stay in sync)', () => {
-    // Both copies must contain the same wallet-selector + hide-style markers, or
-    // one storefront build would silently ignore hiddenWallets.
-    for (const marker of ['hiddenWallets', 'ccd-express-hide-style', 'paypal-buttons', 'shop-pay-button', 'additional-checkout-buttons']) {
+    // Both copies must contain the same markers, or one storefront build would
+    // silently behave differently.
+    for (const marker of ['hiddenWallets', 'ccd-express-hide-style', 'shopify-paypal-button']) {
       expect(rootV14.includes(marker)).toBe(true);
       expect(extV14.includes(marker)).toBe(true);
+    }
+    // and the dead markers must be absent from BOTH copies
+    for (const dead of ['button-size-mode', 'google-pay-button', 'additional-checkout-buttons']) {
+      expect(rootV14.includes(dead)).toBe(false);
+      expect(extV14.includes(dead)).toBe(false);
     }
   });
 });
@@ -375,19 +390,25 @@ describe('express-payments-addon-editor — Show/Hide checkboxes (static analysi
     'utf8',
   );
 
-  it('RED: exposes a Show/Hide control per wallet', () => {
-    for (const k of WALLET_KEYS) {
-      expect(editor).toContain(`'${k}'`);
-    }
+  it('exposes a PayPal Show/Hide control (the only reachable wallet)', () => {
+    expect(editor).toContain("'paypal'");
   });
 
-  it('RED: includes hiddenWallets in the saved payload (buildPayload)', () => {
+  it('does NOT offer toggles for the unreachable wallets (closed shadow DOM)', () => {
+    // Apple/Google/Shop Pay can't be controlled by this app, so they must not be
+    // presented as toggles (would be a lie to the merchant).
+    expect(editor).not.toContain("'shopPay'");
+    expect(editor).not.toContain("'applePay'");
+    expect(editor).not.toContain("'googlePay'");
+  });
+
+  it('includes hiddenWallets in the saved payload (buildPayload)', () => {
     expect(editor).toMatch(/hiddenWallets/);
     // buildPayload must emit hiddenWallets, not just position
     expect(editor).toMatch(/buildPayload[\s\S]*hiddenWallets/);
   });
 
-  it('RED: warns that PayPal may not hide because it renders in an iframe', () => {
+  it('warns that PayPal may resist hiding because it renders in an iframe', () => {
     expect(editor.toLowerCase()).toContain('iframe');
     expect(editor).toContain('PayPal');
   });
