@@ -26,6 +26,25 @@
  *   - Wired in one preview path but not the other → dashboard ≠ cart-editor ≠ live
  *   - v14 copies drift → live cart diverges from preview
  *   - Sanitizer too loose → stored XSS; too strict → merchant HTML stripped
+ *
+ * ── MULTI-INSTANCE EXTENSION (2026-06-02) ───────────────────────────
+ * Custom HTML becomes multi-instance: a merchant can add N blocks, each with its
+ * own html + position. New config shape (BACKWARD COMPATIBLE):
+ *   addons.customCode.config = {
+ *     blocks: Array<{ html, position }>,   // NEW (source of truth when present)
+ *     hideBuiltInTrustLine: boolean,       // stays a single GLOBAL toggle
+ *     html?, position?                     // LEGACY single-block (still honored
+ *                                          //   when `blocks` is absent)
+ *   }
+ * DOM ids: first block keeps `ccd-custom-code` (byte-compat with live stores);
+ *   subsequent blocks get `ccd-custom-code-1`, `-2`, … All carry the shared
+ *   `.ccd-custom-code` class so strip/remove targets every instance.
+ * Paths touched (all must agree): applyCustomCode (both previews) ↔
+ *   CCD.injectCustomCode + _customCodeBlocks (both v14 copies) ↔ dedicated editor
+ *   (custom-code-addon-editor.tsx) ↔ page.tsx dedicated-editor wiring.
+ * Definition dimensions (html/position/hideBuiltInTrustLine) are KEPT as metadata
+ *   (legacy default seed stays {html:'',position:'above-checkout'}); the dedicated
+ *   editor drives the blocks array in the UI.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -219,7 +238,7 @@ describe('customCode — v14 live storefront mirrors the preview transform', () 
 
   it('injectCustomCode builds #ccd-custom-code and honors above-checkout', () => {
     const fn = V14_SRC.slice(V14_SRC.indexOf('CCD.injectCustomCode = function'));
-    const body = fn.slice(0, 1600);
+    const body = fn.slice(0, 2400);
     expect(body).toContain("'ccd-custom-code'");
     expect(body).toContain("'above-checkout'");
     expect(body).toContain('.ccd-checkout-btn');
@@ -231,5 +250,116 @@ describe('customCode — v14 live storefront mirrors the preview transform', () 
     expect(a).toBeGreaterThan(-1);
     expect(b).toBeGreaterThan(-1);
     expect(V14_SRC.slice(a, a + 1200)).toBe(V14_ROOT_SRC.slice(b, b + 1200));
+  });
+});
+
+// ── MULTI-INSTANCE: many custom HTML blocks at once ──────────────────
+describe('applyCustomCode — multi-instance (blocks array)', () => {
+  function idsOf(out: string): string[] {
+    return (out.match(/id="(ccd-custom-code(?:-\d+)?)"/g) ?? []).map((m) =>
+      m.slice('id="'.length, -1),
+    );
+  }
+
+  it('LOCK: legacy single-object config still renders one block with id ccd-custom-code', () => {
+    const out = applyCustomCode(BASE_HTML, { html: '<p>Returns</p>', position: 'bottom' });
+    expect(idsOf(out)).toEqual(['ccd-custom-code']);
+    expect(out).toContain('ccd-custom-code--bottom');
+    expect(out).toContain('<p>Returns</p>');
+  });
+
+  it('RED: renders MULTIPLE blocks at once, each with a unique id', () => {
+    const out = applyCustomCode(BASE_HTML, {
+      blocks: [
+        { html: '<p>A</p>', position: 'above-checkout' },
+        { html: '<p>B</p>', position: 'bottom' },
+        { html: '<p>C</p>', position: 'top' },
+      ],
+    });
+    const ids = idsOf(out);
+    expect(ids).toContain('ccd-custom-code');
+    expect(ids).toContain('ccd-custom-code-1');
+    expect(ids).toContain('ccd-custom-code-2');
+    // no duplicate ids
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(out).toContain('<p>A</p>');
+    expect(out).toContain('<p>B</p>');
+    expect(out).toContain('<p>C</p>');
+  });
+
+  it('RED: each block honors its OWN position', () => {
+    const out = applyCustomCode(BASE_HTML, {
+      blocks: [
+        { html: '<p>ABOVE</p>', position: 'above-checkout' },
+        { html: '<p>BELOW</p>', position: 'bottom' },
+      ],
+    });
+    const aboveIdx = out.indexOf('<p>ABOVE</p>');
+    const belowIdx = out.indexOf('<p>BELOW</p>');
+    const checkoutIdx = out.indexOf('ccd-checkout-btn');
+    const trustIdx = out.indexOf('ccd-trust');
+    // above-checkout block sits before the checkout button…
+    expect(aboveIdx).toBeLessThan(checkoutIdx);
+    // …bottom block sits after the checkout button but before the trust row.
+    expect(belowIdx).toBeGreaterThan(checkoutIdx);
+    expect(belowIdx).toBeLessThan(trustIdx);
+  });
+
+  it('RED: preserves array ORDER for blocks sharing a position', () => {
+    const out = applyCustomCode(BASE_HTML, {
+      blocks: [
+        { html: '<p>FIRST</p>', position: 'above-checkout' },
+        { html: '<p>SECOND</p>', position: 'above-checkout' },
+      ],
+    });
+    expect(out.indexOf('<p>FIRST</p>')).toBeLessThan(out.indexOf('<p>SECOND</p>'));
+  });
+
+  it('RED: idempotent — re-applying does not stack blocks', () => {
+    const cfg = {
+      blocks: [
+        { html: '<p>A</p>', position: 'above-checkout' },
+        { html: '<p>B</p>', position: 'bottom' },
+      ],
+    };
+    const once = applyCustomCode(BASE_HTML, cfg);
+    const twice = applyCustomCode(once, cfg);
+    expect(idsOf(twice).sort()).toEqual(['ccd-custom-code', 'ccd-custom-code-1']);
+  });
+
+  it('RED: skips blocks whose html is empty / sanitizes to nothing', () => {
+    const out = applyCustomCode(BASE_HTML, {
+      blocks: [
+        { html: '', position: 'above-checkout' },
+        { html: '<p>Real</p>', position: 'bottom' },
+      ],
+    });
+    expect(out).toContain('<p>Real</p>');
+    // exactly one block rendered (the empty one is skipped)
+    expect(idsOf(out).length).toBe(1);
+  });
+
+  it('RED: empty blocks array is a no-op', () => {
+    const out = applyCustomCode(BASE_HTML, { blocks: [] });
+    expect(out).not.toContain('ccd-custom-code');
+  });
+});
+
+describe('customCode — v14 live storefront supports multiple blocks', () => {
+  it('RED: injectCustomCode normalizes a blocks array (helper present in both copies)', () => {
+    expect(V14_SRC).toContain('_customCodeBlocks');
+    expect(V14_ROOT_SRC).toContain('_customCodeBlocks');
+  });
+
+  it('RED: injectCustomCode removes ALL prior blocks by class (not a single id)', () => {
+    const fn = V14_SRC.slice(V14_SRC.indexOf('CCD.injectCustomCode = function'));
+    const body = fn.slice(0, 1800);
+    expect(body).toContain("querySelectorAll('.ccd-custom-code')");
+  });
+
+  it('RED: the _addonHandlers remove() clears every .ccd-custom-code block', () => {
+    expect(V14_SRC).toMatch(
+      /customCode\s*:\s*\{[\s\S]*?remove\s*:\s*function[\s\S]*?querySelectorAll\('\.ccd-custom-code'\)/,
+    );
   });
 });

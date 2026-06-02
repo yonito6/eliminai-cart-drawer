@@ -4014,7 +4014,7 @@
       socialProof:          { inject: function(c) { CCD.injectSocialProof(c); },    remove: function() { var e = document.getElementById('ccd-social-proof'); if (e) e.remove(); } },
       upsellRecommendations:{ inject: function(c) { CCD.injectUpsells(c); },        remove: function() { var e = document.getElementById('ccd-upsells'); if (e) e.remove(); } },
       notes:                { inject: function(c) { CCD.injectNotes(c); },          remove: function() { var e = document.getElementById('ccd-notes-row'); if (e) e.remove(); } },
-      customCode:           { inject: function(c) { CCD.injectCustomCode(c); },     remove: function() { var e = document.getElementById('ccd-custom-code'); if (e) e.remove(); } },
+      customCode:           { inject: function(c) { CCD.injectCustomCode(c); },     remove: function() { var ns = document.querySelectorAll('.ccd-custom-code'); for (var i=0;i<ns.length;i++) ns[i].remove(); } },
       discountCode:         { inject: function(c) { CCD.injectDiscountCode(c); },   remove: function() { var e = document.getElementById('ccd-discount-code-row'); if (e) e.remove(); } },
       termsCheckbox:        { inject: function(c) { CCD.injectTermsCheckbox(c); },  remove: function() { var e = document.getElementById('ccd-terms-row'); if (e) e.remove(); CCD._termsBlock = null; } },
       expressPayments:      { inject: function(c) { CCD.injectExpressPayments(c); },remove: function() { var h = document.getElementById('ccd-native-express-host'); if (h) { h.hidden = true; h.setAttribute('aria-hidden', 'true'); h.style.display = 'none'; document.body.appendChild(h); } var e = document.getElementById('ccd-express-payments'); if (e) e.remove(); } }
@@ -5244,6 +5244,23 @@
     return s.trim();
   };
 
+  CCD._ccPos = function(p) { return p === 'top' ? 'top' : (p === 'bottom' ? 'bottom' : 'above-checkout'); };
+  // Normalize cfg into an ordered list of blocks. Source of truth is cfg.blocks
+  // (multi-instance); falls back to the LEGACY single { html, position } shape.
+  CCD._customCodeBlocks = function(cfg) {
+    if (cfg && Object.prototype.toString.call(cfg.blocks) === '[object Array]') {
+      var out = [];
+      for (var i = 0; i < cfg.blocks.length; i++) {
+        var b = cfg.blocks[i];
+        if (b && typeof b.html === 'string') out.push({ html: b.html, position: CCD._ccPos(b.position) });
+      }
+      return out;
+    }
+    if (cfg && typeof cfg.html === 'string' && cfg.html.replace(/^\s+|\s+$/g, '')) {
+      return [{ html: cfg.html, position: CCD._ccPos(cfg.position) }];
+    }
+    return [];
+  };
   CCD.injectCustomCode = function(cfg) {
     cfg = cfg || {};
     // When a merchant seeds their own returns badge here and toggles
@@ -5254,33 +5271,38 @@
       var builtInLine = document.querySelector('.ccd-trust__line');
       if (builtInLine) builtInLine.remove();
     }
-    var existing = document.getElementById('ccd-custom-code');
-    if (existing) existing.remove();
+    // Remove ALL previously injected blocks (multi-instance).
+    var prev = document.querySelectorAll('.ccd-custom-code');
+    for (var p = 0; p < prev.length; p++) prev[p].remove();
     var footer = document.querySelector('.ccd-sticky-footer');
     if (!footer) return;
 
-    var inner = CCD.sanitizeCustomHtml(cfg.html);
-    if (!inner) return;
+    var blocks = CCD._customCodeBlocks(cfg);
+    if (!blocks.length) return;
 
-    var position = cfg.position === 'top' ? 'top' : (cfg.position === 'bottom' ? 'bottom' : 'above-checkout');
-    var block = document.createElement('div');
-    block.id = 'ccd-custom-code';
-    block.className = 'ccd-custom-code ccd-custom-code--' + position;
-    block.innerHTML = inner;
+    // Group into per-position fragments so blocks keep their array order.
+    var frags = { top: document.createDocumentFragment(), 'above-checkout': document.createDocumentFragment(), bottom: document.createDocumentFragment() };
+    for (var i = 0; i < blocks.length; i++) {
+      var inner = CCD.sanitizeCustomHtml(blocks[i].html);
+      if (!inner) continue;
+      var position = blocks[i].position;
+      var block = document.createElement('div');
+      block.id = i === 0 ? 'ccd-custom-code' : 'ccd-custom-code-' + i;
+      block.className = 'ccd-custom-code ccd-custom-code--' + position;
+      block.innerHTML = inner;
+      frags[position].appendChild(block);
+    }
 
-    if (position === 'above-checkout') {
+    if (frags.top.childNodes.length) footer.insertBefore(frags.top, footer.firstChild);
+    if (frags['above-checkout'].childNodes.length) {
       var checkoutBtn = footer.querySelector('.ccd-checkout-btn');
-      if (checkoutBtn) footer.insertBefore(block, checkoutBtn);
-      else footer.appendChild(block);
-    } else if (position === 'top') {
-      footer.insertBefore(block, footer.firstChild);
-    } else {
+      if (checkoutBtn) footer.insertBefore(frags['above-checkout'], checkoutBtn);
+      else footer.appendChild(frags['above-checkout']);
+    }
+    if (frags.bottom.childNodes.length) {
       var trustRow = footer.querySelector('.ccd-trust');
-      if (trustRow) {
-        footer.insertBefore(block, trustRow);
-      } else {
-        footer.appendChild(block);
-      }
+      if (trustRow) footer.insertBefore(frags.bottom, trustRow);
+      else footer.appendChild(frags.bottom);
     }
   };
 
@@ -5551,14 +5573,11 @@
         footer.insertBefore(wrap, checkoutBtn);
       }
     } else {
-      var trust = footer.querySelector('.ccd-trust');
-      if (trust) {
-        if (trust.nextSibling !== wrap) footer.insertBefore(wrap, trust.nextSibling);
-      } else {
-        var afterRef = checkoutBtn.nextSibling;
-        if (afterRef) footer.insertBefore(wrap, afterRef);
-        else footer.appendChild(wrap);
-      }
+      // directly below the checkout button (wallets sit immediately beneath it;
+      // the .ccd-trust returns line, if any, stays below the wallets).
+      var afterRef = checkoutBtn.nextSibling;
+      if (afterRef) { if (afterRef !== wrap) footer.insertBefore(wrap, afterRef); }
+      else footer.appendChild(wrap);
     }
   };
 

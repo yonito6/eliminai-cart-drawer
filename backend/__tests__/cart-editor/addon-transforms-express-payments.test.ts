@@ -85,6 +85,18 @@ describe('applyExpressPayments — PREVIEW (representative example wallet button
     expect(out).toContain('Google Pay');
   });
 
+  it('RED: renders the example wallets STACKED full-width (mirrors Shopify native layout)', () => {
+    // The live store renders Shopify's native wallet buttons full-width, stacked
+    // vertically (not side-by-side). The preview must mirror that so the merchant
+    // sees how it will REALLY look.
+    const out = applyExpressPayments(makeCartHtml(), { position: 'below' });
+    // container stacks vertically…
+    expect(out).toMatch(/ccd-express__example-row"[^>]*style="[^"]*flex-direction:\s*column/);
+    // …and each example button is full-width (not flex:1 columns).
+    const firstBtn = out.slice(out.indexOf('class="ccd-express__example"'));
+    expect(firstBtn).toMatch(/^class="ccd-express__example"[^>]*style="[^"]*width:\s*100%/);
+  });
+
   it('RED: shows NO caption — user removed the "Example preview" honesty text', () => {
     const out = applyExpressPayments(makeCartHtml(), { position: 'below' });
     // The caption div + its copy must be entirely gone.
@@ -118,22 +130,21 @@ describe('applyExpressPayments — PREVIEW (representative example wallet button
     expect(out).toContain('ccd-express--below');
   });
 
-  it('RED: places wallets BELOW the returns line (.ccd-trust), not above it', () => {
-    // User report (2026-06-02): the "30 day risk free returns" line must stay
-    // directly under the checkout button, with the express wallets BELOW it.
-    // Order must be: checkout -> .ccd-trust(returns) -> express wallets.
+  it('RED: places wallets DIRECTLY below the checkout button, above the returns line (.ccd-trust)', () => {
+    // User report (2026-06-02, revised): the express wallets must sit DIRECTLY
+    // under the checkout button — not after the returns line.
+    // Order must be: checkout -> express wallets -> .ccd-trust(returns).
     const out = applyExpressPayments(makeCartHtml(), { position: 'below' });
     const checkoutIdx = out.indexOf('class="ccd-checkout-btn"');
-    const trustIdx = out.indexOf('class="ccd-trust"');
     const wrapIdx = out.indexOf('id="ccd-express-payments"');
+    const trustIdx = out.indexOf('class="ccd-trust"');
     expect(checkoutIdx).toBeGreaterThan(-1);
-    expect(trustIdx).toBeGreaterThan(-1);
     expect(wrapIdx).toBeGreaterThan(-1);
-    // returns line stays above wallets…
-    expect(trustIdx).toBeGreaterThan(checkoutIdx);
-    expect(wrapIdx).toBeGreaterThan(trustIdx);
-    // …and NOT the old (wrong) order where wallets came before the returns line.
-    expect(wrapIdx).not.toBeLessThan(trustIdx);
+    expect(trustIdx).toBeGreaterThan(-1);
+    // wallets come straight after the checkout button…
+    expect(wrapIdx).toBeGreaterThan(checkoutIdx);
+    // …and BEFORE the returns line (returns line stays below the wallets).
+    expect(wrapIdx).toBeLessThan(trustIdx);
   });
 
   it('RED: preview wrap carries an inline margin so wallets do not touch the checkout button', () => {
@@ -186,12 +197,12 @@ describe('v14 CCD.injectExpressPayments — NATIVE relocation contract (LOCK)', 
     expect(v14).toContain('ccd-express--native');
   });
 
-  it('RED: relocates the native host BELOW the returns line (.ccd-trust), not above it', () => {
+  it('RED: relocates the native host DIRECTLY below the checkout button, not anchored to the returns line', () => {
     // Cross-path of the preview fix: on the live storefront the express wallets
-    // must sit AFTER the .ccd-trust returns line too. The below-branch must
-    // insert relative to trust.nextSibling (after the returns line), never
-    // insertBefore(wrap, trust) which puts wallets above the returns line.
-    expect(v14).toContain('trust.nextSibling');
+    // must sit DIRECTLY after the checkout button (checkoutBtn.nextSibling), not
+    // after/relative to the .ccd-trust returns line.
+    expect(v14).toContain('checkoutBtn.nextSibling');
+    expect(v14).not.toMatch(/insertBefore\(\s*wrap\s*,\s*trust\.nextSibling\s*\)/);
     expect(v14).not.toMatch(/insertBefore\(\s*wrap\s*,\s*trust\s*\)/);
   });
 });

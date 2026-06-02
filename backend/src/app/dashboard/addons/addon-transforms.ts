@@ -602,9 +602,9 @@ export function applyExpressPayments(html: string, config: Record<string, any>):
   const btns = wallets
     .map(
       (w) =>
-        `<div class="ccd-express__example" style="flex:1;min-width:0;height:42px;display:flex;`
+        `<div class="ccd-express__example" style="width:100%;height:46px;display:flex;`
         + `align-items:center;justify-content:center;background:${w.bg};color:${w.fg};`
-        + `border-radius:6px;font-size:13px;font-weight:600;`
+        + `border-radius:6px;font-size:14px;font-weight:600;`
         + (w.border ? `border:1px solid ${w.border};` : '')
         + `">${w.label}</div>`,
     )
@@ -615,7 +615,7 @@ export function applyExpressPayments(html: string, config: Record<string, any>):
   const wrapMargin = position === 'below' ? 'margin-top:12px' : 'margin-bottom:12px';
   const wrap =
     `<div id="ccd-express-payments" class="ccd-express ccd-express--${position} ccd-express--native" style="${wrapMargin}">`
-    + `<div class="ccd-express__example-row" style="display:flex;gap:8px;width:100%">${btns}</div>`
+    + `<div class="ccd-express__example-row" style="display:flex;flex-direction:column;gap:8px;width:100%">${btns}</div>`
     + `</div>`;
 
   if (position === 'above') {
@@ -627,11 +627,13 @@ export function applyExpressPayments(html: string, config: Record<string, any>):
     }
     return html.replace(/<button[^>]*class="ccd-checkout-btn"/, wrap + '$&');
   }
-  // below (default) — after the returns line (.ccd-trust) if present, so the
-  // "risk free returns" line stays directly under the checkout button and the
-  // wallets sit beneath it.
-  if (/<div class="ccd-trust"[\s\S]*?<\/div>/.test(html)) {
-    return html.replace(/(<div class="ccd-trust"[\s\S]*?<\/div>)/, '$1' + wrap);
+  // below (default) — directly after the checkout button, so the wallets sit
+  // immediately beneath it (the .ccd-trust returns line, if any, stays below).
+  if (/<button[^>]*class="ccd-checkout-btn"[^>]*>[\s\S]*?<\/button>/.test(html)) {
+    return html.replace(
+      /(<button[^>]*class="ccd-checkout-btn"[^>]*>[\s\S]*?<\/button>)/,
+      '$1' + wrap,
+    );
   }
   return html.replace(/<\/button>\s*(?=<\/div>)/, '</button>' + wrap);
 }
@@ -910,42 +912,72 @@ export function sanitizeCustomHtml(raw: unknown): string {
 //   'top'                       — firstChild of .ccd-sticky-footer
 //   'bottom'                    — before .ccd-trust (or footer end)
 // No-op when the sanitized HTML is empty (new stores ship empty).
+type CustomCodeBlock = { html: string; position: 'top' | 'above-checkout' | 'bottom' };
+
+function ccPosition(raw: unknown): CustomCodeBlock['position'] {
+  return raw === 'top' ? 'top' : raw === 'bottom' ? 'bottom' : 'above-checkout';
+}
+
+// Normalize the customCode config into an ordered list of blocks. Source of
+// truth is `config.blocks` (multi-instance); falls back to the LEGACY single
+// `{ html, position }` shape so existing stores keep working.
+export function getCustomCodeBlocks(config: Record<string, any>): CustomCodeBlock[] {
+  if (Array.isArray(config?.blocks)) {
+    return config.blocks
+      .filter((b: any) => b && typeof b.html === 'string')
+      .map((b: any) => ({ html: b.html, position: ccPosition(b.position) }));
+  }
+  if (typeof config?.html === 'string' && config.html.trim()) {
+    return [{ html: config.html, position: ccPosition(config.position) }];
+  }
+  return [];
+}
+
 export function applyCustomCode(html: string, config: Record<string, any>): string {
   if (!html.includes('class="ccd-sticky-footer"')) return html;
-  // Strip any existing block first (idempotent; flat block like applyNotes).
-  html = html.replace(/<div id="ccd-custom-code"[\s\S]*?<\/div>\s*(?=<)/, '');
+  // Strip ALL previously injected blocks (idempotent). First block keeps the
+  // bare id `ccd-custom-code`; extras are `ccd-custom-code-N`.
+  html = html.replace(/<div id="ccd-custom-code(?:-\d+)?"[\s\S]*?<\/div>\s*(?=<)/g, '');
 
-  const inner = sanitizeCustomHtml(config.html);
-  if (!inner) return html;
+  const blocks = getCustomCodeBlocks(config);
+  // Group markup by position so multiple blocks keep their array order.
+  const groups: Record<CustomCodeBlock['position'], string> = {
+    top: '',
+    'above-checkout': '',
+    bottom: '',
+  };
+  blocks.forEach((b, i) => {
+    const inner = sanitizeCustomHtml(b.html);
+    if (!inner) return;
+    const id = i === 0 ? 'ccd-custom-code' : `ccd-custom-code-${i}`;
+    groups[b.position] +=
+      `<div id="${id}" class="ccd-custom-code ccd-custom-code--${b.position}">${inner}</div>`;
+  });
 
-  const rawPosition = config.position;
-  const position = rawPosition === 'top'
-    ? 'top'
-    : rawPosition === 'bottom'
-      ? 'bottom'
-      : 'above-checkout';
-
-  const block =
-    `<div id="ccd-custom-code" class="ccd-custom-code ccd-custom-code--${position}">${inner}</div>`;
-
-  if (position === 'above-checkout') {
-    if (/<button[^>]*class="ccd-checkout-btn"/.test(html)) {
-      return html.replace(/(<button[^>]*class="ccd-checkout-btn")/, block + '$1');
-    }
-    return html.replace('</div>\n</div>', block + '</div>\n</div>');
-  }
-
-  if (position === 'top') {
-    return html.replace(
+  if (groups.top) {
+    html = html.replace(
       '<div class="ccd-sticky-footer">',
-      '<div class="ccd-sticky-footer">' + block,
+      '<div class="ccd-sticky-footer">' + groups.top,
     );
   }
-  // bottom — insert before .ccd-trust if present, else append before footer's end.
-  if (/<div class="ccd-trust"/.test(html)) {
-    return html.replace(/(<div class="ccd-trust")/, block + '$1');
+  if (groups['above-checkout']) {
+    if (/<button[^>]*class="ccd-checkout-btn"/.test(html)) {
+      html = html.replace(
+        /(<button[^>]*class="ccd-checkout-btn")/,
+        groups['above-checkout'] + '$1',
+      );
+    } else {
+      html = html.replace('</div>\n</div>', groups['above-checkout'] + '</div>\n</div>');
+    }
   }
-  return html.replace('</div>\n</div>', block + '</div>\n</div>');
+  if (groups.bottom) {
+    if (/<div class="ccd-trust"/.test(html)) {
+      html = html.replace(/(<div class="ccd-trust")/, groups.bottom + '$1');
+    } else {
+      html = html.replace('</div>\n</div>', groups.bottom + '</div>\n</div>');
+    }
+  }
+  return html;
 }
 
 // Removes the built-in returns line (.ccd-trust) from the CONTROL_HTML markup.

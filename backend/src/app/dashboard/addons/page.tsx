@@ -11,6 +11,7 @@ import NotesAddonEditor from './notes-addon-editor';
 import DiscountCodeAddonEditor from './discount-code-addon-editor';
 import TermsCheckboxAddonEditor from './terms-checkbox-addon-editor';
 import ExpressPaymentsAddonEditor from './express-payments-addon-editor';
+import CustomCodeAddonEditor from './custom-code-addon-editor';
 import { useStore } from '@/lib/hooks/use-store';
 import RichTextEditor from './rich-text-editor';
 import UpsellManualProducts from './upsell-manual-products';
@@ -2069,8 +2070,28 @@ function AddonsPage() {
                         />
                       )}
 
+                      {/* Custom HTML addon dedicated editor (multi-block) */}
+                      {def.key === 'customCode' && (
+                        <CustomCodeAddonEditor
+                          config={addon.config ?? {}}
+                          themeFont={themeSettings?.ccd_font_family}
+                          onPreviewChange={(patch) => {
+                            draftAddonKeyRef.current = def.key;
+                            setAddons(prev => {
+                              const current = prev[def.key];
+                              if (!current) return prev;
+                              return { ...prev, [def.key]: { ...current, config: { ...current.config, ...patch } } };
+                            });
+                          }}
+                          onSave={(fullConfig) => {
+                            draftAddonKeyRef.current = null;
+                            updateAddonConfig(def.key, fullConfig);
+                          }}
+                        />
+                      )}
+
                       {/* Standard dimensions — skip for addons with dedicated editors */}
-                      {def.key !== 'shippingProtection' && def.key !== 'scarcityTimer' && def.key !== 'notes' && def.key !== 'discountCode' && def.key !== 'termsCheckbox' && def.key !== 'expressPayments' && (() => {
+                      {def.key !== 'shippingProtection' && def.key !== 'scarcityTimer' && def.key !== 'notes' && def.key !== 'discountCode' && def.key !== 'termsCheckbox' && def.key !== 'expressPayments' && def.key !== 'customCode' && (() => {
                         const savedConfig = addon.config ?? {};
                         const pending = pendingDimPatches[def.key] ?? {};
                         const mergedConfig = { ...savedConfig, ...pending };
