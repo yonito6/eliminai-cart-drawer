@@ -114,25 +114,10 @@
     document.body.appendChild(el);
   };
 
-  // === FLOATING DEBUG BUTTON — always visible, bottom-left corner ===
-  function _ccdAddDebugButton() {
-    if (document.getElementById('ccd-debug-fab')) return;
-    if (!document.body) { setTimeout(_ccdAddDebugButton, 100); return; }
-    var fab = document.createElement('button');
-    fab.id = 'ccd-debug-fab';
-    fab.textContent = 'Debug';
-    fab.style.cssText = 'position:fixed;bottom:12px;left:12px;z-index:99998;background:#7c3aed;color:#fff;border:none;border-radius:20px;padding:8px 14px;font:600 12px system-ui,sans-serif;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.25);opacity:0.9;';
-    fab.addEventListener('click', function(e) {
-      e.preventDefault(); e.stopPropagation();
-      window._ccdShowDebug();
-    }, true);
-    document.body.appendChild(fab);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _ccdAddDebugButton);
-  } else {
-    _ccdAddDebugButton();
-  }
+  // === FLOATING DEBUG BUTTON — DISABLED on storefront ===
+  // The floating "Debug" pill must NEVER render on a live store. Kept as a no-op
+  // so window._ccdShowDebug() is still reachable manually from the console.
+  function _ccdAddDebugButton() { /* disabled — no storefront debug button */ }
 
   // === INJECT EMBEDDED CSS (standalone — no external stylesheet needed) ===
   (function() {
