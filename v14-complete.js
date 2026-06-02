@@ -5566,6 +5566,15 @@
       host.removeAttribute('aria-hidden');
       host.style.display = '';
       if (host.parentNode !== wrap) wrap.appendChild(host);
+      // Native wallet web components (Google/Apple Pay) size themselves internally
+      // (button-size-mode), not via container CSS — nudge them to fill the width so
+      // a lone remaining button isn't left at its default ~240px static size.
+      try {
+        var gp = host.querySelectorAll('google-pay-button');
+        for (var g = 0; g < gp.length; g++) { gp[g].setAttribute('button-size-mode', 'fill'); gp[g].style.width = '100%'; gp[g].style.display = 'block'; }
+        var ap = host.querySelectorAll('apple-pay-button');
+        for (var a = 0; a < ap.length; a++) { ap[a].style.setProperty('--apple-pay-button-width', '100%'); ap[a].style.width = '100%'; ap[a].style.display = 'block'; }
+      } catch (e) {}
     }
 
     // Per-wallet hide toggles (cfg.hiddenWallets). The shop owner may use Stripe

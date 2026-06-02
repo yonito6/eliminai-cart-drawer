@@ -354,6 +354,9 @@ describe('v14 CCD.injectExpressPayments — per-wallet hide CSS (hiddenWallets)'
     expect(extV14).toContain('additional-checkout-buttons');
     expect(extV14).toMatch(/#ccd-native-express-host\s*\{[^}]*flex-direction\s*:\s*column/);
     expect(extV14).toMatch(/width\s*:\s*100%\s*!important/);
+    // web-component wallets (Google/Apple Pay) need a JS nudge to fill width
+    expect(extV14).toContain('button-size-mode');
+    expect(extV14).toContain('google-pay-button');
   });
 
   it('LOCK: root and extension v14 carry IDENTICAL hide logic (copies stay in sync)', () => {
