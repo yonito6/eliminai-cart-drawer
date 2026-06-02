@@ -5589,14 +5589,24 @@
       for (var s = 0; s < sels.length; s++) scoped.push('#ccd-native-express-host ' + sels[s]);
       hideCss += scoped.join(',') + '{display:none !important;}';
     }
+    // Base layout: normalize the native wallets to full-width, stacked, so that
+    // when wallets are hidden the remaining buttons stretch to fill the cart width
+    // instead of leaving a gap. Best-effort across Shopify dynamic-checkout markup.
+    var baseCss =
+      '#ccd-native-express-host{display:flex;flex-direction:column;gap:8px;width:100%;}'
+      + '#ccd-native-express-host>*,'
+      + '#ccd-native-express-host .shopify-payment-button,'
+      + '#ccd-native-express-host .additional-checkout-buttons,'
+      + '#ccd-native-express-host .additional-checkout-button,'
+      + '#ccd-native-express-host [data-shopify="dynamic-checkout-cart"],'
+      + '#ccd-native-express-host .dynamic-checkout__content'
+      + '{width:100% !important;max-width:100% !important;margin-left:0 !important;margin-right:0 !important;}'
+      + '#ccd-native-express-host .additional-checkout-buttons ul{display:flex !important;flex-direction:column !important;gap:8px !important;width:100% !important;margin:0 !important;padding:0 !important;list-style:none !important;}'
+      + '#ccd-native-express-host .additional-checkout-buttons li{width:100% !important;}';
     var hideStyle = document.getElementById('ccd-express-hide-style');
-    if (hideCss) {
-      if (!hideStyle) { hideStyle = document.createElement('style'); hideStyle.id = 'ccd-express-hide-style'; }
-      hideStyle.textContent = hideCss;
-      wrap.appendChild(hideStyle);
-    } else if (hideStyle && hideStyle.parentNode) {
-      hideStyle.parentNode.removeChild(hideStyle);
-    }
+    if (!hideStyle) { hideStyle = document.createElement('style'); hideStyle.id = 'ccd-express-hide-style'; }
+    hideStyle.textContent = baseCss + hideCss;
+    wrap.appendChild(hideStyle);
 
     if (position === 'above') {
       if (wrap.parentNode !== footer || wrap.nextSibling !== checkoutBtn) {

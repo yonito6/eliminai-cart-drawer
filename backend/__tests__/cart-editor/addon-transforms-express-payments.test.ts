@@ -347,10 +347,19 @@ describe('v14 CCD.injectExpressPayments — per-wallet hide CSS (hiddenWallets)'
     expect(extV14).toContain('paypal-buttons');
   });
 
+  it('RED: normalizes native wallets to full-width so remaining buttons stretch when others are hidden', () => {
+    // When a wallet is hidden the remaining native buttons must grow to fill the
+    // cart width (no leftover gap). We force the native containers full-width and
+    // stack them, scoped to the host. Best-effort across Shopify wallet markup.
+    expect(extV14).toContain('additional-checkout-buttons');
+    expect(extV14).toMatch(/#ccd-native-express-host\s*\{[^}]*flex-direction\s*:\s*column/);
+    expect(extV14).toMatch(/width\s*:\s*100%\s*!important/);
+  });
+
   it('LOCK: root and extension v14 carry IDENTICAL hide logic (copies stay in sync)', () => {
     // Both copies must contain the same wallet-selector + hide-style markers, or
     // one storefront build would silently ignore hiddenWallets.
-    for (const marker of ['hiddenWallets', 'ccd-express-hide-style', 'paypal-buttons', 'shop-pay-button']) {
+    for (const marker of ['hiddenWallets', 'ccd-express-hide-style', 'paypal-buttons', 'shop-pay-button', 'additional-checkout-buttons']) {
       expect(rootV14.includes(marker)).toBe(true);
       expect(extV14.includes(marker)).toBe(true);
     }
