@@ -2657,6 +2657,16 @@ async function run() {
       'Position "above" must use footer.insertBefore(wrap, checkoutBtn)');
   });
 
+  test('Express wrapper has margin so it does NOT touch the checkout button', () => {
+    // BUG: native express buttons rendered flush against the checkout button
+    // (no gap). The .ccd-express--below / --above wrappers must carry a margin
+    // toward the checkout button. Embedded CSS must define both.
+    assertRegex(code, /\.ccd-express--below\s*\{[^}]*margin-top\s*:\s*\d+px/,
+      '.ccd-express--below must have a margin-top so it sits below the checkout button with a gap');
+    assertRegex(code, /\.ccd-express--above\s*\{[^}]*margin-bottom\s*:\s*\d+px/,
+      '.ccd-express--above must have a margin-bottom so it sits above the checkout button with a gap');
+  });
+
   // CONTRACT: editorOverrides Header (Chunk 4.5)
   // The Cart Editor sends an `editorOverrides` object alongside the experiment
   // config. The storefront must read each `editorOverrides.header.*` field with

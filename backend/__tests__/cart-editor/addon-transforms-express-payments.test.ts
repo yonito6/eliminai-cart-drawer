@@ -27,10 +27,18 @@
  *   - cart-editor/preview-renderer.ts → applyExpressPayments
  *   - express-payments-addon-editor.tsx (config shape: { position })
  *
- * PREVIEW LIMITATION: the dashboard has no Shopify SDK, so the preview CANNOT
- *   render real wallet buttons. It renders an honest placeholder note instead of
- *   fake brand buttons. This is MORE faithful than before (the old fake buttons
- *   showed Shop Pay even when the shop had none).
+ * PREVIEW (2026-06-02 user request "I want to see how it actually looks"): the
+ *   dashboard has no Shopify SDK so it cannot render REAL wallet buttons. Instead
+ *   of a bare text note, the preview now renders REPRESENTATIVE example wallet
+ *   buttons (Shop Pay / PayPal / Apple Pay / Google Pay) so the merchant can see
+ *   the layout + spacing. The LIVE storefront (v14) is UNCHANGED — still native,
+ *   never fake buttons.
+ *
+ * CAPTION REMOVED (2026-06-02 user request "I dont want the 'Example preview —
+ *   your live store shows only the wallets your Shopify checkout supports.'"): the
+ *   honesty caption is GONE. The preview now shows ONLY the example wallet buttons,
+ *   no explanatory caption text underneath. applyExpressPayments must never emit
+ *   `ccd-express__example-caption` or the "Example preview"/"only the wallets" copy.
  *
  * CROSS-PATH RISK: if v14 keeps building fake buttons but the editor/definitions
  *   drop providers → divergence. Fix touches all copies + both v14 files.
@@ -51,7 +59,7 @@ function makeCartHtml(): string {
   ].join('');
 }
 
-describe('applyExpressPayments — NATIVE preview (no fake brand buttons)', () => {
+describe('applyExpressPayments — PREVIEW (representative example wallet buttons)', () => {
   it('does not throw regardless of config', () => {
     expect(() => applyExpressPayments(makeCartHtml(), {})).not.toThrow();
     expect(() => applyExpressPayments(makeCartHtml(), { position: 'below' })).not.toThrow();
@@ -65,14 +73,34 @@ describe('applyExpressPayments — NATIVE preview (no fake brand buttons)', () =
     ).not.toThrow();
   });
 
-  it('renders a native express wrapper, NOT fake per-wallet buttons', () => {
+  it('renders representative example wallet buttons so the merchant sees the layout', () => {
     const out = applyExpressPayments(makeCartHtml(), { position: 'below' });
     expect(out).toContain('id="ccd-express-payments"');
     expect(out).toContain('ccd-express--native');
-    // NO fake brand buttons anymore
+    // example wallet buttons (preview only — clearly labelled as examples)
+    expect(out).toContain('ccd-express__example');
+    expect(out).toContain('Shop Pay');
+    expect(out).toContain('PayPal');
+    expect(out).toContain('Apple Pay');
+    expect(out).toContain('Google Pay');
+  });
+
+  it('RED: shows NO caption — user removed the "Example preview" honesty text', () => {
+    const out = applyExpressPayments(makeCartHtml(), { position: 'below' });
+    // The caption div + its copy must be entirely gone.
+    expect(out).not.toContain('ccd-express__example-caption');
+    expect(out.toLowerCase()).not.toContain('only the wallets');
+    expect(out.toLowerCase()).not.toContain('example preview');
+    // …but the example wallet buttons themselves must still render.
+    expect(out).toContain('ccd-express__example');
+  });
+
+  it('does NOT use the old fake-button class names or redirect behavior', () => {
+    const out = applyExpressPayments(makeCartHtml(), { position: 'below' });
     expect(out).not.toContain('ccd-express__btn--shopPay');
     expect(out).not.toContain('ccd-express__btn--paypal');
     expect(out).not.toContain('data-provider=');
+    expect(out).not.toContain('/checkout?payment=');
   });
 
   it('NEVER renders an "or" separator (user asked to remove it)', () => {
@@ -145,13 +173,22 @@ describe('app-embed.liquid — native host rendered from Liquid', () => {
   });
 });
 
-describe('CSS parity — REAL_CART_CSS must NOT add .ccd-express rules (v14 has none)', () => {
-  it('v14 stylesheet has no .ccd-express selector block', () => {
-    const v14 = readFileSync(
-      resolve(__dirname, '../../../extensions/cart-drawer/assets/v14-complete.js'),
-      'utf8',
-    );
-    expect(v14).not.toMatch(/\.ccd-express\s*\{/);
+describe('CSS — no FAKE-button styling, but wrapper carries spacing so it does not touch checkout', () => {
+  const v14 = readFileSync(
+    resolve(__dirname, '../../../extensions/cart-drawer/assets/v14-complete.js'),
+    'utf8',
+  );
+
+  it('v14 has NO fake per-wallet button styling (.ccd-express__btn)', () => {
+    // The native redesign removed the fake brand buttons; their CSS must stay gone.
     expect(v14).not.toMatch(/\.ccd-express__btn\s*\{/);
+    expect(v14).not.toMatch(/\.ccd-express__separator\s*\{/);
+  });
+
+  it('v14 gives the express wrapper a margin so it does NOT touch the checkout button', () => {
+    // User report (2026-06-02): native express buttons sat flush against the
+    // checkout button with no gap. The wrapper must carry a margin toward it.
+    expect(v14).toMatch(/\.ccd-express--below\s*\{[^}]*margin-top\s*:\s*\d+px/);
+    expect(v14).toMatch(/\.ccd-express--above\s*\{[^}]*margin-bottom\s*:\s*\d+px/);
   });
 });

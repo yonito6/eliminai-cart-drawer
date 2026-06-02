@@ -294,6 +294,9 @@
       '.ccd-checkout-btn:active { background: #000 !important; }\n' +
       '.ccd-checkout-btn svg { width: 16px !important; height: 16px !important; fill: #fff !important; }\n' +
       '.ccd-trust { display: flex !important; align-items: center !important; justify-content: center !important; gap: 8px !important; padding: 4px 0 2px !important; font-size: 14px !important; color: #777 !important; }\n' +
+      '.ccd-express { display: block !important; }\n' +
+      '.ccd-express--below { margin-top: 12px !important; }\n' +
+      '.ccd-express--above { margin-bottom: 12px !important; }\n' +
       '.ccd-trust svg { width: 18px !important; height: 18px !important; fill: #6BA4E8 !important; }\n' +
       '.ccd-trust strong { color: #111 !important; font-weight: 700 !important; }\n' +
       '.ccd-trust__line { display: flex !important; align-items: center !important; gap: 4px !important; }\n' +

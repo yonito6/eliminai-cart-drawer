@@ -546,29 +546,72 @@ export function applySocialProof(
 // the wallets the shop + device actually support, so we never advertise a
 // wallet the merchant hasn't enabled (e.g. Shop Pay when it's off).
 //
-// The dashboard/cart-editor preview has NO Shopify SDK, so it cannot render
-// real wallets. It shows an honest placeholder note instead of fake buttons —
-// strictly more faithful than the old behavior (which showed Shop Pay even for
-// stores without it). No "OR" separator. Default position = BELOW the checkout
-// button. Legacy stored config (providers / layout / separatorLabel) is ignored.
+// The dashboard/cart-editor preview has NO Shopify SDK, so it cannot render the
+// REAL wallets. To let the merchant SEE the layout/spacing (user request
+// 2026-06-02), it renders REPRESENTATIVE example wallet buttons (Shop Pay /
+// PayPal / Apple Pay / Google Pay) plus an honesty caption clarifying the live
+// store shows only the wallets the shop's Shopify checkout actually supports.
+// These example buttons are PREVIEW-ONLY (inline-styled) — the live storefront
+// (v14 CCD.injectExpressPayments) still relocates the REAL native host and
+// never renders fake buttons. No "OR" separator. Default position = BELOW the
+// checkout button. Legacy stored config (providers / layout / separatorLabel)
+// is ignored.
 //   wrap  id=ccd-express-payments  class="ccd-express ccd-express--{pos} ccd-express--native"
 //   above: wrap before .ccd-checkout-btn ; below (default): wrap before .ccd-trust / appended
-// NOTE: v14 styles these by class only — REAL_CART_CSS must not add .ccd-express
-// rules (parity).
+// NOTE: example buttons use INLINE styles (no .ccd-express CSS classes), so the
+// REAL_CART_CSS / v14 parity (no .ccd-express rules) is preserved.
+
+// Balanced removal of a previously-injected #ccd-express-payments wrapper. The
+// example buttons contain nested <div>s, so a non-greedy regex can't be trusted
+// to find the matching close — walk the div depth instead.
+function stripExpressWrap(html: string): string {
+  const open = html.indexOf('<div id="ccd-express-payments"');
+  if (open === -1) return html;
+  const re = /<\/?div\b[^>]*>/g;
+  re.lastIndex = open;
+  let depth = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    if (m[0].startsWith('</')) {
+      depth--;
+      if (depth === 0) return html.slice(0, open) + html.slice(re.lastIndex);
+    } else if (!m[0].endsWith('/>')) {
+      depth++;
+    }
+  }
+  return html;
+}
+
 export function applyExpressPayments(html: string, config: Record<string, any>): string {
   if (!html.includes('class="ccd-checkout-btn"')) return html;
-  // Idempotent: strip any previously injected row + any legacy separator.
-  html = html.replace(/<div id="ccd-express-payments"[\s\S]*?<\/div>\s*<\/div>/, '');
+  // Idempotent: strip any previously injected wrapper + any legacy separator.
+  html = stripExpressWrap(html);
   html = html.replace(/<div class="ccd-express__separator">[\s\S]*?<\/div>/, '');
 
   const position = config.position === 'above' ? 'above' : 'below';
 
-  const note =
-    'Your store&rsquo;s real express wallets (Shop Pay, Apple Pay, PayPal, Google Pay&hellip;) '
-    + 'appear here on your live storefront &mdash; only the ones your Shopify checkout supports.';
+  // PREVIEW-ONLY representative wallet buttons. Inline-styled (no CSS classes)
+  // so v14/REAL_CART_CSS parity holds. Live storefront renders the real native
+  // wallets via v14 — these are illustrative only.
+  const wallets: Array<{ label: string; bg: string; fg: string; border?: string }> = [
+    { label: 'Shop Pay', bg: '#5a31f4', fg: '#ffffff' },
+    { label: 'PayPal', bg: '#ffc439', fg: '#003087' },
+    { label: 'Apple Pay', bg: '#000000', fg: '#ffffff' },
+    { label: 'Google Pay', bg: '#ffffff', fg: '#3c4043', border: '#dadce0' },
+  ];
+  const btns = wallets
+    .map(
+      (w) =>
+        `<div class="ccd-express__example" style="flex:1;min-width:0;height:42px;display:flex;`
+        + `align-items:center;justify-content:center;background:${w.bg};color:${w.fg};`
+        + `border-radius:6px;font-size:13px;font-weight:600;`
+        + (w.border ? `border:1px solid ${w.border};` : '')
+        + `">${w.label}</div>`,
+    )
+    .join('');
   const wrap =
     `<div id="ccd-express-payments" class="ccd-express ccd-express--${position} ccd-express--native">`
-    + `<div class="ccd-express__native-note">${note}</div>`
+    + `<div class="ccd-express__example-row" style="display:flex;gap:8px;width:100%">${btns}</div>`
     + `</div>`;
 
   if (position === 'above') {
