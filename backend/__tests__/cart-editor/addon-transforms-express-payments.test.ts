@@ -118,6 +118,33 @@ describe('applyExpressPayments — PREVIEW (representative example wallet button
     expect(out).toContain('ccd-express--below');
   });
 
+  it('RED: places wallets BELOW the returns line (.ccd-trust), not above it', () => {
+    // User report (2026-06-02): the "30 day risk free returns" line must stay
+    // directly under the checkout button, with the express wallets BELOW it.
+    // Order must be: checkout -> .ccd-trust(returns) -> express wallets.
+    const out = applyExpressPayments(makeCartHtml(), { position: 'below' });
+    const checkoutIdx = out.indexOf('class="ccd-checkout-btn"');
+    const trustIdx = out.indexOf('class="ccd-trust"');
+    const wrapIdx = out.indexOf('id="ccd-express-payments"');
+    expect(checkoutIdx).toBeGreaterThan(-1);
+    expect(trustIdx).toBeGreaterThan(-1);
+    expect(wrapIdx).toBeGreaterThan(-1);
+    // returns line stays above wallets…
+    expect(trustIdx).toBeGreaterThan(checkoutIdx);
+    expect(wrapIdx).toBeGreaterThan(trustIdx);
+    // …and NOT the old (wrong) order where wallets came before the returns line.
+    expect(wrapIdx).not.toBeLessThan(trustIdx);
+  });
+
+  it('RED: preview wrap carries an inline margin so wallets do not touch the checkout button', () => {
+    // The dashboard preview iframe does NOT load v14 CSS, so the margin must be
+    // inline on the wrapper (below → margin-top, above → margin-bottom).
+    const below = applyExpressPayments(makeCartHtml(), { position: 'below' });
+    expect(below).toMatch(/id="ccd-express-payments"[^>]*style="[^"]*margin-top:\s*12px/);
+    const above = applyExpressPayments(makeCartHtml(), { position: 'above' });
+    expect(above).toMatch(/id="ccd-express-payments"[^>]*style="[^"]*margin-bottom:\s*12px/);
+  });
+
   it('honors position="above" if explicitly stored', () => {
     const out = applyExpressPayments(makeCartHtml(), { position: 'above' });
     const wrapIdx = out.indexOf('id="ccd-express-payments"');
@@ -157,6 +184,15 @@ describe('v14 CCD.injectExpressPayments — NATIVE relocation contract (LOCK)', 
 
   it('marks the relocated wrapper as native', () => {
     expect(v14).toContain('ccd-express--native');
+  });
+
+  it('RED: relocates the native host BELOW the returns line (.ccd-trust), not above it', () => {
+    // Cross-path of the preview fix: on the live storefront the express wallets
+    // must sit AFTER the .ccd-trust returns line too. The below-branch must
+    // insert relative to trust.nextSibling (after the returns line), never
+    // insertBefore(wrap, trust) which puts wallets above the returns line.
+    expect(v14).toContain('trust.nextSibling');
+    expect(v14).not.toMatch(/insertBefore\(\s*wrap\s*,\s*trust\s*\)/);
   });
 });
 

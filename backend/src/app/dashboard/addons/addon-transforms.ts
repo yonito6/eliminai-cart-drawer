@@ -609,8 +609,12 @@ export function applyExpressPayments(html: string, config: Record<string, any>):
         + `">${w.label}</div>`,
     )
     .join('');
+  // The dashboard preview iframe does NOT load v14 CSS, so the gap toward the
+  // checkout button must be inline on the wrapper (live storefront gets the
+  // same gap from v14 .ccd-express--below/--above margin rules).
+  const wrapMargin = position === 'below' ? 'margin-top:12px' : 'margin-bottom:12px';
   const wrap =
-    `<div id="ccd-express-payments" class="ccd-express ccd-express--${position} ccd-express--native">`
+    `<div id="ccd-express-payments" class="ccd-express ccd-express--${position} ccd-express--native" style="${wrapMargin}">`
     + `<div class="ccd-express__example-row" style="display:flex;gap:8px;width:100%">${btns}</div>`
     + `</div>`;
 
@@ -623,9 +627,11 @@ export function applyExpressPayments(html: string, config: Record<string, any>):
     }
     return html.replace(/<button[^>]*class="ccd-checkout-btn"/, wrap + '$&');
   }
-  // below (default) — after the checkout button, before the trust line if present.
-  if (/<div class="ccd-trust"/.test(html)) {
-    return html.replace(/(<div class="ccd-trust")/, wrap + '$1');
+  // below (default) — after the returns line (.ccd-trust) if present, so the
+  // "risk free returns" line stays directly under the checkout button and the
+  // wallets sit beneath it.
+  if (/<div class="ccd-trust"[\s\S]*?<\/div>/.test(html)) {
+    return html.replace(/(<div class="ccd-trust"[\s\S]*?<\/div>)/, '$1' + wrap);
   }
   return html.replace(/<\/button>\s*(?=<\/div>)/, '</button>' + wrap);
 }

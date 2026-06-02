@@ -5553,7 +5553,7 @@
     } else {
       var trust = footer.querySelector('.ccd-trust');
       if (trust) {
-        if (wrap.nextSibling !== trust) footer.insertBefore(wrap, trust);
+        if (trust.nextSibling !== wrap) footer.insertBefore(wrap, trust.nextSibling);
       } else {
         var afterRef = checkoutBtn.nextSibling;
         if (afterRef) footer.insertBefore(wrap, afterRef);
