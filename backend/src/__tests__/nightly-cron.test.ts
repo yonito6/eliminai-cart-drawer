@@ -49,6 +49,9 @@ vi.mock('../lib/prisma', () => ({
     dailySummary: {
       upsert: vi.fn(),
     },
+    variantAssignment: {
+      count: vi.fn().mockResolvedValue(0),
+    },
   },
 }));
 
