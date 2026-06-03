@@ -415,6 +415,19 @@ describe('v14 applyExperimentFeatures — follow-up setting test merge (LOCK + n
     expect(extV14.includes(marker)).toBe(true);
     expect(rootV14.includes(marker)).toBe(true);
   });
+
+  it('RED: gates the experiment slot even when its mode is NOT auto-optimize (test on a locked addon)', () => {
+    // A test can run on a 'locked' addon: startTest creates the experiment WITHOUT
+    // flipping the addon mode to auto-optimize. The original gating only hid
+    // addons whose mode === 'auto-optimize', so a locked addon under test rendered
+    // to BOTH arms (the OFF arm could never hide it). The slot must be authoritative.
+    for (const v14 of [extV14, rootV14]) {
+      // section 1 must exclude the addon currently under test so it isn't shown to all
+      expect(v14).toContain('k !== _expSlot');
+      // and the slot is gated by the experiment even when it is NOT auto-optimize
+      expect(v14).toContain("addons[_expSlot].mode !== 'auto-optimize'");
+    }
+  });
 });
 
 describe('express-payments-addon-editor — Show/Hide checkboxes (static analysis)', () => {

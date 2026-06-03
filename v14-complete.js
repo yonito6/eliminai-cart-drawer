@@ -4010,10 +4010,14 @@
       var addons = config.cartConfig && config.cartConfig.addons ? config.cartConfig.addons : {};
       var self = this;
       var show = {};
+      // The addon currently under A/B test (if any). Its visibility is decided by
+      // the experiment below — NOT by its stored mode — because a test can run on a
+      // 'locked' addon. Without this the tested addon would render to BOTH arms.
+      var _expSlot = (config.experiment && config.experiment.slot) ? config.experiment.slot : null;
 
       // 1. Always-on addons (enabled + NOT being A/B tested)
       for (var k in addons) {
-        if (addons[k] && addons[k].enabled && addons[k].mode !== 'auto-optimize') {
+        if (addons[k] && addons[k].enabled && addons[k].mode !== 'auto-optimize' && k !== _expSlot) {
           show[k] = addons[k].config || {};
         }
       }
@@ -4025,6 +4029,21 @@
           if (addons[ak] && addons[ak].mode === 'auto-optimize') {
             if (feat._enabled) { show[ak] = addons[ak].config || {}; }
             else { delete show[ak]; }
+          }
+        }
+        // 2a. The experiment's slot may NOT be in auto-optimize mode — a test can run
+        // on a 'locked' addon (startTest creates the experiment without flipping mode).
+        // The loop above only gates auto-optimize addons, so a locked tested addon
+        // would render to BOTH arms (section 1 now excludes it, but nothing hid it).
+        // Gate it here by the experiment so the OFF arm actually hides it. The ON/OFF
+        // test carries _enabled; follow-up setting tests omit it and leave the
+        // (already-won) addon shown for section 2b to override.
+        if (_expSlot && addons[_expSlot] && addons[_expSlot].mode !== 'auto-optimize') {
+          if (Object.prototype.hasOwnProperty.call(feat, '_enabled')) {
+            if (feat._enabled && addons[_expSlot].enabled) { show[_expSlot] = addons[_expSlot].config || {}; }
+            else { delete show[_expSlot]; }
+          } else if (addons[_expSlot].enabled) {
+            show[_expSlot] = (show[_expSlot] && typeof show[_expSlot] === 'object') ? show[_expSlot] : (addons[_expSlot].config || {});
           }
         }
         // Legacy feature flags — only set if NOT already populated by addons config
