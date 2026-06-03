@@ -3,7 +3,7 @@ import { pickVariant } from './thompson';
 import { computeSegment } from './segment';
 
 interface AssignResult {
-  experiment: { id: string; features: Record<string, any> } | null;
+  experiment: { id: string; slot: string; features: Record<string, any> } | null;
   variant: string | null;
   isNew: boolean;
   sessionId: string;
@@ -82,7 +82,7 @@ export async function assignVariant(
     const variants = experiment.variants as any[];
     const variantData = variants.find((v: any) => v.id === existing.variantId);
     return {
-      experiment: { id: experiment.id, features: variantData?.features || {} },
+      experiment: { id: experiment.id, slot: experiment.slot, features: variantData?.features || {} },
       variant: existing.variantId,
       isNew: false,
       sessionId: session.id,
@@ -157,7 +157,7 @@ export async function assignVariant(
       if (raceWinner) {
         const rv = (experiment.variants as any[]).find((v: any) => v.id === raceWinner.variantId);
         return {
-          experiment: { id: experiment.id, features: rv?.features || {} },
+          experiment: { id: experiment.id, slot: experiment.slot, features: rv?.features || {} },
           variant: raceWinner.variantId,
           isNew: false,
           sessionId: session.id,
@@ -172,7 +172,7 @@ export async function assignVariant(
   const variantData = variants.find((v: any) => v.id === variantId);
 
   return {
-    experiment: { id: experiment.id, features: variantData?.features || {} },
+    experiment: { id: experiment.id, slot: experiment.slot, features: variantData?.features || {} },
     variant: variantId,
     isNew: true,
     sessionId: session.id,

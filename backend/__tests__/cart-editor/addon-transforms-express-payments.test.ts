@@ -384,6 +384,39 @@ describe('v14 CCD.injectExpressPayments — per-wallet hide CSS (hiddenWallets)'
   });
 });
 
+describe('v14 applyExperimentFeatures — follow-up setting test merge (LOCK + new)', () => {
+  const extV14 = readFileSync(
+    resolve(__dirname, '../../../extensions/cart-drawer/assets/v14-complete.js'),
+    'utf8',
+  );
+  const rootV14 = readFileSync(
+    resolve(__dirname, '../../../v14-complete.js'),
+    'utf8',
+  );
+
+  it('LOCK: ON/OFF (_enabled) auto-optimize branch is preserved in both copies', () => {
+    for (const v14 of [extV14, rootV14]) {
+      expect(v14).toContain("addons[ak].mode === 'auto-optimize'");
+      expect(v14).toMatch(/if \(feat\._enabled\) \{ show\[ak\] = addons\[ak\]\.config/);
+    }
+  });
+
+  it('merges the assigned variant setting into the tested addon via experiment.slot', () => {
+    // Without this, follow-up setting tests render identically to both groups.
+    for (const v14 of [extV14, rootV14]) {
+      expect(v14).toContain('config.experiment.slot');
+      // skips _enabled so the ON/OFF test path is untouched
+      expect(v14).toMatch(/_efk !== '_enabled'/);
+    }
+  });
+
+  it('LOCK: both copies carry the identical merge marker (stay in sync)', () => {
+    const marker = 'config.experiment.slot';
+    expect(extV14.includes(marker)).toBe(true);
+    expect(rootV14.includes(marker)).toBe(true);
+  });
+});
+
 describe('express-payments-addon-editor — Show/Hide checkboxes (static analysis)', () => {
   const editor = readFileSync(
     resolve(__dirname, '../../src/app/dashboard/addons/express-payments-addon-editor.tsx'),

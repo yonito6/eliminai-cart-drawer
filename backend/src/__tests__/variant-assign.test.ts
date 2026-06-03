@@ -6,7 +6,7 @@ vi.mock('../lib/prisma', () => ({
   prisma: {
     experiment: { findFirst: vi.fn() },
     visitorSession: { findUnique: vi.fn(), create: vi.fn(), upsert: vi.fn() },
-    variantAssignment: { findUnique: vi.fn(), create: vi.fn() },
+    variantAssignment: { findUnique: vi.fn(), create: vi.fn(), groupBy: vi.fn().mockResolvedValue([]) },
   },
 }));
 
@@ -16,6 +16,7 @@ describe('assignVariant', () => {
   const mockExperiment = {
     id: 'exp1',
     storeId: 'store1',
+    slot: 'expressPayments',
     status: 'RUNNING',
     variants: [{ id: 'control', features: {} }, { id: 'treatment', features: { showTrustBadges: true } }],
     trafficSplit: { control: 0.5, treatment: 0.5 },
@@ -36,6 +37,19 @@ describe('assignVariant', () => {
     const result = await assignVariant('store1', 'tok1', 'DESKTOP', false);
     expect(result.variant).toBe('treatment');
     expect(result.isNew).toBe(false);
+    // RED: the storefront needs the experiment's addon slot to know which addon
+    // the running test targets (so it can apply the variant's setting override).
+    expect(result.experiment?.slot).toBe('expressPayments');
+  });
+
+  it('returns the experiment slot for a new assignment (storefront needs it)', async () => {
+    (prisma.experiment.findFirst as any).mockResolvedValue(mockExperiment);
+    (prisma.visitorSession.upsert as any).mockResolvedValue({ id: 'sess_new', storeId: 'store1' });
+    (prisma.variantAssignment.findUnique as any).mockResolvedValue(null);
+    (prisma.variantAssignment.create as any).mockResolvedValue({ variantId: 'control' });
+
+    const result = await assignVariant('store1', 'new_tok', 'MOBILE', false);
+    expect(result.experiment?.slot).toBe('expressPayments');
   });
 
   it('creates new assignment for new visitor', async () => {

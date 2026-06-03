@@ -4035,6 +4035,31 @@
         if (feat.showSocialProof && !show.socialProof) show.socialProof = {};
       }
 
+      // 2b. Follow-up (per-setting) test override. After the ON/OFF test wins, the
+      // engine A/B-tests one SETTING at a time (e.g. PayPal shown vs hidden). The
+      // assigned variant carries that setting in experiment.features; merge it into
+      // the tested addon's config (config.experiment.slot tells us which addon) so
+      // the two visitor groups actually render differently. Without this both arms
+      // would see the identical cart and the "winner" would be pure noise.
+      // Only fires when the variant carries a NON-_enabled feature (i.e. a setting
+      // test) — the ON/OFF test (features = {_enabled}) is left untouched above.
+      if (config.experiment && config.experiment.slot && config.experiment.features) {
+        var _eslot = config.experiment.slot;
+        var _efeat = config.experiment.features;
+        var _eov = {};
+        var _ehas = false;
+        for (var _efk in _efeat) {
+          if (_efk !== '_enabled') { _eov[_efk] = _efeat[_efk]; _ehas = true; }
+        }
+        if (_ehas && addons[_eslot] && addons[_eslot].enabled) {
+          var _ebase = (show[_eslot] && typeof show[_eslot] === 'object') ? show[_eslot] : (addons[_eslot].config || {});
+          var _emerged = {};
+          for (var _ebk in _ebase) _emerged[_ebk] = _ebase[_ebk];
+          for (var _eok in _eov) _emerged[_eok] = _eov[_eok];
+          show[_eslot] = _emerged;
+        }
+      }
+
       // 3. Inject shown addons, remove hidden ones
       for (var hk in self._addonHandlers) {
         if (show[hk]) { self._addonHandlers[hk].inject(show[hk]); }

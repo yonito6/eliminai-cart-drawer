@@ -6,7 +6,7 @@
 export interface AddonDimension {
   key: string;
   label: string;
-  type: 'select' | 'text' | 'number' | 'checkboxes' | 'toggle' | 'color';
+  type: 'select' | 'text' | 'number' | 'checkboxes' | 'toggle' | 'color' | 'wallets';
   testable: boolean;
   options?: { value: string; label: string }[];
   checkboxOptions?: { value: string; label: string }[];
@@ -601,10 +601,22 @@ export const ADDON_DEFINITIONS: AddonDefinition[] = [
         ],
         default: 'below',
       },
+      {
+        // PayPal is the ONLY wallet this app can hide (Apple/Google/Shop Pay live
+        // in Shopify's closed shadow root — unreachable). So the only honest
+        // wallet A/B test is "PayPal button shown vs hidden". Drives the existing
+        // config.hiddenWallets array (single source of truth) — see route.ts.
+        key: 'hiddenWallets',
+        label: 'PayPal button',
+        type: 'wallets',
+        testable: true,
+        default: [],
+      },
     ],
     defaultConfig: {
       enabled: false,
       position: 'below',
+      hiddenWallets: [],
     },
   },
 

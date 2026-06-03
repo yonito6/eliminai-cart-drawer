@@ -94,6 +94,23 @@ export async function POST(
         { id: `${dim.key}_current`, label: cur ? `"${cur}" (current)` : '(none) (current)', features: { [dim.key]: cur } },
         { id: `${dim.key}_alt`, label: alt, features: { [dim.key]: alt } },
       ];
+    } else if (dim.type === 'wallets') {
+      // Only PayPal is controllable, so this tests PayPal shown vs hidden by
+      // toggling 'paypal' in/out of the config.hiddenWallets array.
+      const curHidden: string[] = Array.isArray(currentVal) ? currentVal : [];
+      const paypalShown = curHidden.indexOf('paypal') === -1;
+      const showVariant = {
+        id: 'paypal_show',
+        label: 'Show PayPal' + (paypalShown ? ' (current)' : ''),
+        features: { [dim.key]: curHidden.filter((w) => w !== 'paypal') },
+      };
+      const hideVariant = {
+        id: 'paypal_hide',
+        label: 'Hide PayPal' + (!paypalShown ? ' (current)' : ''),
+        features: { [dim.key]: Array.from(new Set([...curHidden, 'paypal'])) },
+      };
+      // current state first so the (current) variant is always variant[0]
+      variants = paypalShown ? [showVariant, hideVariant] : [hideVariant, showVariant];
     } else {
       return NextResponse.json({ error: 'Cannot auto-generate variants for this type' }, { status: 400 });
     }

@@ -2247,13 +2247,16 @@ function AddonsPage() {
                         <div style={{ marginTop: 20 }}>
                           <div style={{ padding: 14, background: '#f5f3ff', border: '1px solid #e9d5ff', borderRadius: 10, marginBottom: 12 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: '#6d28d9', marginBottom: 6 }}>
-                              What this optimization will do:
+                              What “Smart Optimize” does
                             </div>
                             <div style={{ fontSize: 12, color: '#7c3aed', lineHeight: 1.5 }}>
-                              Our AI will find whether <strong>{def.label}</strong> increases your orders. Results appear automatically — the more visitors, the faster.
+                              It runs a real A/B test on your live shoppers. <strong>Step 1:</strong> it shows <strong>{def.label}</strong> to half of them and hides it from the other half to prove whether it actually wins you more orders.
+                            </div>
+                            <div style={{ fontSize: 12, color: '#7c3aed', lineHeight: 1.5, marginTop: 6 }}>
+                              <strong>Step 2:</strong> once it has a clear answer, it automatically tests one setting at a time (like button position, or showing vs hiding PayPal) to squeeze out extra orders.
                             </div>
                             <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 6 }}>
-                              Once complete, our AI can fine-tune individual settings for even more lift.
+                              You don’t have to manage anything — winners apply themselves and results show up here.
                             </div>
                           </div>
                           <button
@@ -2304,7 +2307,7 @@ function AddonsPage() {
                             </div>
                           </div>
                           <div style={{ fontSize: 12, color: '#7c3aed', marginBottom: 12 }}>
-                            {def.label} ON vs OFF · {experiments[def.key]?.totalVisitors ?? 0} visitors so far
+                            {experiments[def.key]?.name ?? (def.label + ' ON vs OFF')} · {experiments[def.key]?.totalVisitors ?? 0} visitors so far
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>
                             <button
@@ -2427,7 +2430,7 @@ function AddonsPage() {
                               disabled={!!startingTest[def.key]}
                               style={{ padding: '6px 14px', background: '#7c3aed', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#fff', cursor: 'pointer' }}
                             >
-                              Test Next Dimension
+                              Test Next Setting
                             </button>
                           )}
                         </div>

@@ -72,4 +72,19 @@ describe('applyWinner', () => {
     const result = applyWinner({}, 'trustBadges', { position: 'above-button' });
     expect(result.addons.trustBadges.config.position).toBe('above-button');
   });
+
+  it('LOCK: ON/OFF winner (_enabled) still merges unchanged', () => {
+    const cur = { trustBadges: { enabled: true, config: { position: 'below-price' } } };
+    const result = applyWinner(cur, 'trustBadges', { _enabled: true });
+    expect(result.addons.trustBadges.config._enabled).toBe(true);
+    expect(result.addons.trustBadges.config.position).toBe('below-price');
+  });
+
+  it('applies an array-valued hiddenWallets winner (express PayPal hide test)', () => {
+    const cur = { expressPayments: { enabled: true, config: { position: 'below', hiddenWallets: [] } } };
+    const result = applyWinner(cur, 'expressPayments', { hiddenWallets: ['paypal'] });
+    expect(result.addons.expressPayments.config.hiddenWallets).toEqual(['paypal']);
+    // sibling settings must be untouched
+    expect(result.addons.expressPayments.config.position).toBe('below');
+  });
 });

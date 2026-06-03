@@ -175,13 +175,22 @@ describe('ADDON_DEFINITIONS — expressPayments addon', () => {
     expect(def()).toBeDefined();
   });
 
-  it('NATIVE: only dimension is position (providers/layout/separator removed)', () => {
+  it('NATIVE: dimensions are position + hiddenWallets (legacy fake-button dims removed)', () => {
     const keys = def().dimensions.map((d) => d.key);
-    expect(keys).toEqual(['position']);
+    expect(keys).toEqual(['position', 'hiddenWallets']);
     // legacy fake-button dimensions must be gone
     expect(keys).not.toContain('providers');
     expect(keys).not.toContain('layout');
     expect(keys).not.toContain('separatorLabel');
+  });
+
+  it('hiddenWallets is a testable PayPal show/hide dimension (only reachable wallet)', () => {
+    const dim = def().dimensions.find((d) => d.key === 'hiddenWallets')!;
+    expect(dim).toBeDefined();
+    expect(dim.testable).toBe(true);
+    expect(dim.type).toBe('wallets');
+    // default = no wallets hidden (PayPal shown) — matches the array config field
+    expect(dim.default).toEqual([]);
   });
 
   it('position options below/above, default below', () => {
@@ -194,6 +203,7 @@ describe('ADDON_DEFINITIONS — expressPayments addon', () => {
     const cfg = def().defaultConfig;
     expect(cfg.enabled).toBe(false);
     expect(cfg.position).toBe('below');
+    expect(cfg.hiddenWallets).toEqual([]);
     expect(cfg.separatorLabel).toBeUndefined();
     expect(cfg.layout).toBeUndefined();
     expect(cfg.providers).toBeUndefined();

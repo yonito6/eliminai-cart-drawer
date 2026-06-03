@@ -127,6 +127,7 @@ async function handleRequest(req: NextRequest) {
       experiment: assignment.experiment
         ? {
             id: assignment.experiment.id,
+            slot: assignment.experiment.slot,
             variant: assignment.variant,
             features: assignment.experiment.features,
           }
