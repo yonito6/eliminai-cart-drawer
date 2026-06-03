@@ -86,6 +86,12 @@ interface AddonPreviewProps {
   stagingHint?: StagingHint | null;
   /** Store ID to fetch real products for preview */
   storeId?: string | null;
+  /**
+   * Addon to OMIT from the full-cart background render. Used by A/B variant
+   * previews: the "Disabled" arm must show the cart WITHOUT the tested addon,
+   * even though that addon is still enabled in the store config.
+   */
+  excludeAddonKey?: string;
 }
 
 function buildTrustBadgesHtml(config: Record<string, any> | undefined): string {
@@ -103,7 +109,7 @@ function buildTrustBadgesHtml(config: Record<string, any> | undefined): string {
     '</div>';
 }
 
-export default function AddonPreview({ addonKey, addonConfig, mode, themeSettings, stagingHint, storeId }: AddonPreviewProps) {
+export default function AddonPreview({ addonKey, addonConfig, mode, themeSettings, stagingHint, storeId, excludeAddonKey }: AddonPreviewProps) {
   const [iframeHeight, setIframeHeight] = useState(mode === 'full' ? 680 : (FOCUS_AREAS[addonKey]?.height || 200));
   const [previewProducts, setPreviewProducts] = useState<PreviewProduct[]>([]);
   // Live addon configs for all OTHER enabled addons — so the preview shows the
@@ -261,7 +267,7 @@ export default function AddonPreview({ addonKey, addonConfig, mode, themeSetting
     ];
 
     for (const { key, apply } of ORDER) {
-      if (key === addonKey) continue; // focused addon rendered below
+      if (key === addonKey || key === excludeAddonKey) continue; // focused addon rendered below; excluded addon omitted entirely (A/B OFF arm)
       const entry = getEntry(key);
       if (!entry.enabled) continue;
       try {

@@ -430,6 +430,33 @@ describe('v14 applyExperimentFeatures — follow-up setting test merge (LOCK + n
   });
 });
 
+describe('dashboard variant preview — OFF arm must EXCLUDE the tested addon (static analysis)', () => {
+  // BUG (2026-06-03): the merchant ran the express "Enabled vs Disabled" test and
+  // BOTH variant preview cards showed the express buttons. The full-cart preview
+  // renders every enabled addon EXCEPT the focused `addonKey`; the OFF arm passed
+  // addonKey='_none', so the tested addon (still enabled in store config) was drawn
+  // in the background for BOTH arms. The OFF arm must EXCLUDE the tested addon.
+  const preview = readFileSync(
+    resolve(__dirname, '../../src/app/dashboard/addons/addon-preview.tsx'),
+    'utf8',
+  );
+  const page = readFileSync(
+    resolve(__dirname, '../../src/app/dashboard/addons/page.tsx'),
+    'utf8',
+  );
+
+  it('RED: AddonPreview accepts an excludeAddonKey and skips it in the background render', () => {
+    expect(preview).toContain('excludeAddonKey');
+    // background loop must skip BOTH the focused addon and the excluded one
+    expect(preview).toMatch(/key === addonKey \|\| key === excludeAddonKey/);
+  });
+
+  it('RED: the variant preview passes excludeAddonKey for the disabled (OFF) arm', () => {
+    // the OFF arm (_enabled === false) must exclude def.key so express is not drawn
+    expect(page).toMatch(/excludeAddonKey=\{[^}]*_enabled === false[^}]*def\.key/);
+  });
+});
+
 describe('express-payments-addon-editor — Show/Hide checkboxes (static analysis)', () => {
   const editor = readFileSync(
     resolve(__dirname, '../../src/app/dashboard/addons/express-payments-addon-editor.tsx'),

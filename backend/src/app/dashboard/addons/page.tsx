@@ -2766,6 +2766,7 @@ function AddonsPage() {
                                 <AddonPreview
                                   addonKey={v.features?._enabled === false ? '_none' : def.key}
                                   addonConfig={v.features?._enabled === false ? {} : { ...(addon.config ?? {}), ...(v.features || {}) }}
+                                  excludeAddonKey={v.features?._enabled === false ? def.key : undefined}
                                   mode="full"
                                   storeId={STORE_ID}
                                 />
