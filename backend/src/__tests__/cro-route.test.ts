@@ -4,7 +4,7 @@ vi.mock('../lib/prisma', () => ({
   prisma: {
     store: { findUnique: vi.fn(), update: vi.fn() },
     dailySummary: { findMany: vi.fn().mockResolvedValue([]) },
-    experiment: { findMany: vi.fn().mockResolvedValue([]) },
+    experiment: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
   },
 }));
 vi.mock('../lib/shopify-orders', () => ({
@@ -35,7 +35,7 @@ describe('GET /api/stores/[id]/cro', () => {
       config: { cro: { baseline: { capturedAt: '2026-05-01T00:00:00.000Z', windowDays: 30, orders30d: 8, revenue30d: 1000, aov: 125, currency: 'USD' } } },
     });
     (prisma.dailySummary.findMany as any).mockResolvedValue([
-      { cartOpens: 100, checkoutClicks: 13 },
+      { cartOpens: 100, checkoutClicks: 13, date: '2026-05-15', uniqueVisitors: 50, ordersCompleted: 1 },
     ]);
     (prisma.experiment.findMany as any).mockResolvedValue([
       { name: 'Trust Badges', status: 'WINNER_FOUND', liftPercent: 4.2, endedAt: new Date('2026-05-20T00:00:00Z') },
@@ -50,6 +50,36 @@ describe('GET /api/stores/[id]/cro', () => {
     expect(body.activity).toHaveLength(1);
     expect(body.activity[0].name).toBe('Trust Badges');
     expect(body.baselineCheckoutRate).toBe(0.10);
+  });
+
+  it('returns the momentum payload (value, before/now, trend, fuel, roadmap, suggestions)', async () => {
+    (prisma.store.findUnique as any).mockResolvedValue({
+      id: 's3', shopDomain: 'shop.myshopify.com', accessToken: 'tok',
+      baselineCheckoutRate: 0.1,
+      config: {
+        cro: { baseline: { aov: 168.2, currency: 'USD' } },
+        autopilot: { completedCount: 3 },
+        addons: {},
+      },
+    });
+    (prisma.dailySummary.findMany as any).mockResolvedValue([
+      { date: '2026-04-09', uniqueVisitors: 100, ordersCompleted: 1, cartOpens: 10, checkoutClicks: 5 },
+      { date: '2026-06-03', uniqueVisitors: 100, ordersCompleted: 2, cartOpens: 10, checkoutClicks: 6 },
+    ]);
+    (prisma.experiment.findMany as any).mockResolvedValue([]);
+    (prisma.experiment.findFirst as any).mockResolvedValue(null);
+    const res = await call('s3');
+    const body = await res.json();
+    expect(body.value).toBeDefined();
+    expect(body.value.winsBanked).toBe(3);
+    expect(body.now.aov).toBe(150);               // from fetchOrders30d mock 1500/10
+    expect(Array.isArray(body.trend)).toBe(true);
+    expect(body.trend.length).toBe(2);
+    expect(body.fuel.visitors).toBe(200);
+    expect(Array.isArray(body.suggestions)).toBe(true);
+    expect(body.suggestions.length).toBe(5);
+    expect(body.roadmap).toBeDefined();
+    expect(Array.isArray(body.roadmap.queue)).toBe(true);
   });
 
   it('backfills the baseline when missing and refresh=1 is passed', async () => {

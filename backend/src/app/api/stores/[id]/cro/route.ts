@@ -3,6 +3,11 @@ import { prisma } from '@/lib/prisma';
 import { fetchOrders30d } from '@/lib/shopify-orders';
 import { buildBaseline, computeAov, type CroBaseline } from '@/lib/cro-baseline';
 import { computeLift } from '@/lib/cro-lift';
+import { buildConversionSeries, windowConversion } from '@/lib/cro-conversion';
+import { computeValue } from '@/lib/cro-value';
+import { CRO_SUGGESTIONS } from '@/lib/cro-suggestions';
+import { buildOptimizeQueueRich } from '@/lib/autopilot';
+import { ADDON_DEFINITIONS } from '@/lib/addon-definitions';
 
 export async function GET(
   req: NextRequest,
@@ -44,7 +49,7 @@ export async function GET(
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const summaries = await prisma.dailySummary.findMany({
     where: { storeId: store.id, date: { gte: since } },
-    select: { cartOpens: true, checkoutClicks: true },
+    select: { cartOpens: true, checkoutClicks: true, uniqueVisitors: true, ordersCompleted: true, date: true },
   });
   const opens = summaries.reduce((s, r) => s + (r.cartOpens ?? 0), 0);
   const clicks = summaries.reduce((s, r) => s + (r.checkoutClicks ?? 0), 0);
@@ -57,9 +62,83 @@ export async function GET(
   const completed = await prisma.experiment.findMany({
     where: { storeId: store.id, status: { in: ['WINNER_FOUND', 'NO_DIFFERENCE'] } },
     orderBy: { endedAt: 'desc' },
-    select: { name: true, status: true, liftPercent: true, endedAt: true },
+    select: { name: true, status: true, liftPercent: true, endedAt: true, slot: true, winnerVariantId: true, variants: true },
     take: 50,
   });
+
+  // ---- Momentum dashboard payload ----
+  const rows = summaries as Array<{ date: any; uniqueVisitors?: number; ordersCompleted?: number }>;
+  const totalVisitors = rows.reduce((s, r) => s + (r.uniqueVisitors ?? 0), 0);
+  const totalOrders = rows.reduce((s, r) => s + (r.ordersCompleted ?? 0), 0);
+  const { before, now } = windowConversion(rows as any, 7);
+  const trend = buildConversionSeries(rows as any);
+  const winsBanked = cfg.autopilot?.completedCount ?? 0;
+
+  const value = {
+    ...computeValue({
+      before, now,
+      visitors: totalVisitors,
+      ordersNow: totalOrders,
+      aovBefore: baseline?.aov ?? null,
+      aovNow: currentAov,
+      winsBanked,
+    }),
+    thisWeekRevenue: 0,
+  };
+
+  // "This week vs prior week": run the same calc over the last 14 distinct days.
+  try {
+    const key = (d: any) => (typeof d === 'string' ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10));
+    const days = [...new Set(rows.map(r => key(r.date)))].sort();
+    const last14 = new Set(days.slice(-14));
+    const recent = rows.filter(r => last14.has(key(r.date)));
+    const tw = windowConversion(recent as any, 7);
+    value.thisWeekRevenue = computeValue({
+      before: tw.before, now: tw.now,
+      visitors: tw.now.visitors, ordersNow: tw.now.orders,
+      aovBefore: baseline?.aov ?? null, aovNow: currentAov, winsBanked: 0,
+    }).extraRevenue;
+  } catch (e) {
+    console.error('[cro] this-week calc failed', e);
+  }
+
+  // Milestones: addons that have banked a winner.
+  const addonsCfg = (cfg.addons as Record<string, any>) ?? {};
+  const milestones = Object.entries(addonsCfg)
+    .filter(([, a]) => a?.lastWinner?.appliedAt)
+    .map(([k, a]) => ({
+      date: a.lastWinner.appliedAt,
+      addonKey: k,
+      label: a.lastWinner.label ?? k,
+      lift: a.lastWinner.lift ?? null,
+    }));
+
+  // Roadmap: real autopilot queue + the active running test. Degrade gracefully.
+  let roadmap: { active: any; queue: any[]; phase: string } = { active: null, queue: [], phase: 'complete' };
+  try {
+    const testedSlots = completed.map(e => (e as any).slot).filter(Boolean) as string[];
+    const winners: Record<string, any> = {};
+    for (const e of completed) {
+      const slot = (e as any).slot;
+      const wvId = (e as any).winnerVariantId;
+      const variants = (e as any).variants;
+      if (slot && wvId && Array.isArray(variants)) {
+        const wv = variants.find((v: any) => v.id === wvId);
+        winners[slot] = wv?.features ?? {};
+      }
+    }
+    const { queue, phase } = buildOptimizeQueueRich(ADDON_DEFINITIONS as any, testedSlots, winners);
+    const running = await prisma.experiment.findFirst({
+      where: { storeId: store.id, status: 'RUNNING' },
+      select: { name: true, slot: true },
+    });
+    const active = running ? { name: running.name, slot: running.slot } : (queue[0] ?? null);
+    roadmap = { active, queue, phase };
+  } catch (e) {
+    console.error('[cro] roadmap build failed', e);
+  }
+
+  const activatedSuggestions = cfg.croSuggestions?.activated ?? [];
 
   return NextResponse.json({
     currency,
@@ -73,5 +152,22 @@ export async function GET(
       liftPercent: e.liftPercent,
       endedAt: e.endedAt,
     })),
+    value,
+    before: {
+      conversion: before.conversion,
+      aov: baseline?.aov ?? null,
+      ordersPerMonth: Math.round(before.conversion * totalVisitors),
+    },
+    now: {
+      conversion: now.conversion,
+      aov: currentAov,
+      ordersPerMonth: totalOrders,
+    },
+    trend,
+    milestones,
+    fuel: { visitors: totalVisitors },
+    roadmap,
+    suggestions: CRO_SUGGESTIONS,
+    activatedSuggestions,
   });
 }
