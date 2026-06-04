@@ -73,11 +73,37 @@ describe('applyWinner', () => {
     expect(result.addons.trustBadges.config.position).toBe('above-button');
   });
 
-  it('LOCK: ON/OFF winner (_enabled) still merges unchanged', () => {
-    const cur = { trustBadges: { enabled: true, config: { position: 'below-price' } } };
+  // BLAST RADIUS MAP — _enabled winner must flip the top-level `enabled` flag.
+  // Target: applyWinner (lib/autopilot.ts).
+  // Callers: autopilot-engine.ts:76 (B1 nightly cron) + apply-winner/route.ts:40 (manual UI).
+  //   Both go through this one shared fn — no duplicate to miss.
+  // State consumer: v14 storefront renders an applied addon only when the
+  //   TOP-LEVEL addons[slot].enabled === true (v14 lines 4020/4043/4045/4073).
+  //   It never reads config._enabled for applied state, so _enabled belongs on
+  //   the top-level flag, not in config.
+  // Reference impl (unchanged): page.tsx:733 applyVariantConfig already does
+  //   patchAddon({ enabled }) for the stop-test resolve path.
+  it('ON winner (_enabled:true) flips top-level enabled, not config', () => {
+    const cur = { trustBadges: { enabled: false, config: { position: 'below-price' } } };
     const result = applyWinner(cur, 'trustBadges', { _enabled: true });
-    expect(result.addons.trustBadges.config._enabled).toBe(true);
+    expect(result.addons.trustBadges.enabled).toBe(true);
+    expect(result.addons.trustBadges.config._enabled).toBeUndefined();
     expect(result.addons.trustBadges.config.position).toBe('below-price');
+  });
+
+  it('OFF winner (_enabled:false) turns the addon off via top-level flag', () => {
+    const cur = { trustBadges: { enabled: true, config: { position: 'below-price' } } };
+    const result = applyWinner(cur, 'trustBadges', { _enabled: false });
+    expect(result.addons.trustBadges.enabled).toBe(false);
+    expect(result.addons.trustBadges.config._enabled).toBeUndefined();
+    expect(result.addons.trustBadges.config.position).toBe('below-price');
+  });
+
+  it('LOCK: setting winner (no _enabled) leaves enabled untouched', () => {
+    const cur = { trustBadges: { enabled: true, config: { position: 'below-price' } } };
+    const result = applyWinner(cur, 'trustBadges', { position: 'above-button' });
+    expect(result.addons.trustBadges.enabled).toBe(true);
+    expect(result.addons.trustBadges.config.position).toBe('above-button');
   });
 
   it('applies an array-valued hiddenWallets winner (express PayPal hide test)', () => {

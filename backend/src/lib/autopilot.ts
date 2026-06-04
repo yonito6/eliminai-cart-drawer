@@ -152,10 +152,19 @@ export function applyWinner(
   const addons = { ...(currentConfig.addons || currentConfig) };
   const current = addons[addonKey] || { enabled: false, config: {} };
 
+  // `_enabled` is a meta-flag (ON/OFF first-test), not a config field. Split it
+  // onto the addon's top-level `enabled` flag — the storefront renders an applied
+  // addon based on that flag, never on config._enabled. Remaining keys are real
+  // settings and merge into config as before.
+  const { _enabled, ...settingFeatures } = winnerFeatures;
+  const nextEnabled = typeof _enabled === 'boolean' ? _enabled : current.enabled;
+
   addons[addonKey] = {
     ...current,
-    config: { ...(current.config || {}), ...winnerFeatures },
+    enabled: nextEnabled,
+    config: { ...(current.config || {}), ...settingFeatures },
     previousConfig: {
+      enabled: current.enabled,
       config: { ...(current.config || {}) },
       savedAt: new Date().toISOString(),
       reason: 'winner' as const,
