@@ -241,7 +241,7 @@ function AnalyticsInner() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {data.suggestions.map(s => (
-            <SuggestionCard key={s.key} s={s} activated={data.activatedSuggestions.includes(s.key)} />
+            <SuggestionCard key={s.key} s={s} activated={data.activatedSuggestions.includes(s.key)} storeId={storeId as string} />
           ))}
           {data.suggestions.length === 0 && (
             <div style={{ color: '#b9aee0', fontSize: 13 }}>No new tactics queued right now — check back soon.</div>
@@ -397,11 +397,14 @@ function RoadmapItem({
 }
 
 function SuggestionCard({
-  s, activated,
+  s, activated, storeId,
 }: {
   s: CroResponse['suggestions'][number];
   activated: boolean;
+  storeId: string;
 }) {
+  const [requested, setRequested] = useState(false);
+  const isActivated = activated || requested;
   return (
     <div style={{
       background: '#1a1530', border: '1px solid #3a2f5e', borderRadius: 12,
@@ -429,16 +432,25 @@ function SuggestionCard({
         )}
       </div>
       <button
-        disabled={activated}
+        disabled={isActivated}
+        onClick={() => {
+          if (isActivated) return;
+          setRequested(true);
+          fetch(`/api/stores/${storeId}/cro/suggestions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: s.key }),
+          }).catch(() => {});
+        }}
         style={{
-          background: activated ? 'transparent' : VIOLET,
-          color: activated ? TEAL : '#fff',
-          border: activated ? `1px solid ${TEAL}` : 'none',
+          background: isActivated ? 'transparent' : VIOLET,
+          color: isActivated ? TEAL : '#fff',
+          border: isActivated ? `1px solid ${TEAL}` : 'none',
           borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600,
-          cursor: activated ? 'default' : 'pointer', whiteSpace: 'nowrap',
+          cursor: isActivated ? 'default' : 'pointer', whiteSpace: 'nowrap',
         }}
       >
-        {activated ? 'Requested ✓' : 'Activate'}
+        {isActivated ? 'Requested ✓' : 'Activate'}
       </button>
     </div>
   );
