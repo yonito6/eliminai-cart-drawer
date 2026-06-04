@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ADDON_DEFINITIONS } from '@/lib/addon-definitions';
+import { buildVariantsForSlot } from '@/lib/test-variants';
 
 // POST /api/stores/:id/addons/test — start a test for an addon
 export async function POST(
@@ -36,89 +37,15 @@ export async function POST(
 
   // Determine what to test next
   const cfg = (store.config as any)?.addons?.[addonKey]?.config || {};
-  let variants: { id: string; label: string; features: Record<string, any> }[];
-  let testName: string;
-  let testDimensionKey: string;
-
-  // FIRST TEST is always: WITH addon vs WITHOUT addon
-  const enabledTestName = `${definition.label} — Enabled vs Disabled`;
-  const hasTestedEnabled = completedNames.has(enabledTestName);
-
-  if (!hasTestedEnabled && !dimensionKey) {
-    // First test: with vs without
-    testName = enabledTestName;
-    testDimensionKey = '_enabled';
-    variants = [
-      { id: 'with_addon', label: `With ${definition.label}`, features: { _enabled: true } },
-      { id: 'without_addon', label: `Without ${definition.label}`, features: { _enabled: false } },
-    ];
-  } else {
-    // Subsequent tests: test specific dimensions
-    const testableDims = definition.dimensions.filter((d) => d.testable);
-    if (!testableDims.length) {
-      return NextResponse.json({ error: 'No testable dimensions' }, { status: 400 });
-    }
-
-    // Pick the requested dimension, or the first untested one
-    let dim;
-    if (dimensionKey) {
-      dim = testableDims.find((d) => d.key === dimensionKey);
-    } else {
-      dim = testableDims.find((d) => !completedNames.has(`${definition.label} — ${d.label}`)) || testableDims[0];
-    }
-
-    if (!dim) {
-      return NextResponse.json({ error: 'Dimension not found or not testable' }, { status: 400 });
-    }
-
-    testName = `${definition.label} — ${dim.label}`;
-    testDimensionKey = dim.key;
-    const currentVal = cfg[dim.key] ?? dim.default;
-
-    if (dim.type === 'select' && dim.options) {
-      const currentOpt = dim.options.find((o) => o.value === currentVal) || dim.options[0];
-      const altOpt = dim.options.find((o) => o.value !== currentVal) || dim.options[1];
-      variants = [
-        { id: `${dim.key}_${currentOpt.value}`, label: currentOpt.label + ' (current)', features: { [dim.key]: currentOpt.value } },
-        { id: `${dim.key}_${altOpt.value}`, label: altOpt.label, features: { [dim.key]: altOpt.value } },
-      ];
-    } else if (dim.type === 'toggle') {
-      variants = [
-        { id: `${dim.key}_${currentVal ? 'on' : 'off'}`, label: `${dim.label}: ${currentVal ? 'On' : 'Off'} (current)`, features: { [dim.key]: !!currentVal } },
-        { id: `${dim.key}_${currentVal ? 'off' : 'on'}`, label: `${dim.label}: ${currentVal ? 'Off' : 'On'}`, features: { [dim.key]: !currentVal } },
-      ];
-    } else if (dim.type === 'text') {
-      const cur = currentVal || '';
-      const alt = cur === 'Guaranteed Safe Checkout' ? 'Secure Payment' : 'Guaranteed Safe Checkout';
-      variants = [
-        { id: `${dim.key}_current`, label: cur ? `"${cur}" (current)` : '(none) (current)', features: { [dim.key]: cur } },
-        { id: `${dim.key}_alt`, label: alt, features: { [dim.key]: alt } },
-      ];
-    } else if (dim.type === 'wallets') {
-      // Only PayPal is controllable, so this tests PayPal shown vs hidden by
-      // toggling 'paypal' in/out of the config.hiddenWallets array.
-      const curHidden: string[] = Array.isArray(currentVal) ? currentVal : [];
-      const paypalShown = curHidden.indexOf('paypal') === -1;
-      const showVariant = {
-        id: 'paypal_show',
-        label: 'Show PayPal' + (paypalShown ? ' (current)' : ''),
-        features: { [dim.key]: curHidden.filter((w) => w !== 'paypal') },
-      };
-      const hideVariant = {
-        id: 'paypal_hide',
-        label: 'Hide PayPal' + (!paypalShown ? ' (current)' : ''),
-        features: { [dim.key]: Array.from(new Set([...curHidden, 'paypal'])) },
-      };
-      // current state first so the (current) variant is always variant[0]
-      variants = paypalShown ? [showVariant, hideVariant] : [hideVariant, showVariant];
-    } else {
-      return NextResponse.json({ error: 'Cannot auto-generate variants for this type' }, { status: 400 });
-    }
+  const built = buildVariantsForSlot(definition as any, {
+    completedNames,
+    currentConfig: cfg,
+    dimensionKey,
+  });
+  if ('error' in built) {
+    return NextResponse.json({ error: built.error }, { status: 400 });
   }
-
-  // Equal traffic split
-  const trafficSplit: Record<string, number> = {};
-  variants.forEach((v) => { trafficSplit[v.id] = 0.5; });
+  const { testName, dimensionKey: testDimensionKey, variants, trafficSplit } = built;
 
   const experiment = await prisma.experiment.create({
     data: {

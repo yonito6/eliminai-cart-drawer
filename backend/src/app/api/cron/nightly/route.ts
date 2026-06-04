@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { calculateThompsonSampling, buildCrossStorePriors, calculateSampleTarget, calculateConsistency } from '@/lib/thompson';
+import { progressAutopilot } from '@/lib/autopilot-engine';
 
 export async function POST(req: NextRequest) {
   // Verify cron secret
@@ -214,6 +215,23 @@ export async function POST(req: NextRequest) {
         },
       },
     });
+
+    // Auto-progress autopilot: apply winner + start next queued test (only on terminal verdict).
+    const terminal = newStatus === 'WINNER_FOUND' || newStatus === 'NO_DIFFERENCE' || newStatus === 'REVERTED';
+    const autopilotEnabled = ((exp.store.config as any)?.autopilot?.enabled) === true;
+    if (terminal && autopilotEnabled) {
+      const winnerVariant = (exp.variants as any[]).find(v => v.id === winnerVariantId);
+      try {
+        await progressAutopilot(prisma, exp.storeId, {
+          slot: exp.slot,
+          status: newStatus as any,
+          winnerFeatures: winnerVariant?.features || {},
+          liftPercent: ts.liftPercent,
+        });
+      } catch (e) {
+        console.error('[engine] progression failed for', exp.id, e);
+      }
+    }
 
     results.push({
       experimentId: exp.id,

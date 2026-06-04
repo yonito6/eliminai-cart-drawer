@@ -38,20 +38,11 @@ import { NextRequest } from 'next/server';
 // Mock prisma
 vi.mock('../lib/prisma', () => ({
   prisma: {
-    experiment: {
-      findMany: vi.fn(),
-      update: vi.fn(),
-    },
-    event: {
-      groupBy: vi.fn(),
-      deleteMany: vi.fn(),
-    },
-    dailySummary: {
-      upsert: vi.fn(),
-    },
-    variantAssignment: {
-      count: vi.fn().mockResolvedValue(0),
-    },
+    experiment: { findMany: vi.fn(), update: vi.fn(), create: vi.fn() },
+    store: { findUnique: vi.fn(), update: vi.fn() },
+    event: { groupBy: vi.fn(), deleteMany: vi.fn() },
+    dailySummary: { upsert: vi.fn() },
+    variantAssignment: { count: vi.fn().mockResolvedValue(0) },
   },
 }));
 
@@ -127,6 +118,15 @@ function mockEventGroupBy(cartOpens: number, checkoutClicks: number, orders: num
   });
 }
 
+// Drives the cron's RUNNING query AND progressAutopilot's completed-names query from one mock.
+function mockFindMany(running: any[], completedNames: { name: string }[] = []) {
+  (prisma.experiment.findMany as any).mockImplementation((args: any) => {
+    if (args?.select?.name) return Promise.resolve(completedNames); // progression: completed-names
+    // cron's RUNNING query AND its cross-store priors query both fall through to `running` — harmless, mocked Thompson ignores priors.
+    return Promise.resolve(running);
+  });
+}
+
 describe('POST /api/cron/nightly', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -135,6 +135,9 @@ describe('POST /api/cron/nightly', () => {
 
     (prisma.experiment.findMany as any).mockResolvedValue([MOCK_EXPERIMENT]);
     (prisma.experiment.update as any).mockResolvedValue(MOCK_EXPERIMENT);
+    (prisma.experiment.create as any).mockResolvedValue({ id: 'expNew', startedAt: new Date() });
+    (prisma.store.findUnique as any).mockResolvedValue({ id: 'store_1', config: {} });
+    (prisma.store.update as any).mockResolvedValue({});
     (prisma.dailySummary.upsert as any).mockResolvedValue({});
     (prisma.event.deleteMany as any).mockResolvedValue({ count: 42 });
     (calculateThompsonSampling as any).mockReturnValue(DEFAULT_TS_RESULT);
@@ -478,5 +481,68 @@ describe('POST /api/cron/nightly', () => {
     expect(prisma.dailySummary.upsert).not.toHaveBeenCalled();
     // Pruning still happens even with no experiments
     expect(prisma.event.deleteMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('LOCK: store without autopilot still verdicts, no progression', async () => {
+    (calculateThompsonSampling as any).mockReturnValue({
+      confidence: 0.97, liftPercent: 12, winnerId: 'treatment',
+      trafficSplit: { control: 0.1, treatment: 0.9 },
+    });
+    // MOCK_STORE (default) has no `config` → autopilot gate is falsy.
+    const POST = await getHandler();
+    const res = await POST(makeRequest('test-secret-123'));
+    expect(res.status).toBe(200);
+    expect(prisma.experiment.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'WINNER_FOUND' }),
+    }));
+    expect(prisma.experiment.create).not.toHaveBeenCalled();
+    expect(prisma.store.update).not.toHaveBeenCalled();
+  });
+
+  it('auto-progression: autopilot store applies winner + starts the next queued test', async () => {
+    const autopilotConfig = {
+      autopilot: {
+        enabled: true,
+        currentTestSlot: 'trustBadges:enabled',
+        queue: ['trustBadges:enabled', 'scarcityTimer:enabled'],
+        completedCount: 0, totalLift: 0, startedAt: '2026-06-01T00:00:00.000Z',
+      },
+      addons: { trustBadges: { config: { text: 'old' } } },
+    };
+    const autopilotExp = {
+      ...MOCK_EXPERIMENT,
+      slot: 'trustBadges',
+      store: { ...MOCK_STORE, config: autopilotConfig },
+      variants: [
+        { id: 'control', features: { _enabled: false } },
+        { id: 'treatment', features: { _enabled: true } },
+      ],
+    };
+    mockFindMany([autopilotExp], []);
+    (calculateThompsonSampling as any).mockReturnValue({
+      confidence: 0.97, liftPercent: 12, winnerId: 'treatment',
+      trafficSplit: { control: 0.1, treatment: 0.9 },
+    });
+    (prisma.store.findUnique as any).mockResolvedValue({ id: 'store_1', config: autopilotConfig });
+    (prisma.experiment.create as any).mockResolvedValue({ id: 'expNew', startedAt: new Date() });
+
+    const POST = await getHandler();
+    const res = await POST(makeRequest('test-secret-123'));
+    expect(res.status).toBe(200);
+    expect(prisma.experiment.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'exp_1' },
+      data: expect.objectContaining({ status: 'WINNER_FOUND' }),
+    }));
+    expect(prisma.experiment.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ slot: 'scarcityTimer', status: 'RUNNING' }),
+    }));
+    expect(prisma.store.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'store_1' },
+      data: expect.objectContaining({
+        config: expect.objectContaining({
+          autopilot: expect.objectContaining({ currentTestSlot: 'scarcityTimer:enabled', completedCount: 1 }),
+        }),
+      }),
+    }));
   });
 });
