@@ -7,6 +7,7 @@ import AppBridgeProvider from './app-bridge-provider';
 
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: '\u2261' },
+  { href: '/dashboard/analytics', label: 'Analytics', icon: '\uD83D\uDCC8' }, // 📈
   { href: '/dashboard/addons', label: 'Addons', icon: '\u2699' },
   { href: '/dashboard/cart-editor', label: 'Cart Editor', icon: '\uD83C\uDFA8' },
   { href: '/dashboard/results', label: 'Test History', icon: '\uD83D\uDCCA' },

@@ -14,7 +14,7 @@ const page = (orders: number[], hasNext: boolean, cursor = 'c1') => ({
 });
 
 describe('fetchOrders30d', () => {
-  beforeEach(() => vi.restoreAllMocks());
+  beforeEach(() => { vi.restoreAllMocks(); });
 
   it('sums revenue and counts orders across paginated results', async () => {
     const fetchMock = vi.spyOn(global, 'fetch' as any)

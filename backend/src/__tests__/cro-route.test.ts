@@ -20,7 +20,7 @@ async function call(id: string, url = `http://x/api/stores/${id}/cro`) {
 }
 
 describe('GET /api/stores/[id]/cro', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it('404s when the store does not exist', async () => {
     (prisma.store.findUnique as any).mockResolvedValue(null);
