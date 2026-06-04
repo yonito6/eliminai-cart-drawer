@@ -87,16 +87,24 @@ export async function POST(req: NextRequest) {
   // Recompute visitor segment after event (upgrades only: NEW → RETURNING → ABANDONER → CUSTOMER)
   await updateSessionSegment(session.id, store.id, body.eventType, body.hasCustomerId);
 
-  // Also track baseline checkout clicks
-  if (body.eventType === 'CHECKOUT_CLICKED' && !body.experimentId) {
+  // Capture baseline checkout rate ONCE, as a clamped fraction. Recomputing on
+  // every click compared cumulative clicks against a frozen open count, which
+  // pushed the "rate" past 1 (e.g. 156%) over time and corrupted the nightly
+  // safety-revert check. Freeze it on first observation instead.
+  if (
+    body.eventType === 'CHECKOUT_CLICKED' &&
+    !body.experimentId &&
+    store.baselineCheckoutRate == null
+  ) {
     const opens = store.baselineCartOpens || 0;
     if (opens > 0) {
       const currentClicks = await prisma.event.count({
         where: { storeId: store.id, eventType: 'CHECKOUT_CLICKED', assignmentId: null },
       });
+      const rate = Math.min(1, Math.max(0, currentClicks / opens));
       await prisma.store.update({
         where: { id: store.id },
-        data: { baselineCheckoutRate: currentClicks / opens },
+        data: { baselineCheckoutRate: rate },
       });
     }
   }
