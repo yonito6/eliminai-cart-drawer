@@ -89,7 +89,7 @@ export async function GET(
   // "This week vs prior week": run the same calc over the last 14 distinct days.
   try {
     const key = (d: any) => (typeof d === 'string' ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10));
-    const days = [...new Set(rows.map(r => key(r.date)))].sort();
+    const days = Array.from(new Set(rows.map(r => key(r.date)))).sort();
     const last14 = new Set(days.slice(-14));
     const recent = rows.filter(r => last14.has(key(r.date)));
     const tw = windowConversion(recent as any, 7);

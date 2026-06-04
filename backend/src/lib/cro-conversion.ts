@@ -34,7 +34,7 @@ export function windowConversion(
     cur.o += r.ordersCompleted ?? 0;
     byDay.set(k, cur);
   }
-  const days = [...byDay.keys()].sort();
+  const days = Array.from(byDay.keys()).sort();
   const agg = (keys: string[]): ConversionWindow => {
     let v = 0, o = 0;
     for (const k of keys) { const d = byDay.get(k)!; v += d.v; o += d.o; }
