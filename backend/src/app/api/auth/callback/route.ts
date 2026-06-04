@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exchangeToken, verifyHmac, registerWebhooks } from '@/lib/shopify-auth';
 import { prisma } from '@/lib/prisma';
+import { fetchOrders30d } from '@/lib/shopify-orders';
+import { buildBaseline } from '@/lib/cro-baseline';
 
 export async function GET(req: NextRequest) {
   const query: Record<string, string> = {};
@@ -58,6 +60,16 @@ export async function GET(req: NextRequest) {
       const gql = await countRes.json();
       const count = gql?.data?.ordersCount?.count ?? 0;
       const dailyOrders = Math.max(1, Math.round(count / 30));
+
+      // CRO baseline — last 30 days orders/revenue/AOV (non-blocking)
+      let cro: Record<string, any> | undefined;
+      try {
+        const agg = await fetchOrders30d(shop, accessToken);
+        cro = { baseline: buildBaseline(agg) };
+      } catch (e) {
+        console.error('[cro] baseline capture failed:', e);
+      }
+
       await prisma.store.update({
         where: { shopDomain: shop },
         data: {
@@ -65,6 +77,7 @@ export async function GET(req: NextRequest) {
             estimatedDailyOrders: dailyOrders,
             shopifyOrderCount30d: count,
             baselineSeededAt: new Date().toISOString(),
+            ...(cro ? { cro } : {}),
           },
         },
       });
