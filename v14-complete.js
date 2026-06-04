@@ -4002,7 +4002,7 @@
       customCode:           { inject: function(c) { CCD.injectCustomCode(c); },     remove: function() { var ns = document.querySelectorAll('.ccd-custom-code'); for (var i=0;i<ns.length;i++) ns[i].remove(); } },
       discountCode:         { inject: function(c) { CCD.injectDiscountCode(c); },   remove: function() { var e = document.getElementById('ccd-discount-code-row'); if (e) e.remove(); } },
       termsCheckbox:        { inject: function(c) { CCD.injectTermsCheckbox(c); },  remove: function() { var e = document.getElementById('ccd-terms-row'); if (e) e.remove(); CCD._termsBlock = null; } },
-      expressPayments:      { inject: function(c) { CCD.injectExpressPayments(c); },remove: function() { var h = document.getElementById('ccd-native-express-host'); if (h) { h.hidden = true; h.setAttribute('aria-hidden', 'true'); h.style.display = 'none'; document.body.appendChild(h); } var e = document.getElementById('ccd-express-payments'); if (e) e.remove(); } }
+      expressPayments:      { inject: function(c) { CCD.injectExpressPayments(c); },remove: function() { var wrap = document.getElementById('ccd-express-payments'); var h = document.getElementById('ccd-native-express-host'); if (wrap) { var nat = wrap.querySelectorAll('shopify-accelerated-checkout-cart, [data-shopify="dynamic-checkout-cart"], #dynamic-checkout-cart'); for (var i = 0; i < nat.length; i++) { if (h && h.contains(nat[i])) continue; nat[i].style.setProperty('display', 'none', 'important'); document.body.appendChild(nat[i]); } } if (h) { h.hidden = true; h.setAttribute('aria-hidden', 'true'); h.style.display = 'none'; document.body.appendChild(h); } if (wrap) wrap.remove(); } }
     },
 
     applyExperimentFeatures: function(config) {
@@ -5585,10 +5585,22 @@
     }
     wrap.className = 'ccd-express ccd-express--' + position + ' ccd-express--native';
 
-    // Move the native host (rendered by Liquid) into our wrapper. If it isn't
-    // present (e.g. dev/self-render path with no app-embed), the wrapper stays
-    // empty and nothing is shown — exactly the desired behavior for shops with
-    // no express wallets.
+    // Shopify emits the cart accelerated/dynamic-checkout buttons (Shop Pay,
+    // PayPal, Apple Pay, Google Pay) only ONCE per page. These selectors match
+    // Shopify's PLATFORM-STANDARD CART element — identical across every theme.
+    // CART-ONLY by design: we deliberately EXCLUDE the bare
+    // <shopify-accelerated-checkout> and the generic .dynamic-checkout__content
+    // that a PRODUCT page's "Buy it now" button uses — adopting those would
+    // hijack a single-product buy-now into the cart drawer. The cart wallets are
+    // uniquely identified by the "-cart" / "dynamic-checkout-cart" markers.
+    var NATIVE_SELECTOR = 'shopify-accelerated-checkout-cart, [data-shopify="dynamic-checkout-cart"], #dynamic-checkout-cart';
+    function hasWallets(el) {
+      return !!(el && el.querySelector('shopify-accelerated-checkout-cart, shopify-paypal-button, [data-shopify="dynamic-checkout-cart"], #dynamic-checkout-cart'));
+    }
+
+    // 1. Our own Liquid-rendered host. On themes that do NOT already emit the
+    //    dynamic-checkout buttons elsewhere, this host receives Shopify's single
+    //    per-page render and is fully populated — use it directly.
     var host = document.getElementById('ccd-native-express-host');
     if (host) {
       host.hidden = false;
@@ -5597,25 +5609,66 @@
       if (host.parentNode !== wrap) wrap.appendChild(host);
     }
 
+    // 2. THEME-AGNOSTIC FALLBACK. If the active theme already rendered the
+    //    accelerated-checkout buttons elsewhere (e.g. inside its own cart drawer),
+    //    our host above renders EMPTY because Shopify won't emit them twice. In
+    //    that case, find the REAL element wherever the theme placed it and move it
+    //    into our drawer. Reparenting also pulls it out of any hidden ancestor.
+    function adoptNative() {
+      if (hasWallets(host)) return true;            // our own host already has them
+      if (hasWallets(wrap)) return true;            // already adopted into wrapper
+      var candidates = document.querySelectorAll(NATIVE_SELECTOR);
+      for (var i = 0; i < candidates.length; i++) {
+        var el = candidates[i];
+        if (wrap.contains(el)) return true;
+        if (host && host.contains(el)) continue;    // ignore our (empty) host form
+        el.removeAttribute('hidden');
+        el.style.removeProperty('display');
+        el.style.removeProperty('visibility');
+        wrap.appendChild(el);
+        return true;
+      }
+      return false;
+    }
+    adoptNative();
+
+    // 3. The accelerated-checkout element hydrates asynchronously (and some themes
+    //    render it only after their own cart opens). Watch the DOM briefly and
+    //    adopt it the moment it appears. Self-disconnects on success or after 8s.
+    if (!hasWallets(wrap) && !CCD._expressObserver) {
+      var done = false;
+      var obs = new MutationObserver(function() {
+        if (done) return;
+        adoptNative();
+        if (hasWallets(wrap)) { done = true; obs.disconnect(); CCD._expressObserver = null; }
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+      CCD._expressObserver = obs;
+      setTimeout(function() { if (!done) { obs.disconnect(); CCD._expressObserver = null; } }, 8000);
+    }
+
     // Per-wallet hide (cfg.hiddenWallets). ONLY PayPal is reachable: it renders as
     // a light-DOM <shopify-paypal-button> element, so we can hide it with scoped
-    // CSS. Apple Pay, Google Pay and Shop Pay are rendered INSIDE Shopify's
+    // CSS. Apple Pay, Google Pay and Shop Pay render INSIDE Shopify's
     // <shopify-accelerated-checkout-cart> CLOSED shadow root and CANNOT be hidden
     // or restyled by this app — those are managed in Shopify checkout settings.
-    // (Verified 2026-06-02 against the live storefront DOM: queries for the
-    // Google/Apple Pay custom elements return empty, the shadow root is closed.)
+    // Styling is scoped to #ccd-express-payments so it applies to BOTH the
+    // self-render host and any adopted native element.
     var hiddenWallets = Array.isArray(cfg.hiddenWallets) ? cfg.hiddenWallets : [];
     var hideCss = '';
     if (hiddenWallets.indexOf('paypal') !== -1) {
-      hideCss = '#ccd-native-express-host shopify-paypal-button{display:none !important;}';
+      hideCss = '#ccd-express-payments shopify-paypal-button,#ccd-native-express-host shopify-paypal-button{display:none !important;}';
     }
-    // Stack the reachable light-DOM wallets full-width.
     var baseCss =
-      '#ccd-native-express-host{display:flex;flex-direction:column;gap:8px;width:100%;}'
-      + '#ccd-native-express-host>*,'
-      + '#ccd-native-express-host .dynamic-checkout__content,'
-      + '#ccd-native-express-host shopify-paypal-button'
-      + '{width:100% !important;max-width:100% !important;margin-left:0 !important;margin-right:0 !important;}';
+      '#ccd-express-payments{display:flex;flex-direction:column;gap:8px;width:100%;margin:0 !important;}'
+      + '#ccd-express-payments:empty,#ccd-native-express-host:empty{display:none !important;}'
+      + '#ccd-native-express-host{display:flex;flex-direction:column;gap:8px;width:100% !important;margin:0 !important;}'
+      + '#ccd-express-payments .dynamic-checkout__content,'
+      + '#ccd-express-payments shopify-accelerated-checkout-cart,'
+      + '#ccd-express-payments shopify-accelerated-checkout,'
+      + '#ccd-express-payments shopify-paypal-button,'
+      + '#ccd-native-express-host>*'
+      + '{width:100% !important;max-width:100% !important;margin:0 !important;}';
     var hideStyle = document.getElementById('ccd-express-hide-style');
     if (!hideStyle) { hideStyle = document.createElement('style'); hideStyle.id = 'ccd-express-hide-style'; }
     hideStyle.textContent = baseCss + hideCss;
