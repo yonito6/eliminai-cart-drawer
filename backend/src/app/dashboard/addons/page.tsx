@@ -808,6 +808,17 @@ function AddonsPage() {
       if (!proceed) return;
       // Apply the current test's best variant before starting new test
       await resolveTestOutcome(addonKey);
+    } else if (runningExp?.status === 'PAUSED') {
+      // A paused test keeps its collected results — warn before discarding them
+      const visitors = runningExp.totalVisitors ?? 0;
+      const proceed = await showConfirm({
+        title: 'Discard paused test?',
+        message: `A paused test with ${visitors} visitors is saved for this add-on.\nStarting a new test will discard those results and begin a fresh test.`,
+        confirmLabel: 'Discard & start new test',
+        cancelLabel: 'Keep paused test',
+        variant: 'warning',
+      });
+      if (!proceed) return;
     }
 
     setStartingTest(s => ({ ...s, [addonKey]: true }));
@@ -2356,6 +2367,17 @@ function AddonsPage() {
                               Resume Test
                             </button>
                             <button
+                              onClick={() => startTest(def.key)}
+                              disabled={!!startingTest[def.key]}
+                              style={{
+                                flex: 1, padding: '8px 16px', background: '#fff', color: '#7c3aed',
+                                border: '1px solid #c4b5fd', borderRadius: 8, fontSize: 12,
+                                fontWeight: 600, cursor: 'pointer',
+                              }}
+                            >
+                              Start New Test
+                            </button>
+                            <button
                               onClick={() => { setExpandedView('results'); }}
                               style={{
                                 flex: 1, padding: '8px 16px', background: '#fff', color: '#92400e',
@@ -2422,6 +2444,15 @@ function AddonsPage() {
                               style={{ padding: '6px 14px', background: '#7c3aed', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#fff', cursor: 'pointer' }}
                             >
                               Resume Test
+                            </button>
+                          )}
+                          {paused && (
+                            <button
+                              onClick={() => startTest(def.key)}
+                              disabled={!!startingTest[def.key]}
+                              style={{ padding: '6px 14px', background: '#fff', border: '1px solid #c4b5fd', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#7c3aed', cursor: 'pointer' }}
+                            >
+                              Start New Test
                             </button>
                           )}
                           {(winner || noDiff) && (
