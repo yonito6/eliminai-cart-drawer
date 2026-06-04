@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { fetchOrders30d } from '@/lib/shopify-orders';
+import { fetchOrders30d, fetchOrdersWindow } from '@/lib/shopify-orders';
 import { buildBaseline, computeAov, type CroBaseline } from '@/lib/cro-baseline';
 import { computeLift } from '@/lib/cro-lift';
 import { buildConversionSeries, windowConversion } from '@/lib/cro-conversion';
@@ -17,26 +17,60 @@ export async function GET(
   if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 });
 
   const cfg = (store.config as Record<string, any>) ?? {};
-  let baseline: CroBaseline | null = cfg.cro?.baseline ?? null;
-
-  // Backfill for stores installed before this feature.
+  const croCfg: Record<string, any> = { ...(cfg.cro ?? {}) };
+  let cfgDirty = false;
   const wantRefresh = req.nextUrl.searchParams.get('refresh') === '1';
+
+  let baseline: CroBaseline | null = croCfg.baseline ?? null;
+  let currency = baseline?.currency ?? store.currency ?? 'USD';
+
+  // Keep a recent baseline object around (currency + display only).
   if ((!baseline || wantRefresh) && store.accessToken && store.shopDomain) {
     try {
       const agg = await fetchOrders30d(store.shopDomain, store.accessToken);
       baseline = buildBaseline(agg);
-      await prisma.store.update({
-        where: { id: store.id },
-        data: { config: { ...cfg, cro: { ...(cfg.cro ?? {}), baseline } } },
-      });
+      croCfg.baseline = baseline;
+      cfgDirty = true;
     } catch (e) {
       console.error('[cro] backfill failed', e);
     }
   }
 
+  // Real "before the cart" AOV: orders in the 30 days BEFORE the cart was
+  // installed. For stores that predate this feature the old code re-read the
+  // recent window, which made "before" equal "now" (~$0 lift). Capture the
+  // genuine pre-install window once and cache it. A computed-but-empty window
+  // (no pre-install orders) yields null — we do NOT fall back to recent data.
+  const installedAt = store.installedAt ? new Date(store.installedAt) : null;
+  let aovBefore: number | null = croCfg.preInstall ? (croCfg.preInstall.aov ?? null) : (baseline?.aov ?? null);
+  if ((croCfg.preInstall == null || wantRefresh) && installedAt && store.accessToken && store.shopDomain) {
+    try {
+      const preSince = new Date(installedAt.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const preUntil = installedAt.toISOString();
+      const preAgg = await fetchOrdersWindow(store.shopDomain, store.accessToken, preSince, preUntil);
+      const pre = {
+        aov: preAgg.orderCount > 0 ? computeAov(preAgg.totalRevenue, preAgg.orderCount) : null,
+        orderCount: preAgg.orderCount,
+        capturedAt: new Date().toISOString(),
+      };
+      aovBefore = pre.aov;
+      croCfg.preInstall = pre;
+      cfgDirty = true;
+    } catch (e) {
+      console.error('[cro] pre-install baseline failed', e);
+    }
+  }
+
+  if (cfgDirty) {
+    try {
+      await prisma.store.update({ where: { id: store.id }, data: { config: { ...cfg, cro: croCfg } } });
+    } catch (e) {
+      console.error('[cro] config persist failed', e);
+    }
+  }
+
   // Current AOV from the latest 30 days of orders.
   let currentAov: number | null = null;
-  let currency = baseline?.currency ?? store.currency ?? 'USD';
   try {
     const agg = await fetchOrders30d(store.shopDomain, store.accessToken);
     currentAov = computeAov(agg.totalRevenue, agg.orderCount);
@@ -45,17 +79,23 @@ export async function GET(
     console.error('[cro] current aov failed', e);
   }
 
-  // Current cart checkout rate from recent DailySummary rows (last 30 days).
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  // Conversion history is anchored to install (full history), not the last 30
+  // days, so a 2-month-old store can actually see its trend. Checkout rate and
+  // the monthly run-rate still use a recent 30-day slice.
+  const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const sinceInstall = installedAt ?? since30;
   const summaries = await prisma.dailySummary.findMany({
-    where: { storeId: store.id, date: { gte: since } },
+    where: { storeId: store.id, date: { gte: sinceInstall } },
     select: { cartOpens: true, checkoutClicks: true, uniqueVisitors: true, ordersCompleted: true, date: true },
   });
-  const opens = summaries.reduce((s, r) => s + (r.cartOpens ?? 0), 0);
-  const clicks = summaries.reduce((s, r) => s + (r.checkoutClicks ?? 0), 0);
+  const recent30 = summaries.filter(r => new Date(r.date as any) >= since30);
+  const opens = recent30.reduce((s, r) => s + (r.cartOpens ?? 0), 0);
+  const clicks = recent30.reduce((s, r) => s + (r.checkoutClicks ?? 0), 0);
   const currentCheckoutRate = opens > 0 ? Math.round((clicks / opens) * 100000) / 100000 : null;
+  const recentVisitors = recent30.reduce((s, r) => s + (r.uniqueVisitors ?? 0), 0);
+  const recentOrders = recent30.reduce((s, r) => s + (r.ordersCompleted ?? 0), 0);
 
-  const baselineSnap = { aov: baseline?.aov ?? null, checkoutRate: store.baselineCheckoutRate ?? null };
+  const baselineSnap = { aov: aovBefore, checkoutRate: store.baselineCheckoutRate ?? null };
   const currentSnap = { aov: currentAov, checkoutRate: currentCheckoutRate };
   const lift = computeLift(baselineSnap, currentSnap);
 
@@ -79,7 +119,7 @@ export async function GET(
       before, now,
       visitors: totalVisitors,
       ordersNow: totalOrders,
-      aovBefore: baseline?.aov ?? null,
+      aovBefore,
       aovNow: currentAov,
       winsBanked,
     }),
@@ -96,7 +136,7 @@ export async function GET(
     value.thisWeekRevenue = computeValue({
       before: tw.before, now: tw.now,
       visitors: tw.now.visitors, ordersNow: tw.now.orders,
-      aovBefore: baseline?.aov ?? null, aovNow: currentAov, winsBanked: 0,
+      aovBefore, aovNow: currentAov, winsBanked: 0,
     }).extraRevenue;
   } catch (e) {
     console.error('[cro] this-week calc failed', e);
@@ -155,13 +195,13 @@ export async function GET(
     value,
     before: {
       conversion: before.conversion,
-      aov: baseline?.aov ?? null,
-      ordersPerMonth: Math.round(before.conversion * totalVisitors),
+      aov: aovBefore,
+      ordersPerMonth: Math.round(before.conversion * recentVisitors),
     },
     now: {
       conversion: now.conversion,
       aov: currentAov,
-      ordersPerMonth: totalOrders,
+      ordersPerMonth: recentOrders,
     },
     trend,
     milestones,

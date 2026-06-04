@@ -9,9 +9,11 @@ vi.mock('../lib/prisma', () => ({
 }));
 vi.mock('../lib/shopify-orders', () => ({
   fetchOrders30d: vi.fn().mockResolvedValue({ orderCount: 10, totalRevenue: 1500, currency: 'USD' }),
+  fetchOrdersWindow: vi.fn().mockResolvedValue({ orderCount: 0, totalRevenue: 0, currency: 'USD' }),
 }));
 
 import { prisma } from '../lib/prisma';
+import { fetchOrdersWindow } from '../lib/shopify-orders';
 import { NextRequest } from 'next/server';
 
 async function call(id: string, url = `http://x/api/stores/${id}/cro`) {
@@ -80,6 +82,34 @@ describe('GET /api/stores/[id]/cro', () => {
     expect(body.suggestions.length).toBe(5);
     expect(body.roadmap).toBeDefined();
     expect(Array.isArray(body.roadmap.queue)).toBe(true);
+  });
+
+  it('uses a real pre-install Shopify window for AOV "before" (not the recent window)', async () => {
+    // Store installed ~60 days ago, no cached preInstall yet.
+    const installedAt = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    (prisma.store.findUnique as any).mockResolvedValue({
+      id: 's4', shopDomain: 'shop.myshopify.com', accessToken: 'tok',
+      baselineCheckoutRate: 0.1, installedAt,
+      config: { cro: { baseline: { aov: 999, currency: 'USD' } } }, // stale recent backfill, must be ignored
+    });
+    // Pre-install window: real "before the cart" AOV = 1000/10 = 100.
+    (fetchOrdersWindow as any).mockResolvedValue({ orderCount: 10, totalRevenue: 1000, currency: 'USD' });
+    (prisma.dailySummary.findMany as any).mockResolvedValue([
+      { date: '2026-04-09', uniqueVisitors: 100, ordersCompleted: 2, cartOpens: 10, checkoutClicks: 5 },
+      { date: '2026-06-03', uniqueVisitors: 100, ordersCompleted: 6, cartOpens: 10, checkoutClicks: 6 },
+    ]);
+    (prisma.experiment.findMany as any).mockResolvedValue([]);
+    (prisma.experiment.findFirst as any).mockResolvedValue(null);
+
+    const res = await call('s4');
+    const body = await res.json();
+    // "before" AOV comes from the pre-install window (100), not the stale 999 baseline.
+    expect(body.before.aov).toBe(100);
+    // now AOV = 1500/10 = 150 → real AOV lift of +50.
+    expect(body.value.aovLift).toBe(50);
+    expect(fetchOrdersWindow).toHaveBeenCalled();
+    // The captured pre-install baseline is persisted.
+    expect(prisma.store.update).toHaveBeenCalled();
   });
 
   it('backfills the baseline when missing and refresh=1 is passed', async () => {

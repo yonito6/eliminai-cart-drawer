@@ -5,6 +5,23 @@ const MAX_PAGES = 40; // 40 * 250 = 10k orders / 30d cap
 
 export async function fetchOrders30d(shopDomain: string, accessToken: string): Promise<OrdersAgg> {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  return fetchOrdersWindow(shopDomain, accessToken, since);
+}
+
+/**
+ * Aggregate orders in an explicit [since, until) window. Used to read a genuine
+ * pre-install baseline (the 30 days before the cart was installed) instead of
+ * re-reading the recent window, which would make "before" equal "now".
+ */
+export async function fetchOrdersWindow(
+  shopDomain: string,
+  accessToken: string,
+  sinceISO: string,
+  untilISO?: string,
+): Promise<OrdersAgg> {
+  const range = untilISO
+    ? `created_at:>='${sinceISO}' AND created_at:<'${untilISO}'`
+    : `created_at:>='${sinceISO}'`;
   let cursor: string | null = null;
   let orderCount = 0;
   let totalRevenue = 0;
@@ -13,7 +30,7 @@ export async function fetchOrders30d(shopDomain: string, accessToken: string): P
   for (let i = 0; i < MAX_PAGES; i++) {
     const after: string = cursor ? `, after: "${cursor}"` : '';
     const query = `{
-      orders(first: 250, query: "created_at:>='${since}'"${after}) {
+      orders(first: 250, query: "${range}"${after}) {
         pageInfo { hasNextPage endCursor }
         edges { node { currentTotalPriceSet { shopMoney { amount currencyCode } } } }
       }

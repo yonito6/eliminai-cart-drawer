@@ -111,15 +111,15 @@ function AnalyticsInner() {
       {/* ── 1. VALUE SCOREBOARD HERO ─────────────────────────────────── */}
       <section style={{ padding: '28px 28px 22px', background: 'linear-gradient(135deg,#11183a,#0b1020)' }}>
         <div style={{ fontSize: 12, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT }}>
-          Your cart vs. your old cart · last 30 days
+          Your smart cart · since you installed
         </div>
-        <div style={{ fontSize: 13, color: MUTE, marginTop: 8 }}>We generated you</div>
+        <div style={{ fontSize: 13, color: MUTE, marginTop: 8 }}>Estimated extra revenue so far</div>
         <div style={{ fontSize: 52, fontWeight: 800, color: TEAL, lineHeight: 1.05 }}>
           +{money(v.extraRevenue, c)}{' '}
           <span style={{ fontSize: 18, color: MUTE, fontWeight: 600 }}>in extra revenue</span>
         </div>
         <div style={{ marginTop: 6, fontSize: 13, color: FAINT }}>
-          vs. what your old cart would have earned at the same traffic. Estimated from your real conversion + AOV gains.
+          Estimated since install — from your conversion trend and your AOV vs the 30 days before the cart went live. These are estimates, not exact figures.
         </div>
 
         <div style={{
@@ -132,13 +132,19 @@ function AnalyticsInner() {
           <DeltaTile big={`${v.winsBanked}`} label="wins banked" />
         </div>
 
-        <div style={{
-          marginTop: 14, display: 'inline-flex', alignItems: 'center', gap: 8,
-          background: 'rgba(94,234,212,.12)', border: '1px solid rgba(94,234,212,.3)',
-          color: TEAL, padding: '5px 12px', borderRadius: 999, fontSize: 13, fontWeight: 600,
-        }}>
-          ▲ +{money(v.thisWeekRevenue, c)} this week · accelerating
-        </div>
+        {(() => {
+          const up = data.now.conversion > data.before.conversion;
+          return (
+            <div style={{
+              marginTop: 14, display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: up ? 'rgba(94,234,212,.12)' : 'rgba(148,163,184,.12)',
+              border: `1px solid ${up ? 'rgba(94,234,212,.3)' : 'rgba(148,163,184,.3)'}`,
+              color: up ? TEAL : MUTE, padding: '5px 12px', borderRadius: 999, fontSize: 13, fontWeight: 600,
+            }}>
+              {up ? '▲' : '•'} +{money(v.thisWeekRevenue, c)} this week{up ? ' · trending up' : ''}
+            </div>
+          );
+        })()}
         <div style={{ marginTop: 10, fontSize: 11, color: FAINT }}>
           All scoreboard figures are estimated from your live conversion and AOV gains.
         </div>
@@ -152,7 +158,7 @@ function AnalyticsInner() {
         gap: 14, alignItems: 'stretch',
       }}>
         <CompareCard
-          title="Your old cart" accent={FAINT} valueColor="#cbd6f0" border="#1d2950"
+          title="When you installed" accent={FAINT} valueColor="#cbd6f0" border="#1d2950"
           conversion={asPct(data.before.conversion)} aov={money(data.before.aov, c)}
           ordersPerMonth={data.before.ordersPerMonth}
         />

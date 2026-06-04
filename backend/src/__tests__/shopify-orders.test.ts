@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchOrders30d } from '../lib/shopify-orders';
+import { fetchOrders30d, fetchOrdersWindow } from '../lib/shopify-orders';
 
 const page = (orders: number[], hasNext: boolean, cursor = 'c1') => ({
   data: {
@@ -32,5 +32,19 @@ describe('fetchOrders30d', () => {
       .mockResolvedValueOnce({ json: async () => page([], false) } as any);
     const res = await fetchOrders30d('shop.myshopify.com', 'tok');
     expect(res).toEqual({ orderCount: 0, totalRevenue: 0, currency: 'USD' });
+  });
+});
+
+describe('fetchOrdersWindow', () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  it('bounds the query with both since and until when until is provided', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch' as any)
+      .mockResolvedValueOnce({ json: async () => page([40, 60], false) } as any);
+    const res = await fetchOrdersWindow('shop.myshopify.com', 'tok', '2026-04-01T00:00:00.000Z', '2026-05-01T00:00:00.000Z');
+    expect(res).toEqual({ orderCount: 2, totalRevenue: 100, currency: 'USD' });
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.query).toContain("created_at:>='2026-04-01T00:00:00.000Z'");
+    expect(body.query).toContain("created_at:<'2026-05-01T00:00:00.000Z'");
   });
 });
