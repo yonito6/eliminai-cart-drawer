@@ -5,27 +5,13 @@ import { useStore } from '@/lib/hooks/use-store';
 
 interface CroResponse {
   currency: string;
-  baselineCheckoutRate: number | null;
-  baseline: { aov: number } | null;
-  current: { aov: number | null; checkoutRate: number | null };
-  lift: {
-    aov: { absolute: number; percent: number | null };
-    checkoutRate: { absolute: number; percent: number | null };
-  };
+  since: string | null;
+  revenue30d: number | null;
+  orders30d: number | null;
+  aov: number | null;
+  winsBanked: number;
   activity: { name: string; status: string; liftPercent: number | null; endedAt: string | null }[];
-  value: {
-    extraOrders: number;
-    extraRevenue: number;
-    aovLift: number;
-    convLift: number;
-    winsBanked: number;
-    thisWeekRevenue: number;
-  };
-  before: { conversion: number; aov: number | null; ordersPerMonth: number };
-  now: { conversion: number; aov: number | null; ordersPerMonth: number };
-  trend: { date: string; conversion: number }[];
   milestones: { date: string; addonKey: string; label: string; lift: number | null }[];
-  fuel: { visitors: number };
   roadmap: {
     active: { name?: string; slot?: string; reason?: string } | null;
     queue: { slot: string; addonKey: string; dimension: string; phase: string; reason: string }[];
@@ -58,9 +44,12 @@ function money(n: number | null, c: string) {
   if (n == null) return '—';
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: c || 'USD' }).format(n);
 }
-function asPct(frac: number | null | undefined) {
-  if (frac == null) return '—';
-  return `${(frac * 100).toFixed(2)}%`;
+
+function sinceLabel(iso: string | null): string {
+  if (!iso) return 'since you installed';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return 'since you installed';
+  return `since you installed · ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
 }
 
 function AnalyticsInner() {
@@ -84,119 +73,48 @@ function AnalyticsInner() {
   const c = data?.currency ?? 'USD';
 
   if (loading) {
-    return <Shell><div style={{ padding: 32, color: MUTE }}>Loading your momentum…</div></Shell>;
+    return <Shell><div style={{ padding: 32, color: MUTE }}>Loading your numbers…</div></Shell>;
   }
 
-  if (!data?.baseline) {
-    return (
-      <Shell>
-        <div style={{ padding: 32 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 800, margin: '0 0 6px', color: INK }}>Your cart momentum</h1>
-          <div style={{
-            background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)',
-            borderRadius: 14, padding: 20, marginTop: 18, color: '#fcd9a0', lineHeight: 1.5,
-          }}>
-            We&apos;re still capturing your baseline from Shopify. Once we have a few days of data,
-            this page lights up with the exact dollar value your new cart is generating versus your old one.
-          </div>
-        </div>
-      </Shell>
-    );
+  if (!data) {
+    return <Shell><div style={{ padding: 32, color: MUTE }}>Couldn&apos;t load your data right now.</div></Shell>;
   }
 
-  const v = data.value;
+  const hasOrders = (data.orders30d ?? 0) > 0;
 
   return (
     <Shell>
-      {/* ── 1. VALUE SCOREBOARD HERO ─────────────────────────────────── */}
+      {/* ── 1. REAL PERFORMANCE HERO ─────────────────────────────────── */}
       <section style={{ padding: '28px 28px 22px', background: 'linear-gradient(135deg,#11183a,#0b1020)' }}>
         <div style={{ fontSize: 12, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT }}>
-          Your smart cart · since you installed
+          Your smart cart · {sinceLabel(data.since)}
         </div>
-        <div style={{ fontSize: 13, color: MUTE, marginTop: 8 }}>Estimated extra revenue so far</div>
+        <div style={{ fontSize: 13, color: MUTE, marginTop: 8 }}>Revenue through your cart — last 30 days</div>
         <div style={{ fontSize: 52, fontWeight: 800, color: TEAL, lineHeight: 1.05 }}>
-          +{money(v.extraRevenue, c)}{' '}
-          <span style={{ fontSize: 18, color: MUTE, fontWeight: 600 }}>in extra revenue</span>
+          {money(data.revenue30d, c)}
         </div>
         <div style={{ marginTop: 6, fontSize: 13, color: FAINT }}>
-          Estimated since install — from your conversion trend and your AOV vs the 30 days before the cart went live. These are estimates, not exact figures.
+          Real numbers, straight from your Shopify orders over the last 30 days.
         </div>
 
         <div style={{
           display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: 12, marginTop: 18,
         }}>
-          <DeltaTile big={`+${v.extraOrders}`} label="more orders" />
-          <DeltaTile big={`+${money(v.aovLift, c)}`} label="higher AOV" />
-          <DeltaTile big={`+${v.convLift}pp`} label="conversion rate" />
-          <DeltaTile big={`${v.winsBanked}`} label="wins banked" />
+          <DeltaTile big={`${data.orders30d ?? 0}`} label="orders · last 30 days" />
+          <DeltaTile big={money(data.aov, c)} label="average order value" />
+          <DeltaTile big={`${data.winsBanked}`} label="A/B test wins banked" />
         </div>
 
-        {(() => {
-          const up = data.now.conversion > data.before.conversion;
-          return (
-            <div style={{
-              marginTop: 14, display: 'inline-flex', alignItems: 'center', gap: 8,
-              background: up ? 'rgba(94,234,212,.12)' : 'rgba(148,163,184,.12)',
-              border: `1px solid ${up ? 'rgba(94,234,212,.3)' : 'rgba(148,163,184,.3)'}`,
-              color: up ? TEAL : MUTE, padding: '5px 12px', borderRadius: 999, fontSize: 13, fontWeight: 600,
-            }}>
-              {up ? '▲' : '•'} +{money(v.thisWeekRevenue, c)} this week{up ? ' · trending up' : ''}
-            </div>
-          );
-        })()}
-        <div style={{ marginTop: 10, fontSize: 11, color: FAINT }}>
-          All scoreboard figures are estimated from your live conversion and AOV gains.
-        </div>
-      </section>
-
-      {/* ── 2. BEFORE → NOW ──────────────────────────────────────────── */}
-      <section style={{
-        padding: '18px 28px 6px',
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-        gap: 14, alignItems: 'stretch',
-      }}>
-        <CompareCard
-          title="When you installed" accent={FAINT} valueColor="#cbd6f0" border="#1d2950"
-          conversion={asPct(data.before.conversion)} aov={money(data.before.aov, c)}
-          ordersPerMonth={data.before.ordersPerMonth}
-        />
-        <CompareCard
-          title="Your cart now" accent={TEAL} valueColor={TEAL} border="#2a6655"
-          conversion={asPct(data.now.conversion)} aov={money(data.now.aov, c)}
-          ordersPerMonth={data.now.ordersPerMonth}
-        />
-      </section>
-
-      {/* ── 3. CONVERSION TREND GRAPH ────────────────────────────────── */}
-      <section style={{ padding: '14px 28px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>Conversion rate over time</div>
-          <div style={{ fontSize: 12, color: FAINT }}>rolling · through today</div>
-        </div>
-        <TrendChart trend={data.trend} milestones={data.milestones} />
-      </section>
-
-      {/* ── 4. FUEL CALLOUT ──────────────────────────────────────────── */}
-      <section style={{
-        margin: '0 28px 24px', background: 'linear-gradient(135deg,#1a2348,#11183a)',
-        border: '1px solid #2b3a6e', borderRadius: 14, padding: '16px 20px',
-        display: 'flex', alignItems: 'center', gap: 16,
-      }}>
-        <div style={{ fontSize: 30 }}>⚡</div>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>
-            {data.fuel.visitors.toLocaleString()} shoppers analyzed — your cart is learning fast.
+        {!hasOrders && (
+          <div style={{ marginTop: 14, fontSize: 13, color: FAINT }}>
+            No orders recorded in the last 30 days yet — this fills in as orders come through.
           </div>
-          <div style={{ fontSize: 13, color: MUTE, marginTop: 2 }}>
-            More visitors = quicker wins. Drive traffic and the autopilot improves faster.
-          </div>
-        </div>
+        )}
       </section>
 
-      {/* ── 5. NEXT-MOVES ROADMAP ────────────────────────────────────── */}
-      <section style={{ padding: '0 28px 6px' }}>
+      {/* ── 2. NEXT-MOVES ROADMAP ────────────────────────────────────── */}
+      <section style={{ padding: '20px 28px 6px' }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>🚀 Next up on your testing roadmap</div>
         <div style={{ fontSize: 13, color: MUTE, margin: '4px 0 14px' }}>
           Your autopilot runs the highest-impact test next. You can also activate a suggestion below.
@@ -234,7 +152,7 @@ function AnalyticsInner() {
         ))}
       </section>
 
-      {/* ── 6. RESEARCH SUGGESTIONS ──────────────────────────────────── */}
+      {/* ── 3. RESEARCH SUGGESTIONS ──────────────────────────────────── */}
       <section style={{
         margin: '0 28px 28px', background: 'linear-gradient(135deg,#231a3a,#13112a)',
         border: `1px solid ${VIOLET}`, borderRadius: 14, padding: 18,
@@ -281,103 +199,6 @@ function DeltaTile({ big, label }: { big: string; label: string }) {
     }}>
       <div style={{ fontSize: 24, fontWeight: 800, color: TEAL }}>{big}</div>
       <div style={{ fontSize: 11, color: MUTE, marginTop: 2 }}>{label}</div>
-    </div>
-  );
-}
-
-function CompareCard({
-  title, accent, valueColor, border, conversion, aov, ordersPerMonth,
-}: {
-  title: string; accent: string; valueColor: string; border: string;
-  conversion: string; aov: string; ordersPerMonth: number;
-}) {
-  return (
-    <div style={{ background: '#0e1530', border: `1px solid ${border}`, borderRadius: 14, padding: 16 }}>
-      <div style={{ fontSize: 11, color: accent, textTransform: 'uppercase', letterSpacing: '.1em' }}>{title}</div>
-      <Row label="Conversion" value={conversion} valueColor={valueColor} first />
-      <Row label="AOV" value={aov} valueColor={valueColor} />
-      <Row label="Orders /mo" value={`~${ordersPerMonth}`} valueColor={valueColor} />
-    </div>
-  );
-}
-
-function Row({ label, value, valueColor, first }: { label: string; value: string; valueColor: string; first?: boolean }) {
-  return (
-    <div style={{
-      marginTop: first ? 10 : 6, fontSize: 13, color: MUTE,
-      display: 'flex', justifyContent: 'space-between',
-    }}>
-      <span>{label}</span>
-      <b style={{ color: valueColor }}>{value}</b>
-    </div>
-  );
-}
-
-function TrendChart({
-  trend, milestones,
-}: {
-  trend: { date: string; conversion: number }[];
-  milestones: { date: string; addonKey: string; label: string; lift: number | null }[];
-}) {
-  if (!trend || trend.length < 2) {
-    return (
-      <div style={{
-        background: '#0e1530', border: '1px solid #1d2950', borderRadius: 14,
-        padding: '32px 16px', textAlign: 'center', color: FAINT, fontSize: 13,
-      }}>
-        Collecting data — your conversion trend appears once we have a few days of history.
-      </div>
-    );
-  }
-
-  const W = 600;
-  const H = 200;
-  const pad = { t: 16, b: 16, l: 8, r: 8 };
-  const ys = trend.map(p => p.conversion);
-  let min = Math.min(...ys);
-  let max = Math.max(...ys);
-  if (max === min) { max = min + (min === 0 ? 1 : min * 0.1); }
-  const span = max - min;
-
-  const x = (i: number) => pad.l + (i / (trend.length - 1)) * (W - pad.l - pad.r);
-  const y = (val: number) => pad.t + (1 - (val - min) / span) * (H - pad.t - pad.b);
-
-  const linePts = trend.map((p, i) => `${x(i)},${y(p.conversion)}`);
-  const linePath = `M${linePts.join(' L')}`;
-  const areaPath = `M${linePts.join(' L')} L${x(trend.length - 1)},${H} L${x(0)},${H} Z`;
-
-  // milestone markers: map milestone dates onto trend indices
-  const dateToIndex = new Map<string, number>();
-  trend.forEach((p, i) => dateToIndex.set(p.date, i));
-  const markers = milestones
-    .map(m => ({ m, idx: dateToIndex.get(m.date) }))
-    .filter((e): e is { m: typeof milestones[number]; idx: number } => e.idx != null);
-
-  return (
-    <div style={{ background: '#0e1530', border: '1px solid #1d2950', borderRadius: 14, padding: '18px 16px 8px' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-        <defs>
-          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={TEAL} stopOpacity=".35" />
-            <stop offset="1" stopColor={TEAL} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d={areaPath} fill="url(#trendFill)" />
-        <path d={linePath} fill="none" stroke={TEAL} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
-        {markers.map(({ m, idx }) => (
-          <circle key={m.date + m.addonKey} cx={x(idx)} cy={y(trend[idx].conversion)} r={6}
-            fill={NAVY} stroke={GOLD} strokeWidth={3} />
-        ))}
-      </svg>
-      {markers.length > 0 && (
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
-          {markers.map(({ m }) => (
-            <span key={m.date + m.addonKey} style={{ fontSize: 12, color: GOLD }}>
-              ● {m.label}{m.lift != null ? ` +${m.lift}%` : ''}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
