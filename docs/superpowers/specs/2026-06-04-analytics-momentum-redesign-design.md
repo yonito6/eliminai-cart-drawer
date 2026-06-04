@@ -33,9 +33,9 @@ Leads with one concrete number: **"We generated you +$X in extra revenue vs. you
 - `aovNow` = `computeAov(fetchOrders30d)`. `aovBefore` = `config.cro.baseline.aov`.
 - `visitors30d` = Σ uniqueVisitors over the comparison period.
 - `extraOrders` = `visitors30d × (convNow − convBefore)` (floor at 0).
-- `extraRevenue` = `extraOrders × aovNow + ordersNow × (aovNow − aovBefore)` (floor at 0).
+- `extraRevenue` = `extraOrders × aovNow + ordersNow × (aovNow − aovBefore)` (floor at 0). Intended interpretation (lock in tests, do NOT "correct" later): extra orders valued at today's AOV, PLUS the AOV lift applied across the existing order base. It is an estimate, floored at 0.
 - `aovLift` = `aovNow − aovBefore`. `convLift` = `convNow − convBefore` (percentage points).
-- `winsBanked` = count of applied winners (autopilot `completedCount` / addons with `lastWinner`).
+- `winsBanked` = `config.autopilot.completedCount` (single source of truth — not the `lastWinner` scan, to avoid ambiguity).
 - "this week" delta = same formula restricted to the last 7 days vs the prior 7.
 
 All formulas are pure functions in a new `backend/src/lib/cro-value.ts`, unit-tested with divide-by-zero / null / negative-lift guards (mirror the existing `cro-lift.ts` discipline).
@@ -69,11 +69,11 @@ The five suggestions live in a new **suggestions catalog** (`backend/src/lib/cro
 
 ### 7. Bug fix: `baselineCheckoutRate` > 1 normalization
 
-The stored `baselineCheckoutRate` (1.56…) is not a fraction. Fix the normalization at the write site and defensively clamp at the read/display site so the rate renders as a sane percentage. Apply the fix in ALL paths that write/read it (blast-radius map required: `cro/route.ts` `?refresh=1` backfill + display, `cro-baseline.ts`, anywhere `store.baselineCheckoutRate` is set/read).
+The stored `baselineCheckoutRate` (1.56…) is not a fraction. Fix the normalization at the TRUE write sites — `api/cron/nightly/route.ts` and `api/proxy/event/route.ts` (these produce the value; `cro-baseline.ts` only builds the AOV baseline, not this field) — and defensively clamp at the read/display site so the rate renders as a sane percentage. The planner must first confirm WHICH write path emits the 1.56 value so the fix lands at the source, not as a display-clamp-only band-aid. Blast-radius map required across all 8 files that set/read `store.baselineCheckoutRate` (nightly cron, proxy event, cro/route.ts backfill + display, stats/route.ts, analytics + dashboard pages).
 
 ## Architecture / data flow
 
-`GET /api/stores/[id]/cro` is extended (or a sibling `?view=momentum` block added) to return one payload:
+`GET /api/stores/[id]/cro` is **extended** (not a sibling endpoint) to return the additional momentum payload alongside its current fields, so there is one interface contract to test:
 ```
 { currency,
   value: { extraRevenue, extraOrders, aovLift, convLift, winsBanked, thisWeekRevenue },
