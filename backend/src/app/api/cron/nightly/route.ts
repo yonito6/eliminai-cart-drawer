@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { calculateThompsonSampling, buildCrossStorePriors, calculateSampleTarget, calculateConsistency } from '@/lib/thompson';
 import { progressAutopilot } from '@/lib/autopilot-engine';
+import { shouldRevertForCheckoutDrop } from '@/lib/checkout-safety';
 
 export async function POST(req: NextRequest) {
   // Verify cron secret
@@ -183,12 +184,13 @@ export async function POST(req: NextRequest) {
         by: ['sessionId'],
         where: { storeId: exp.storeId, eventType: 'CHECKOUT_CLICKED', createdAt: { gte: since48h } },
       });
-      if (recentOpenSessions.length > 20) {
-        const recentRate = recentCheckoutSessions.length / recentOpenSessions.length;
-        if (recentRate < exp.store.baselineCheckoutRate * 0.95) {
-          newStatus = 'REVERTED';
-          endedAt = new Date();
-        }
+      if (shouldRevertForCheckoutDrop({
+        openSessions: recentOpenSessions.length,
+        checkoutSessions: recentCheckoutSessions.length,
+        baselineCheckoutRate: exp.store.baselineCheckoutRate,
+      })) {
+        newStatus = 'REVERTED';
+        endedAt = new Date();
       }
     }
 

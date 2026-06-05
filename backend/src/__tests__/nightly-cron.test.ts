@@ -23,7 +23,7 @@
  *   - LOCK-3: WINNER_FOUND transition when confidence >= 0.95 AND lift > 1%
  *   - LOCK-4: NO_DIFFERENCE transition when confidence >= 0.95 AND lift <= 1%
  *   - LOCK-5: NO_DIFFERENCE transition when maxDays exceeded AND confidence < 0.80
- *   - LOCK-6: REVERTED transition when 48h rate drops >5% below baseline
+ *   - LOCK-6: REVERTED transition when 48h rate drops onto a real cliff (>30% below baseline)
  *   - LOCK-7: Status stays RUNNING when confidence < 0.95 and not expired
  *   - LOCK-8: DailySummary upsert called for each variant with yesterday's date
  *   - LOCK-9: Events older than 30 days are pruned
@@ -280,9 +280,9 @@ describe('POST /api/cron/nightly', () => {
     );
   });
 
-  // LOCK-6: REVERTED when 48h checkout rate drops >5% below baseline
-  it('LOCK-6: sets REVERTED when recent checkout rate drops more than 5% below baseline', async () => {
-    // baseline = 0.20, recent = 5/100 = 0.05 → way below 0.20*0.95=0.19
+  // LOCK-6: REVERTED when 48h checkout rate collapses onto a real cliff
+  it('LOCK-6: sets REVERTED when recent checkout rate drops onto a real cliff below baseline', async () => {
+    // baseline = 0.20, recent = 5/100 = 0.05 → below the cliff floor 0.20*0.70=0.14, 100>=50
     mockEventGroupBy(100, 5, 2);
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');
@@ -432,20 +432,46 @@ describe('POST /api/cron/nightly', () => {
     );
   });
 
-  // LOCK-11c: Safety check skipped when recentOpens <= 20 (not enough data)
-  it('LOCK-11c: skips revert when recent opens are <= 20 (insufficient data)', async () => {
+  // LOCK-11c: Safety check skipped when sample is below MIN_SESSIONS_FOR_SAFETY (50)
+  it('LOCK-11c: skips revert when recent opens are below the minimum sample (insufficient data)', async () => {
     mockEventGroupBy(10, 0, 0);
 
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');
     await POST(req);
 
-    // Should NOT revert because insufficient data (<=20 opens)
+    // Should NOT revert because insufficient data (< 50 opens)
     expect(prisma.experiment.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'RUNNING' }),
       })
     );
+  });
+
+  // LOCK-11d: REGRESSION — noisy-but-healthy 48h rate must NOT false-revert.
+  // This is the bug that repeatedly killed the express experiment: baseline ~0.9725
+  // and a normal 48h rate of ~0.83 used to fall under the old baseline*0.95 floor
+  // and revert. With the cliff-only breaker (baseline*0.70) it stays RUNNING.
+  it('LOCK-11d: does NOT revert on normal session-rate noise (false-positive regression)', async () => {
+    const expHighBaseline = {
+      ...MOCK_EXPERIMENT,
+      store: { ...MOCK_STORE, baselineCheckoutRate: 0.9725 },
+    };
+    (prisma.experiment.findMany as any).mockResolvedValue([expHighBaseline]);
+    // 400 opens, 332 checkouts → 0.83 (healthy noise, well above the 0.68 cliff floor)
+    mockEventGroupBy(400, 332, 100);
+
+    const POST = await getHandler();
+    const req = makeRequest('test-secret-123');
+    const res = await POST(req);
+
+    expect(prisma.experiment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'RUNNING' }),
+      })
+    );
+    const json = await res.json();
+    expect(json.experiments[0].status).not.toBe('REVERTED');
   });
 
   // LOCK-12: Response shape
