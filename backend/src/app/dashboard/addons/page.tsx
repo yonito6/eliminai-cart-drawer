@@ -1765,20 +1765,15 @@ function AddonsPage() {
             const isExpanded = expanded === def.key;
             const isSaving = saving[def.key] ?? false;
 
-            const borderColor =
-              addon.mode === 'auto-optimize'
-                ? '#22c55e'
-                : addon.mode === 'locked'
-                  ? '#111827'
-                  : '#e5e7eb';
-            const borderWidth =
-              addon.mode === 'auto-optimize' || addon.mode === 'locked'
-                ? 2
-                : 1;
-
             const activeExp = experiments[def.key];
             const isTesting = activeExp?.status === 'RUNNING';
             const hasWinner = activeExp?.status === 'WINNER_FOUND';
+
+            // Only the addon currently under test gets a highlighted border.
+            // Everything else (on or off) uses the neutral border — an addon being
+            // "on" is already conveyed by the Active badge, not the border.
+            const borderColor = isTesting ? '#7c3aed' : '#e5e7eb';
+            const borderWidth = isTesting ? 2 : 1;
             const badgeColor = isTesting ? '#7c3aed' : hasWinner ? '#16a34a' : addon.enabled ? '#7c3aed' : '#9ca3af';
             const badgeLabel = isTesting ? 'Testing now' : hasWinner ? 'Winner Found' : addon.enabled ? 'Active' : 'Off';
 
