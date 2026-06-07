@@ -81,7 +81,7 @@ Notes:
 
 ## 5. The Win Decision (all gates must pass)
 
-A WINNER is declared only if **every** gate passes. There are **no overrides** — high volume or high confidence can never skip a gate.
+A WINNER is declared only if **every** gate passes. There are **no overrides** — high volume or high confidence can never skip a gate. The current code's "blowout shortcut" (a 3-day early call when `confidence ≥ 0.995`, thompson.ts ~lines 230-245) is **removed**; the consistency-credit slide (Section 6) is the single, unified early-stop path. There must not be two competing early-stop mechanisms.
 
 1. **Weekend coverage (irreducible).** Window spans ≥1 Saturday AND ≥1 Sunday. If not, WAIT — regardless of volume or confidence.
 2. **Min calendar days (per tier).** Running days ≥ tier minimum. Else WAIT.
@@ -108,7 +108,7 @@ creditEarned   = (consecutiveLeaderDays >= 4)
 requiredFloor  = creditEarned ? hardMinFloor : fullFloor
 ```
 
-- **`consecutiveLeaderDays`** — the number of consecutive most-recent days the *same* variant was the daily leader (derived from `notes.dailyLeaders`). Resets to 0 on any flip.
+- **`consecutiveLeaderDays`** — the number of consecutive most-recent days the *same* variant was the daily leader. Resets to 0 on any flip. **Ownership:** a new small pure helper `countConsecutiveLeaderDays(dailyLeaders, candidateId)` lives in `winner-decision.ts` and is called by the cron, which already holds `notes.dailyLeaders`. It walks `dailyLeaders` from the most recent entry backward, counting while `leaderId === candidateId`, stopping at the first mismatch. With <1 matching entry it returns 0 (→ no credit, full floor).
 - Strong + steady (≥4 straight days, ≥0.99 confidence, loss ≤ half the threshold) → finish at the hard minimum (15). This is what lets the Eleganto express test (steady, 0.991 confidence) conclude days sooner.
 - Noisy or merely-good (leader flips, or confidence 0.95–0.99) → grind all the way to the full power-analysis floor (~30).
 
@@ -159,7 +159,7 @@ export interface WinnerDecisionInput {
   winnerCandidateId: string | null;     // leader the stats point to
   loserOrders: number;                  // orders on the losing arm
   targetOrdersPerVariant: number;       // power-analysis floor
-  dynamicLossThreshold: number;         // tier-scaled, already computed upstream
+  dynamicLossThreshold: number;         // tier-scaled; NEW field on ThompsonResult (today a thompson.ts local)
   // timeline
   visitorsPerDay: number;               // for tier selection
   runningDays: number;                  // calendar days while RUNNING
@@ -185,14 +185,16 @@ export function requiredEvidenceFloor(input): number;          // section 6 slid
 
 ### What changes in existing files
 
-- **`thompson.ts`** — keeps all statistical computation (Beta sampling, confidence, expected loss, lift, `calculateSampleTarget`). The current winner-declaration block (lines ~212-269) is reduced to *producing the inputs* for `decideVerdict` (it already computes confidence/loss/lift/targets). It no longer makes the final WAIT/WIN call itself. `calculateConsistency`'s extend-only multiplier is replaced by exposing `consecutiveLeaderDays` for the credit logic (the multiplier behavior is superseded by the floor slide).
-- **`nightly/route.ts`** — the `consistencyOk` gate (line ~160) is removed and replaced by a single call to `decideVerdict(...)`. The cron then acts on the verdict: WINNER → set winnerId + terminal; NO_DIFFERENCE/INCONCLUSIVE → terminal (no winner, free slot, apply cross-store default for INCONCLUSIVE); WAIT → leave RUNNING. The harm-revert check (`shouldRevertForCheckoutDrop`) stays exactly where it is, before/independent of this.
+- **`thompson.ts`** — keeps all statistical computation (Beta sampling, confidence, expected loss, lift, `calculateSampleTarget`). The current winner-declaration block (lines ~212-269) is reduced to *producing the inputs* for `decideVerdict` (it already computes confidence/loss/lift/targets). It no longer makes the final WAIT/WIN call itself, and the blowout shortcut is removed. `calculateConsistency`'s extend-only multiplier is removed; the floor slide (Section 6) supersedes it. **`dynamicLossThreshold` must be added as a field on the `ThompsonResult` interface** — today it is only a local variable inside thompson.ts (lines ~221-223) and is NOT exported. The plan must surface it on the result so the cron can pass it into `decideVerdict`.
+- **`nightly/route.ts`** — the entire decision block at lines ~160-174 is replaced by a single call to `decideVerdict(...)`. This includes both the `consistencyOk` gate (line ~160) **and** the current fragile string-matching branches (e.g. `ts.reason?.includes('No meaningful difference')` at ~line 168) which become the typed `NO_DIFFERENCE` verdict. The cron then acts on the verdict: WINNER → set winnerId + terminal; NO_DIFFERENCE/INCONCLUSIVE → terminal (no winner, free slot, apply cross-store default for INCONCLUSIVE); WAIT → leave RUNNING. The cron is also responsible for deriving the new timeline inputs (`runningDays`, `hasSaturday`, `hasSunday`, `visitorsPerDay`) — see Section 11. The harm-revert check (`shouldRevertForCheckoutDrop`) stays exactly where it is, before/independent of this.
 
 ### Data flow
 
 ```
 nightly cron
-  ├─ calculateThompsonSampling()      → confidence, loss, lift, targets, dailyLeaders
+  ├─ calculateThompsonSampling()      → confidence, loss, lift, targets, dynamicLossThreshold (NEW field)
+  ├─ derive timeline inputs           → runningDays, hasSaturday, hasSunday, visitorsPerDay (from dailySummary)
+  ├─ countConsecutiveLeaderDays()     → consecutiveLeaderDays (from notes.dailyLeaders)
   ├─ shouldRevertForCheckoutDrop()    → harm-revert (independent, fast)
   └─ decideVerdict(inputs)            → WAIT | WINNER | NO_DIFFERENCE | INCONCLUSIVE
         └─ cron applies verdict (status, winnerId, cross-store default, free slot)
@@ -200,11 +202,22 @@ nightly cron
 
 ---
 
-## 11. Error Handling & Edge Cases
+## 11. Error Handling, Edge Cases & New Derived Inputs
 
+### New derived inputs (computed by the cron, NOT today present)
+These three inputs do not exist in the current cron and must be derived in `nightly/route.ts` before calling `decideVerdict`:
+
+- **`runningDays`** — calendar days the test was actually RUNNING. **Important:** the current cron's `daysRunning = floor((now - startedAt)/86400000)` (route.ts:101) counts raw calendar days since start and does NOT subtract paused/reverted gaps. The new value must count only RUNNING days. Source: count distinct dates in `dailySummary` (one row per active date) rather than a raw date subtraction.
+- **`hasSaturday` / `hasSunday`** — whether the set of RUNNING dates includes a store-local Saturday and Sunday. Derive from the same `dailySummary` dates: map each active date to its weekday and check membership. A weekend day that fell entirely in an OFF window has no `dailySummary` row, so it correctly fails coverage.
+- **`visitorsPerDay`** — mean cart-open sessions per RUNNING day (already measured by the cron); used only to pick the tier.
+
+### maxDays reconciliation
+The cron already reads per-experiment `exp.maxDays` (route.ts:171). The new `MAX_DAYS = 14` constant is the **default/backstop**; the effective cap is `min(exp.maxDays ?? MAX_DAYS, MAX_DAYS)` so a per-experiment value can only *tighten*, never exceed, the safety backstop. The plan must wire this explicitly so the two values cannot silently disagree.
+
+### Edge cases
 - **No daily-leader history yet** (`dailyLeaders` empty / <4 entries): `consecutiveLeaderDays = 0` → no credit → full floor. Safe default (slower, never wrong).
 - **winnerCandidateId null** (stats can't separate arms): verdict WAIT until min days / cap; at cap with LOW tier → INCONCLUSIVE.
-- **Zero/again-zero visitors on a day**: that day counts toward calendar days only if the test was RUNNING; visitors/day uses the mean over running days (already how the cron measures it).
+- **Laggard arm has zero orders → liftPercent collapses to 0.** thompson.ts forces `liftPercent = 0` when `secondMean === 0` (lines ~208-210), since relative lift is undefined against a zero base. A naive practical-significance check (`|liftPercent| ≥ 5%`) would then misclassify a clear leader (e.g. 18 vs 0 orders) as NO_DIFFERENCE. **Rule:** when the laggard has zero orders, the practical-significance gate is satisfied by the leader having ≥ a small absolute order count (reuse `HARD_MIN_FLOOR`/2, i.e. ≥8 leader orders) instead of by `liftPercent`. This prevents a false NO_DIFFERENCE; the evidence floor (gate 6) still independently governs whether there is enough data.
 - **liftPercent exactly 5%**: treated as meeting practical significance (`≥`, inclusive) — consistent with how other thresholds use `≥`/`≤`.
 - **Weekend coverage with a paused/reverted gap**: only RUNNING days count; a Saturday that occurred entirely during an OFF window does NOT satisfy `hasSaturday` (matches the attribution reality that no per-variant data is collected while OFF).
 
@@ -224,6 +237,7 @@ Per blast-radius-shield: map → lock → red → fix → verify.
 - **Weekend gate**: passes confidence+loss+floor but missing Sunday → WAIT; add Sunday → WINNER.
 - **Min-days gate**: HIGH at day 3 → WAIT; day 4 → eligible.
 - **Practical-significance**: high confidence + low loss + lift 0.4% → NO_DIFFERENCE; lift 5% → WINNER.
+- **Zero-laggard guard**: laggard 0 orders, leader 18 orders, liftPercent forced to 0 → must NOT be NO_DIFFERENCE; practical significance satisfied by absolute leader count → WINNER (if floor met) or WAIT (if not), never NO_DIFFERENCE.
 - **Consistency credit earned**: 4 straight leader-days, conf 0.991, loss ≤ half threshold, laggard orders 16 → WINNER (floor slid to 15).
 - **Credit NOT earned**: leader flipped (consecutive=2), laggard orders 16 → WAIT (full floor ~30).
 - **Eleganto express replay**: with_addon 11 / without_addon 20, conf 0.991, lift ~97%, steady leader, weekend covered, HIGH tier → WINNER at reduced floor (proves the motivating case finishes).
