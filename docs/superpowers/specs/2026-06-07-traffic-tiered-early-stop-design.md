@@ -129,7 +129,8 @@ This is distinct from a WIN and from a WAIT. It is a terminal, "we learned they'
 For LOW-tier stores that may never accumulate enough orders:
 
 - **Max duration cap.** `maxDays = 14` running days. At the cap, the test terminates regardless of floor.
-- **Cross-store fallback.** If, at the cap, the evidence floor was never met (laggard arm < requiredFloor), the engine ends the test as **INCONCLUSIVE** and applies the cross-store prior default (the configuration that wins on average across stores, via the existing `buildCrossStorePriors`) rather than guessing from thin local data or running forever.
+- **Carry-forward fallback.** If, at the cap, the evidence floor was never met (laggard arm < requiredFloor), the engine ends the test as **INCONCLUSIVE**: it keeps the current (control) configuration and frees the slot, rather than guessing from thin local data or running forever. The accumulated local data still feeds `buildCrossStorePriors`, so the *next* experiment for this slot (here or on any store) starts with a better Bayesian prior — but no cross-store config is force-applied on this terminal. (Verified: the autopilot engine applies a config only on `WINNER_FOUND`; on any non-winner terminal it carries the current config forward and advances the queue.)
+- INCONCLUSIVE has no DB enum value; it is persisted as DB status `NO_DIFFERENCE` plus `notes.inconclusive = true` so the audit trail distinguishes "ran out of data" from "proven equivalent." No schema migration.
 - HIGH/MEDIUM tiers also honor `maxDays = 14` as a backstop, but in practice they conclude on the gates well before the cap.
 
 ## 9. Harm-revert stays separate
@@ -186,7 +187,7 @@ export function requiredEvidenceFloor(input): number;          // section 6 slid
 ### What changes in existing files
 
 - **`thompson.ts`** — keeps all statistical computation (Beta sampling, confidence, expected loss, lift, `calculateSampleTarget`). The current winner-declaration block (lines ~212-269) is reduced to *producing the inputs* for `decideVerdict` (it already computes confidence/loss/lift/targets). It no longer makes the final WAIT/WIN call itself, and the blowout shortcut is removed. `calculateConsistency`'s extend-only multiplier is removed; the floor slide (Section 6) supersedes it. **`dynamicLossThreshold` must be added as a field on the `ThompsonResult` interface** — today it is only a local variable inside thompson.ts (lines ~221-223) and is NOT exported. The plan must surface it on the result so the cron can pass it into `decideVerdict`.
-- **`nightly/route.ts`** — the entire decision block at lines ~160-174 is replaced by a single call to `decideVerdict(...)`. This includes both the `consistencyOk` gate (line ~160) **and** the current fragile string-matching branches (e.g. `ts.reason?.includes('No meaningful difference')` at ~line 168) which become the typed `NO_DIFFERENCE` verdict. The cron then acts on the verdict: WINNER → set winnerId + terminal; NO_DIFFERENCE/INCONCLUSIVE → terminal (no winner, free slot, apply cross-store default for INCONCLUSIVE); WAIT → leave RUNNING. The cron is also responsible for deriving the new timeline inputs (`runningDays`, `hasSaturday`, `hasSunday`, `visitorsPerDay`) — see Section 11. The harm-revert check (`shouldRevertForCheckoutDrop`) stays exactly where it is, before/independent of this.
+- **`nightly/route.ts`** — the entire decision block at lines ~160-174 is replaced by a single call to `decideVerdict(...)`. This includes both the `consistencyOk` gate (line ~160) **and** the current fragile string-matching branches (e.g. `ts.reason?.includes('No meaningful difference')` at ~line 168) which become the typed `NO_DIFFERENCE` verdict. The cron then acts on the verdict: WINNER → set winnerId + terminal; NO_DIFFERENCE → terminal (no winner, free slot); INCONCLUSIVE → persist DB status `NO_DIFFERENCE` + `notes.inconclusive=true`, carry current config forward, free slot; WAIT → leave RUNNING. The cron is also responsible for deriving the new timeline inputs (`runningDays`, `hasSaturday`, `hasSunday`, `visitorsPerDay`) — see Section 11. The harm-revert check (`shouldRevertForCheckoutDrop`) stays exactly where it is, before/independent of this.
 
 ### Data flow
 
@@ -197,7 +198,7 @@ nightly cron
   ├─ countConsecutiveLeaderDays()     → consecutiveLeaderDays (from notes.dailyLeaders)
   ├─ shouldRevertForCheckoutDrop()    → harm-revert (independent, fast)
   └─ decideVerdict(inputs)            → WAIT | WINNER | NO_DIFFERENCE | INCONCLUSIVE
-        └─ cron applies verdict (status, winnerId, cross-store default, free slot)
+        └─ cron applies verdict (status, winnerId, carry-forward on INCONCLUSIVE, free slot)
 ```
 
 ---
@@ -241,14 +242,14 @@ Per blast-radius-shield: map → lock → red → fix → verify.
 - **Consistency credit earned**: 4 straight leader-days, conf 0.991, loss ≤ half threshold, laggard orders 16 → WINNER (floor slid to 15).
 - **Credit NOT earned**: leader flipped (consecutive=2), laggard orders 16 → WAIT (full floor ~30).
 - **Eleganto express replay**: with_addon 11 / without_addon 20, conf 0.991, lift ~97%, steady leader, weekend covered, HIGH tier → WINNER at reduced floor (proves the motivating case finishes).
-- **Small-store fallback**: LOW tier, day 14, laggard orders < floor → INCONCLUSIVE (cross-store default).
+- **Small-store fallback**: LOW tier, day 14, laggard orders < floor → INCONCLUSIVE (carry-forward current config).
 - **Max-days backstop**: HIGH tier, day 14, still no separation → terminal (not WAIT forever).
 - **No overrides**: huge visitors/day + conf 0.999 but no Saturday → WAIT (volume can't skip weekend).
 
 ### Integration (in `nightly-cron.test.ts`)
 - Verdict WINNER → experiment set to WINNER_FOUND with winnerId.
 - Verdict NO_DIFFERENCE → terminal, no winner, slot freed.
-- Verdict INCONCLUSIVE → terminal, cross-store default applied.
+- Verdict INCONCLUSIVE → DB status NO_DIFFERENCE + `notes.inconclusive=true`, current config carried forward, slot freed.
 - Verdict WAIT → experiment stays RUNNING.
 - Harm-revert still fires independently on a real cliff even when verdict would be WAIT.
 
@@ -261,10 +262,10 @@ Per blast-radius-shield: map → lock → red → fix → verify.
 
 - **Tier thresholds (500 / 50) and min-days (4/7/7)** are judgment calls tuned for a 1-in-20 trust budget. They are centralized as named constants so they can be retuned without touching logic.
 - **5% practical-significance floor** is a product decision; if a store cares about sub-5% lifts at huge scale, this would need to become configurable. Out of scope for now (YAGNI).
-- **Cross-store default for INCONCLUSIVE** relies on `buildCrossStorePriors` having enough sibling-store data; with too few stores it falls back to the neutral prior, which is acceptable (ends the test rather than running forever).
+- **INCONCLUSIVE carry-forward** keeps the control config and frees the slot rather than force-applying a cross-store config (which the autopilot engine does not do on a non-winner terminal). The accumulated data still improves future priors via `buildCrossStorePriors`. If, in future, force-applying a cross-store-winning config on INCONCLUSIVE is desired, that is a separate enhancement to the autopilot engine — out of scope here (YAGNI).
 
 ---
 
 ## 14. Summary
 
-One pure decision module, three tiers, six irreducible win gates, a consistency *credit* that shortens strong-and-steady tests toward a hard floor of 15 orders, a practical-significance floor that stops big stores chasing trivial lifts, and a small-store fallback that concludes via cross-store priors instead of running forever — with the harm-revert breaker kept fully separate so it can still fire fast and safe.
+One pure decision module, three tiers, six irreducible win gates, a consistency *credit* that shortens strong-and-steady tests toward a hard floor of 15 orders, a practical-significance floor that stops big stores chasing trivial lifts, and a small-store fallback that concludes by carrying the current config forward (and feeding future cross-store priors) instead of running forever — with the harm-revert breaker kept fully separate so it can still fire fast and safe.

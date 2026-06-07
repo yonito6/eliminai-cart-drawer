@@ -113,6 +113,10 @@ export const MAX_DAYS = 14;              // backstop cap (effective cap can only
 export const CREDIT_MIN_CONSECUTIVE_DAYS = 4;
 export const CREDIT_CONFIDENCE = 0.99;
 
+// Zero-laggard guard: when the losing arm has 0 orders, liftPercent is undefined
+// (collapses to 0), so we judge the leader on absolute order count instead.
+export const ZERO_LAGGARD_MIN_LEADER = 8;
+
 export function selectTier(visitorsPerDay: number): Tier {
   if (visitorsPerDay >= TIER_HIGH_MIN) return 'HIGH';
   if (visitorsPerDay >= TIER_MEDIUM_MIN) return 'MEDIUM';
@@ -344,9 +348,19 @@ describe('decideVerdict', () => {
     expect(v.kind).toBe('WINNER');
   });
 
+  it('zero-laggard boundary: loser 0, leader exactly 8 → WINNER (>= ZERO_LAGGARD_MIN_LEADER)', () => {
+    const v = decideVerdict({ ...PASSING, loserOrders: 0, leaderOrders: 8, liftPercent: 0 });
+    expect(v.kind).toBe('WINNER');
+  });
+
   it('zero-laggard but leader below absolute floor (7) → WAIT not NO_DIFFERENCE', () => {
     const v = decideVerdict({ ...PASSING, loserOrders: 0, leaderOrders: 7, liftPercent: 0, consecutiveLeaderDays: 2 });
     expect(v.kind).toBe('WAIT');
+  });
+
+  it('non-zero loser at exactly the slid floor (15 with credit) → WINNER (boundary, inclusive)', () => {
+    const v = decideVerdict({ ...PASSING, loserOrders: 15 });  // credit earned → floor 15
+    expect(v.kind).toBe('WINNER');
   });
 
   it('LOW tier at cap without floor → INCONCLUSIVE', () => {
@@ -404,14 +418,14 @@ export interface WinnerDecisionInput {
 }
 
 // When a gate fails: WAIT until the cap, then terminate.
-// LOW tier terminates as INCONCLUSIVE (apply cross-store default);
+// LOW tier terminates as INCONCLUSIVE (carry the current config forward);
 // HIGH/MEDIUM terminate as NO_DIFFERENCE (backstop).
 function unresolved(input: WinnerDecisionInput, tier: Tier, effectiveMaxDays: number, waitReason: string): Verdict {
   if (input.runningDays < effectiveMaxDays) {
     return { kind: 'WAIT', reason: waitReason };
   }
   if (tier === 'LOW') {
-    return { kind: 'INCONCLUSIVE', reason: `Reached ${effectiveMaxDays}-day cap without enough data — applying cross-store default` };
+    return { kind: 'INCONCLUSIVE', reason: `Reached ${effectiveMaxDays}-day cap without enough data — carrying current config forward` };
   }
   return { kind: 'NO_DIFFERENCE', reason: `Reached ${effectiveMaxDays}-day cap without a clear winner` };
 }
@@ -436,12 +450,20 @@ export function decideVerdict(input: WinnerDecisionInput): Verdict {
   if (input.expectedLoss > input.dynamicLossThreshold) {
     return unresolved(input, tier, effectiveMaxDays, `Expected loss ${input.expectedLoss.toFixed(3)}pp above ${input.dynamicLossThreshold.toFixed(3)}pp`);
   }
-  // Gate 5: practical significance. Zero-laggard guard: liftPercent collapses to 0
-  // when the loser has no orders, so fall back to an absolute leader-order check.
-  const practicallySignificant = input.loserOrders === 0
-    ? input.leaderOrders >= HARD_MIN_FLOOR / 2
-    : Math.abs(input.liftPercent) >= PRACTICAL_LIFT_FLOOR;
-  if (!practicallySignificant) {
+  const winReason = `Winner: ${(input.confidence * 100).toFixed(1)}% confidence, ${input.expectedLoss.toFixed(3)}pp loss, +${Math.abs(input.liftPercent).toFixed(1)}% lift`;
+
+  // Zero-laggard branch: liftPercent is meaningless when the loser has 0 orders, so BOTH
+  // practical significance (gate 5) and the evidence floor (gate 6) are judged on the
+  // leader's absolute order count. Below the bar → WAIT (never NO_DIFFERENCE, per spec §11).
+  if (input.loserOrders === 0) {
+    if (input.leaderOrders >= ZERO_LAGGARD_MIN_LEADER) {
+      return { kind: 'WINNER', winnerId: input.winnerCandidateId, reason: winReason };
+    }
+    return unresolved(input, tier, effectiveMaxDays, `Trailing variant has 0 orders; need ${ZERO_LAGGARD_MIN_LEADER} on the leader (have ${input.leaderOrders})`);
+  }
+
+  // Gate 5: practical significance (non-zero laggard).
+  if (Math.abs(input.liftPercent) < PRACTICAL_LIFT_FLOOR) {
     // Gates 1-4 passed AND the variants are within the trivial band → terminal equivalence.
     return { kind: 'NO_DIFFERENCE', reason: `No meaningful difference (lift ${input.liftPercent.toFixed(1)}% at ${(input.confidence * 100).toFixed(1)}% confidence)` };
   }
@@ -451,18 +473,14 @@ export function decideVerdict(input: WinnerDecisionInput): Verdict {
     return unresolved(input, tier, effectiveMaxDays, `Need ${floor} orders on the trailing variant (have ${input.loserOrders})`);
   }
 
-  return {
-    kind: 'WINNER',
-    winnerId: input.winnerCandidateId,
-    reason: `Winner: ${(input.confidence * 100).toFixed(1)}% confidence, ${input.expectedLoss.toFixed(3)}pp loss, +${Math.abs(input.liftPercent).toFixed(1)}% lift`,
-  };
+  return { kind: 'WINNER', winnerId: input.winnerCandidateId, reason: winReason };
 }
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
-Expected: PASS (all `decideVerdict` cases). Re-run the whole file to confirm earlier tasks still pass.
+Expected: PASS — 15 `decideVerdict` cases plus the earlier tier/helper/floor tests (≈28 tests total in the file). A mismatch in the count means a missing or extra case.
 
 - [ ] **Step 5: Typecheck + commit**
 
@@ -494,7 +512,8 @@ In `backend/src/__tests__/thompson.test.ts`:
   - `'does NOT declare winner with fewer than target orders per variant'` — DELETE (winner gating is no longer thompson's job).
   - `'declares blowout winner when leading variant meets order target even if loser has few'` — DELETE (blowout removed).
   - `'does NOT blowout before 3 days even with overwhelming data'` — DELETE.
-  - In `'detects no difference with similar order rates'` and `'stays ~50/50 with very sparse order data'` — **remove** the `result.winnerId` assertions; keep the split/statistical assertions.
+  - In `'stays ~50/50 with very sparse order data (natural balancing)'` (test line ~78) — **remove** the `expect(result.winnerId).toBeNull()` assertion (line ~89); keep the split/statistical assertions.
+  - `'detects no difference with similar order rates'` (test line ~70) has **no** `winnerId` assertion (it only checks `liftPercent`) — leave it unchanged.
 - **Add** a new test for the exposed fields:
 
 ```ts
@@ -524,7 +543,7 @@ Expected: FAIL — `dynamicLossThreshold`/`winnerCandidateId` are undefined on t
   winnerCandidateId: string | null;  // statistical leader (bestId); decision made by winner-decision.ts
   dynamicLossThreshold: number;      // tier-scaled expected-loss threshold (for decideVerdict)
 ```
-2. Delete the entire winner-declaration block (lines ~212-269: `let winnerId`/`reason`, `isBlowout`, all Gate 1-5 branches). Keep the `dynamicLossThreshold` computation (lines ~219-223) — it now feeds the result. Keep `bestId`/`secondMean`/`liftPercent`.
+2. Delete the winner-declaration code in two sub-ranges, PRESERVING the threshold computation in between: delete lines ~212-218 (`// ── Winner declaration` header, `let winnerId`, `let reason`, `totalOrdersAll`, `maxOrdersPerArm`) and lines ~224-269 (`isBlowout` + all Gate 1-5 branches). **Keep** the `dynamicLossThreshold` computation at lines ~219-223 (`baselineLossScale`, `baseLossThreshold`, `dynamicLossThreshold`) — it now feeds the result. `bestId` (line 111), `bestMean`/`secondMean`/`liftPercent` (lines 206-210) are already outside the deleted ranges; keep them. Verify no remaining reference to `totalOrdersAll`/`maxOrdersPerArm` exists after deletion (they were used only by the blowout).
 3. In the return object (lines ~288-304): remove `winnerId` and `reason`; add:
 ```ts
     winnerCandidateId: bestId,
@@ -593,7 +612,7 @@ This is the integration. It derives the new timeline inputs, replaces the decisi
 - [ ] **Step 1: Add the prisma mock + a failing integration test**
 
 In `nightly-cron.test.ts`:
-1. Add `dailySummary.findMany` to the prisma mock (line ~44 block):
+1. **Replace** the existing `dailySummary: { upsert: vi.fn() }` line (~line 44) — do NOT add a second `dailySummary` key (duplicate object keys silently overwrite). The line becomes:
 ```ts
     dailySummary: { upsert: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
 ```
@@ -608,12 +627,26 @@ function mockSummaryDates(isoDates: string[]) {
 it('LOCK-3b: stays RUNNING when weekend not yet covered, even with a strong winner', async () => {
   // Conclusive stats but only weekdays observed → must WAIT.
   (calculateThompsonSampling as any).mockReturnValue({
-    ...DEFAULT_TS_RESULT, confidence: 0.99, liftPercent: 90,
-    winnerCandidateId: 'treatment', dynamicLossThreshold: 0.05,
-    minOrdersPerVariant: 30, orderRates: { control: 0.05, treatment: 0.09 },
+    ...DEFAULT_TS_RESULT, confidence: 0.99, expectedLoss: 0.01, liftPercent: 90,
+    winnerCandidateId: 'treatment', dynamicLossThreshold: 0.05, targetOrdersPerVariant: 30,
+    orderRates: { control: 0.05, treatment: 0.09 },
   });
   mockEventGroupBy(4000, 800, 40);                    // HIGH tier
   mockSummaryDates(['2026-06-01','2026-06-02','2026-06-03','2026-06-04','2026-06-05']); // Mon-Fri
+  const POST = await getHandler();
+  await POST(makeRequest('test-secret-123'));
+  const update = (prisma.experiment.update as any).mock.calls[0][0];
+  expect(update.data.status).toBe('RUNNING');
+});
+
+it('LOCK-3c: brand-new experiment with empty DailySummary stays RUNNING', async () => {
+  // No summary rows yet → runningDays 0, no weekend → WAIT regardless of stats.
+  (calculateThompsonSampling as any).mockReturnValue({
+    ...DEFAULT_TS_RESULT, confidence: 0.99, expectedLoss: 0.01, liftPercent: 90,
+    winnerCandidateId: 'treatment', dynamicLossThreshold: 0.05, targetOrdersPerVariant: 30,
+  });
+  mockEventGroupBy(4000, 800, 40);
+  (prisma.dailySummary.findMany as any).mockResolvedValue([]); // none yet (default, explicit here)
   const POST = await getHandler();
   await POST(makeRequest('test-secret-123'));
   const update = (prisma.experiment.update as any).mock.calls[0][0];
@@ -666,6 +699,7 @@ In `nightly-cron.test.ts`, update the Thompson mock shape used everywhere to the
 ```ts
 const DEFAULT_TS_RESULT = {
   confidence: 0.80,
+  expectedLoss: 0.05,
   liftPercent: 5,
   winnerCandidateId: 'treatment',
   dynamicLossThreshold: 0.05,
@@ -675,7 +709,9 @@ const DEFAULT_TS_RESULT = {
   orderRates: { control: 0.05, treatment: 0.06 },
 };
 ```
-Update the thompson mock to also expose `calculateConsistency` removal — delete `calculateConsistency: vi.fn()...` from the `vi.mock('../lib/thompson', ...)` block (line ~54). Rewrite LOCK-3/4/5 to the verdict model:
+Update the thompson mock: delete `calculateConsistency: vi.fn()...` from the `vi.mock('../lib/thompson', ...)` block (line ~54). Add a mock for the new `winner-decision` import is NOT needed — the cron uses the real `decideVerdict`/`countConsecutiveLeaderDays` (pure functions, fully tested in Chunk 1); let them run for real so the integration tests exercise the actual gate logic.
+
+**Migrate EVERY inline Thompson mock in the file to the new shape** (replace `winnerId` → `winnerCandidateId`, add `expectedLoss` + `dynamicLossThreshold` + `targetOrdersPerVariant`), and give every test that should reach a terminal verdict a `mockSummaryDates([...])` call with enough RUNNING days for its tier AND a Saturday + Sunday. The inline mocks that MUST be migrated (do not miss any): LOCK-3 (~line 181), LOCK-4 (~line 209), LOCK-5 (~line 242), LOCK-5b "WINNER_FOUND takes priority over maxDays" (~line 270), and BOTH autopilot tests (~lines 514 and 549) — the autopilot tests are load-bearing (they assert `progressAutopilot` runs on a WINNER), so they must produce a real WINNER verdict (weekend-covered dates + loserOrders via `mockEventGroupBy` ≥ floor). Rewrite LOCK-3/4/5 to the verdict model:
 - **LOCK-3 (WINNER):** strong stats + weekend covered + enough orders → `status === 'WINNER_FOUND'`, `winnerVariantId === 'treatment'`.
 - **LOCK-4 (NO_DIFFERENCE):** gates 1-4 pass, lift < 5% → `status === 'NO_DIFFERENCE'`.
 - **LOCK-5 (cap backstop):** runningDays at cap, no winner, HIGH/MED → `NO_DIFFERENCE`; add a LOW-tier variant asserting `NO_DIFFERENCE` in DB **and** `notes.inconclusive === true`.
@@ -698,7 +734,7 @@ import { calculateThompsonSampling, buildCrossStorePriors, calculateSampleTarget
 to
 ```ts
 import { calculateThompsonSampling, buildCrossStorePriors } from '@/lib/thompson';
-import { decideVerdict, countConsecutiveLeaderDays } from '@/lib/winner-decision';
+import { decideVerdict, countConsecutiveLeaderDays, MAX_DAYS } from '@/lib/winner-decision';
 ```
 (`calculateSampleTarget` was only used for the `adjustedTarget`/consistency multiplier, which is removed — see below.)
 
@@ -733,7 +769,7 @@ const verdict = decideVerdict({
   hasSaturday,
   hasSunday,
   consecutiveLeaderDays,
-  maxDays: exp.maxDays,
+  maxDays: exp.maxDays ?? MAX_DAYS,   // nullish guard — decideVerdict clamps to MAX_DAYS internally
 });
 
 if (verdict.kind === 'WINNER') {
@@ -762,6 +798,12 @@ Set `confidence`/`expectedLoss`/`liftPercent`/`trafficSplit` from `ts` exactly a
 
 5. The harm-revert block (lines ~176-195) stays exactly as-is, AFTER this decision (so a real cliff overrides any verdict by setting `REVERTED`).
 
+6. Fix the `results.push({ ... })` object (lines ~238-254). Three of its fields reference symbols removed in Chunk 2 / step 2 above and will fail `tsc` otherwise:
+   - `reason: ts.reason,` → `reason: verdict.reason,` (`ThompsonResult.reason` was removed in Chunk 2; the verdict now owns the human-readable reason).
+   - `consistency: consistency.score,` → **delete this line** (`calculateConsistency` was removed in step 2).
+   - `sampleTarget: adjustedTarget,` → **delete this line** (`adjustedTarget`/`calculateSampleTarget` was removed in step 2).
+   Leave all other `results.push` fields untouched.
+
 - [ ] **Step 4: Run tests to verify pass**
 
 Run: `cd backend && npx vitest run src/__tests__/nightly-cron.test.ts`
@@ -774,7 +816,7 @@ git add backend/src/app/api/cron/nightly/route.ts backend/src/__tests__/nightly-
 git commit -m "feat(cro): cron uses decideVerdict (tiers, weekend, credit, fallback)"
 ```
 
-### Task 3.3: INCONCLUSIVE applies cross-store default; clean up dead `daysRunning`/`minDaysRunning`
+### Task 3.3: INCONCLUSIVE carries config forward; clean up dead `daysRunning`/`minDaysRunning`
 
 **Files:**
 - Modify: `backend/src/app/api/cron/nightly/route.ts`
@@ -782,7 +824,7 @@ git commit -m "feat(cro): cron uses decideVerdict (tiers, weekend, credit, fallb
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `nightly-cron.test.ts` — when verdict is INCONCLUSIVE and autopilot is enabled, `progressAutopilot` is called so the cross-store default is applied (the autopilot engine already chooses the carry-forward config on a terminal non-winner). Assert the cron still reaches the terminal autopilot branch with `status:'NO_DIFFERENCE'` and `inconclusive:true` persisted:
+Add to `nightly-cron.test.ts` — when verdict is INCONCLUSIVE and autopilot is enabled, `progressAutopilot` is called so the autopilot engine carries the current (control) config forward and advances the queue (it does NOT force-apply a winner on a terminal non-winner; the test below is **what already happens for any terminal non-winner status** — no new wiring is added). The collected data still feeds future cross-store priors via `buildCrossStorePriors`, but no config is force-applied. Assert the cron still reaches the terminal autopilot branch with `status:'NO_DIFFERENCE'` and `inconclusive:true` persisted:
 ```ts
 it('INCONCLUSIVE (LOW tier at cap) persists NO_DIFFERENCE + inconclusive flag and progresses autopilot', async () => {
   (calculateThompsonSampling as any).mockReturnValue({
@@ -808,7 +850,7 @@ Expected: the `inconclusive` flag assertion fails if not persisted, or passes if
 
 - [ ] **Step 3: Implement remaining cleanup**
 
-1. The terminal-autopilot block (lines ~221-236) already runs for any terminal status including the INCONCLUSIVE→NO_DIFFERENCE mapping; verify `terminal` includes `NO_DIFFERENCE` (it does). No change needed unless the test reveals a gap. The autopilot engine applies the carry-forward/cross-store default on a non-winner terminal — confirm `progressAutopilot` handles `status:'NO_DIFFERENCE'` (it already does; see `autopilot-engine.ts`).
+1. The terminal-autopilot block (lines ~221-236) already runs for any terminal status including the INCONCLUSIVE→NO_DIFFERENCE mapping; verify `terminal` includes `NO_DIFFERENCE` (it does). **No new wiring is added — this is purely a confirmation step.** On a terminal non-winner the autopilot engine (`autopilot-engine.ts` `planNextAction`) carries the current config forward and advances the queue; it sets `apply` only for `WINNER_FOUND`, so NO winner config is force-applied for INCONCLUSIVE. Confirm `progressAutopilot` already handles `status:'NO_DIFFERENCE'` (it does). Do not assert or build any "cross-store default apply" capability here — it does not exist.
 2. Remove now-dead code: `const daysRunning = ...` (line ~101) and the `minDaysRunning: daysRunning` option passed to `calculateThompsonSampling` (line ~115) — thompson no longer gates on days. Also drop the `dailyOrders`/`minDaysRunning` plumbing only if unused; KEEP `dailyOrders` (still used by thompson's hard floor). Verify with `tsc`.
 
 - [ ] **Step 4: Full typecheck + full suite**
@@ -823,7 +865,7 @@ Expected: ALL suites green (winner-decision, thompson, nightly-cron, checkout-sa
 
 ```bash
 git add backend/src/app/api/cron/nightly/route.ts backend/src/__tests__/nightly-cron.test.ts
-git commit -m "feat(cro): INCONCLUSIVE applies cross-store default; drop dead day-gating plumbing"
+git commit -m "feat(cro): INCONCLUSIVE carries config forward; drop dead day-gating plumbing"
 ```
 
 **End of Chunk 3.** Run the plan-document-reviewer, then the final code-reviewer over the whole feature.
