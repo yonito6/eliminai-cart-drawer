@@ -480,7 +480,7 @@ export function decideVerdict(input: WinnerDecisionInput): Verdict {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
-Expected: PASS — 15 `decideVerdict` cases plus the earlier tier/helper/floor tests (≈28 tests total in the file). A mismatch in the count means a missing or extra case.
+Expected: PASS — 14 `decideVerdict` cases plus the earlier tests (selectTier 5 + countConsecutiveLeaderDays 4 + requiredEvidenceFloor 4 = 13), for 27 tests total in the file. A mismatch in the count means a missing or extra case.
 
 - [ ] **Step 5: Typecheck + commit**
 
