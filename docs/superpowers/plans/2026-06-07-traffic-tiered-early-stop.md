@@ -1,0 +1,846 @@
+# Traffic-Tiered Trust-First Early-Stop — Implementation Plan
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Replace the CRO engine's winner-declaration logic (today split between `thompson.ts` and the nightly cron) with one pure, traffic-tiered decision module that finishes strong-and-steady tests faster, never false-calls, and works at every store scale.
+
+**Architecture:** A new pure module `backend/src/lib/winner-decision.ts` (`decideVerdict` + tiny helpers) owns the WAIT/WINNER/NO_DIFFERENCE/INCONCLUSIVE decision. `thompson.ts` keeps all statistical computation and stops making the winner call (its blowout shortcut and extend-only consistency are removed; it exposes `dynamicLossThreshold` + `winnerCandidateId`). The nightly cron derives timeline inputs (running days, weekend coverage, visitors/day) from `DailySummary`, calls `decideVerdict`, and applies the verdict. The harm-revert circuit-breaker (`checkout-safety.ts`) is untouched and stays independent.
+
+**Tech Stack:** TypeScript, Next.js 14 API route, Prisma (Neon Postgres), Vitest, jStat (Beta sampling). Test runner: `npm test` (= `vitest run`) from `backend/`.
+
+**Spec:** `docs/superpowers/specs/2026-06-07-traffic-tiered-early-stop-design.md`
+
+---
+
+## Critical constraints (read before starting)
+
+1. **DB-safety:** local `.env` points at the PRODUCTION Neon DB. NEVER run `prisma migrate`/`db push`/`reset`. This plan introduces **no schema changes** — `INCONCLUSIVE` is a *logical* verdict persisted as DB status `NO_DIFFERENCE` + `notes.inconclusive=true`. The `ExperimentStatus` enum (`RUNNING | WINNER_FOUND | NO_DIFFERENCE | REVERTED`) is unchanged.
+2. **Git hygiene:** repo has thousands of untracked junk files. Commit by explicit file name only — NEVER `git add -A`/`git add .`. Base branch: `master`.
+3. **Blast-radius-shield:** this is a refactor of shared logic with two call sites and migrating tests. Every chunk maps its blast radius and locks behavior before changing it. Existing suites that must end green: `thompson.test.ts`, `nightly-cron.test.ts`, `checkout-safety.test.ts`, plus the full suite.
+4. **Harm-revert stays separate:** do not touch `checkout-safety.ts` or the `shouldRevertForCheckoutDrop(...)` block in the cron (route.ts ~176-195). Its LOCK tests must stay green untouched.
+5. **No timezone field exists on Store.** Weekend coverage uses each `DailySummary.date` (stored at UTC midnight) mapped to its UTC weekday. This is an accepted approximation; do NOT add timezone handling (YAGNI).
+
+---
+
+## Blast Radius Map (whole feature)
+
+**Logic being changed:** winner declaration for A/B experiments.
+
+**Callers / sites:**
+- `thompson.ts` `calculateThompsonSampling` winner block (lines ~212-269) — produces `winnerId`/`reason` today.
+- `nightly/route.ts` decision block (lines ~154-174) — consumes `ts.winnerId`/`ts.reason` + `consistencyOk`.
+- `thompson.ts` `calculateConsistency` (lines ~418-452) — extend-only multiplier, used by cron (route.ts:141, 152).
+
+**Duplicated logic:** the WIN/NO_DIFFERENCE decision is duplicated across thompson (statistical call) and cron (consistency gate + string-match NO_DIFFERENCE). This plan consolidates both into `winner-decision.ts`.
+
+**Shared state written:** `experiment.status`, `winnerVariantId`, `confidence`, `liftPercent`, `trafficSplit`, `endedAt`, `notes.*`. Read by `variant-assign.ts` (only `status:'RUNNING'`) and the dashboard.
+
+**Cross-path risk:** if thompson stops setting `winnerId` but the cron still reads `ts.winnerId`, winners silently never declare. → Chunks 2 and 3 must land together-coherent; Chunk 2 updates thompson's tests and Chunk 3 rewires the cron. Run the FULL suite at the end of Chunk 3.
+
+**Tests that lock current behavior:** `thompson.test.ts` (winner/blowout/consistency + statistical), `nightly-cron.test.ts` (LOCK-1..12), `checkout-safety.test.ts`.
+
+---
+
+## File Structure
+
+| File | Responsibility | Change |
+|---|---|---|
+| `backend/src/lib/winner-decision.ts` | Pure decision: tiers, gates, consistency credit, fallback. The single source of truth for "should this test conclude, and how." | **Create** |
+| `backend/src/__tests__/winner-decision.test.ts` | Unit tests for the pure module across store scales. | **Create** |
+| `backend/src/lib/thompson.ts` | Statistical computation only. Exposes `dynamicLossThreshold` + `winnerCandidateId`; removes blowout + winner block + `calculateConsistency`. | **Modify** |
+| `backend/src/__tests__/thompson.test.ts` | Keep statistical tests; remove migrated winner/blowout/consistency tests. | **Modify** |
+| `backend/src/app/api/cron/nightly/route.ts` | Derive timeline inputs from `DailySummary`, call `decideVerdict`, apply verdict (incl. INCONCLUSIVE→NO_DIFFERENCE+note). Harm-revert untouched. | **Modify** |
+| `backend/src/__tests__/nightly-cron.test.ts` | Update mocks/LOCKs to the verdict flow; add tier/weekend/credit/fallback integration tests. | **Modify** |
+
+---
+
+## Chunk 1: The pure decision module (`winner-decision.ts`)
+
+Self-contained. No existing behavior changes. Build and fully test in isolation.
+
+### Task 1.1: Constants, types, and `selectTier`
+
+**Files:**
+- Create: `backend/src/lib/winner-decision.ts`
+- Test: `backend/src/__tests__/winner-decision.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `backend/src/__tests__/winner-decision.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { selectTier } from '../lib/winner-decision';
+
+describe('selectTier', () => {
+  it('500 visitors/day → HIGH', () => expect(selectTier(500)).toBe('HIGH'));
+  it('499 → MEDIUM', () => expect(selectTier(499)).toBe('MEDIUM'));
+  it('50 → MEDIUM', () => expect(selectTier(50)).toBe('MEDIUM'));
+  it('49 → LOW', () => expect(selectTier(49)).toBe('LOW'));
+  it('0 → LOW', () => expect(selectTier(0)).toBe('LOW'));
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
+Expected: FAIL — "Cannot find module '../lib/winner-decision'".
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `backend/src/lib/winner-decision.ts`:
+
+```ts
+// Pure winner-decision logic for CRO A/B experiments.
+// Single source of truth for whether a test concludes and how.
+// See docs/superpowers/specs/2026-06-07-traffic-tiered-early-stop-design.md
+
+export type Tier = 'HIGH' | 'MEDIUM' | 'LOW';
+
+// Visitors/day tier thresholds
+export const TIER_HIGH_MIN = 500;
+export const TIER_MEDIUM_MIN = 50;
+
+// Minimum calendar days a test must run, per tier
+export const MIN_DAYS: Record<Tier, number> = { HIGH: 4, MEDIUM: 7, LOW: 7 };
+
+export const CONFIDENCE_THRESHOLD = 0.95;
+export const PRACTICAL_LIFT_FLOOR = 5;   // percent relative — below this = NO_DIFFERENCE
+export const HARD_MIN_FLOOR = 15;        // never declare a winner below this many loser-arm orders
+export const MAX_DAYS = 14;              // backstop cap (effective cap can only tighten)
+
+// Consistency-credit predicate thresholds
+export const CREDIT_MIN_CONSECUTIVE_DAYS = 4;
+export const CREDIT_CONFIDENCE = 0.99;
+
+export function selectTier(visitorsPerDay: number): Tier {
+  if (visitorsPerDay >= TIER_HIGH_MIN) return 'HIGH';
+  if (visitorsPerDay >= TIER_MEDIUM_MIN) return 'MEDIUM';
+  return 'LOW';
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
+Expected: PASS (5 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/lib/winner-decision.ts backend/src/__tests__/winner-decision.test.ts
+git commit -m "feat(cro): winner-decision tier selection + constants"
+```
+
+### Task 1.2: `countConsecutiveLeaderDays`
+
+**Files:**
+- Modify: `backend/src/lib/winner-decision.ts`
+- Test: `backend/src/__tests__/winner-decision.test.ts`
+
+- [ ] **Step 1: Write the failing test** (append to test file)
+
+```ts
+import { countConsecutiveLeaderDays } from '../lib/winner-decision';
+
+describe('countConsecutiveLeaderDays', () => {
+  const days = (ids: string[]) => ids.map((leaderId, i) => ({ date: `d${i}`, leaderId, liftPct: 0 }));
+
+  it('returns 0 when candidate is null', () => {
+    expect(countConsecutiveLeaderDays(days(['a', 'a']), null)).toBe(0);
+  });
+  it('counts trailing streak of the candidate', () => {
+    expect(countConsecutiveLeaderDays(days(['b', 'a', 'a', 'a']), 'a')).toBe(3);
+  });
+  it('stops at the first mismatch from the end', () => {
+    expect(countConsecutiveLeaderDays(days(['a', 'a', 'b']), 'a')).toBe(0);
+  });
+  it('empty history → 0', () => {
+    expect(countConsecutiveLeaderDays([], 'a')).toBe(0);
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
+Expected: FAIL — `countConsecutiveLeaderDays` is not exported.
+
+- [ ] **Step 3: Write minimal implementation** (append to `winner-decision.ts`)
+
+```ts
+export interface DailyLeaderEntry {
+  date: string;
+  leaderId: string;
+  liftPct: number;
+}
+
+// Walk dailyLeaders newest→oldest, counting while the leader equals candidateId.
+// Resets to 0 on the first mismatch (or when candidate is null).
+export function countConsecutiveLeaderDays(
+  dailyLeaders: DailyLeaderEntry[],
+  candidateId: string | null,
+): number {
+  if (!candidateId) return 0;
+  let count = 0;
+  for (let i = dailyLeaders.length - 1; i >= 0; i--) {
+    if (dailyLeaders[i].leaderId === candidateId) count++;
+    else break;
+  }
+  return count;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/lib/winner-decision.ts backend/src/__tests__/winner-decision.test.ts
+git commit -m "feat(cro): countConsecutiveLeaderDays helper"
+```
+
+### Task 1.3: `requiredEvidenceFloor` (consistency credit)
+
+**Files:**
+- Modify: `backend/src/lib/winner-decision.ts`
+- Test: `backend/src/__tests__/winner-decision.test.ts`
+
+- [ ] **Step 1: Write the failing test** (append)
+
+```ts
+import { requiredEvidenceFloor, HARD_MIN_FLOOR } from '../lib/winner-decision';
+
+describe('requiredEvidenceFloor', () => {
+  const base = {
+    consecutiveLeaderDays: 4,
+    confidence: 0.99,
+    expectedLoss: 0.01,
+    dynamicLossThreshold: 0.05,   // half = 0.025, loss 0.01 ≤ 0.025 → credit
+    targetOrdersPerVariant: 30,
+  };
+  it('earns credit → slides to hard minimum (15)', () => {
+    expect(requiredEvidenceFloor(base)).toBe(HARD_MIN_FLOOR);
+  });
+  it('flipping leader (consecutive<4) → no credit → full target floor', () => {
+    expect(requiredEvidenceFloor({ ...base, consecutiveLeaderDays: 2 })).toBe(30);
+  });
+  it('confidence below 0.99 → no credit → full target floor', () => {
+    expect(requiredEvidenceFloor({ ...base, confidence: 0.96 })).toBe(30);
+  });
+  it('loss above half-threshold → no credit → full target floor', () => {
+    expect(requiredEvidenceFloor({ ...base, expectedLoss: 0.04 })).toBe(30);
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
+Expected: FAIL — `requiredEvidenceFloor` not exported.
+
+- [ ] **Step 3: Write minimal implementation** (append)
+
+```ts
+export interface EvidenceFloorInput {
+  consecutiveLeaderDays: number;
+  confidence: number;
+  expectedLoss: number;
+  dynamicLossThreshold: number;
+  targetOrdersPerVariant: number;
+}
+
+// Binary slide: a strong + steady leader earns credit and the floor drops to the
+// hard minimum (15). Otherwise the full power-analysis target stands.
+export function requiredEvidenceFloor(input: EvidenceFloorInput): number {
+  const creditEarned =
+    input.consecutiveLeaderDays >= CREDIT_MIN_CONSECUTIVE_DAYS &&
+    input.confidence >= CREDIT_CONFIDENCE &&
+    input.expectedLoss <= input.dynamicLossThreshold / 2;
+  return creditEarned ? HARD_MIN_FLOOR : input.targetOrdersPerVariant;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/lib/winner-decision.ts backend/src/__tests__/winner-decision.test.ts
+git commit -m "feat(cro): requiredEvidenceFloor consistency-credit slide"
+```
+
+### Task 1.4: `decideVerdict` — the full gate chain
+
+**Files:**
+- Modify: `backend/src/lib/winner-decision.ts`
+- Test: `backend/src/__tests__/winner-decision.test.ts`
+
+- [ ] **Step 1: Write the failing tests** (append)
+
+```ts
+import { decideVerdict, WinnerDecisionInput } from '../lib/winner-decision';
+
+// A fully-passing HIGH-tier input: all 6 gates satisfied, credit earned.
+const PASSING: WinnerDecisionInput = {
+  confidence: 0.991,
+  expectedLoss: 0.01,
+  liftPercent: 97,
+  winnerCandidateId: 'without_addon',
+  leaderOrders: 20,
+  loserOrders: 16,            // ≥ HARD_MIN_FLOOR (15), credit earned
+  targetOrdersPerVariant: 30,
+  dynamicLossThreshold: 0.05,
+  visitorsPerDay: 600,        // HIGH
+  runningDays: 5,             // ≥ MIN_DAYS.HIGH (4)
+  hasSaturday: true,
+  hasSunday: true,
+  consecutiveLeaderDays: 5,   // credit
+  maxDays: 14,
+};
+
+describe('decideVerdict', () => {
+  it('all gates pass → WINNER (Eleganto express replay, reduced floor)', () => {
+    const v = decideVerdict(PASSING);
+    expect(v.kind).toBe('WINNER');
+    if (v.kind === 'WINNER') expect(v.winnerId).toBe('without_addon');
+  });
+
+  it('weekend incomplete (no Sunday) before cap → WAIT (volume cannot skip it)', () => {
+    const v = decideVerdict({ ...PASSING, hasSunday: false, visitorsPerDay: 100000, confidence: 0.999, runningDays: 6 });
+    expect(v.kind).toBe('WAIT');
+  });
+
+  it('below min days for HIGH (day 3) → WAIT', () => {
+    expect(decideVerdict({ ...PASSING, runningDays: 3 }).kind).toBe('WAIT');
+  });
+
+  it('confidence below 0.95 → WAIT', () => {
+    expect(decideVerdict({ ...PASSING, confidence: 0.90 }).kind).toBe('WAIT');
+  });
+
+  it('expected loss above threshold → WAIT', () => {
+    expect(decideVerdict({ ...PASSING, expectedLoss: 0.20 }).kind).toBe('WAIT');
+  });
+
+  it('gates 1-4 pass but lift below 5% → NO_DIFFERENCE', () => {
+    const v = decideVerdict({ ...PASSING, liftPercent: 0.4 });
+    expect(v.kind).toBe('NO_DIFFERENCE');
+  });
+
+  it('credit NOT earned (leader flipped) + loser below full floor → WAIT', () => {
+    const v = decideVerdict({ ...PASSING, consecutiveLeaderDays: 2, loserOrders: 16 });
+    expect(v.kind).toBe('WAIT'); // floor is 30, loser has 16
+  });
+
+  it('zero-laggard guard: loser 0 orders, leader 18 → WINNER not NO_DIFFERENCE', () => {
+    const v = decideVerdict({ ...PASSING, loserOrders: 0, leaderOrders: 18, liftPercent: 0 });
+    expect(v.kind).toBe('WINNER');
+  });
+
+  it('zero-laggard but leader below absolute floor (7) → WAIT not NO_DIFFERENCE', () => {
+    const v = decideVerdict({ ...PASSING, loserOrders: 0, leaderOrders: 7, liftPercent: 0, consecutiveLeaderDays: 2 });
+    expect(v.kind).toBe('WAIT');
+  });
+
+  it('LOW tier at cap without floor → INCONCLUSIVE', () => {
+    const v = decideVerdict({
+      ...PASSING, visitorsPerDay: 30, runningDays: 14, loserOrders: 5,
+      consecutiveLeaderDays: 1, confidence: 0.96,
+    });
+    expect(v.kind).toBe('INCONCLUSIVE');
+  });
+
+  it('HIGH tier at cap without a winner → NO_DIFFERENCE backstop', () => {
+    const v = decideVerdict({
+      ...PASSING, runningDays: 14, loserOrders: 5, consecutiveLeaderDays: 1, confidence: 0.96,
+    });
+    expect(v.kind).toBe('NO_DIFFERENCE');
+  });
+
+  it('null candidate before cap → WAIT', () => {
+    expect(decideVerdict({ ...PASSING, winnerCandidateId: null }).kind).toBe('WAIT');
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
+Expected: FAIL — `decideVerdict` / `WinnerDecisionInput` not exported.
+
+- [ ] **Step 3: Write minimal implementation** (append)
+
+```ts
+export type Verdict =
+  | { kind: 'WAIT'; reason: string }
+  | { kind: 'WINNER'; winnerId: string; reason: string }
+  | { kind: 'NO_DIFFERENCE'; reason: string }
+  | { kind: 'INCONCLUSIVE'; reason: string };
+
+export interface WinnerDecisionInput {
+  // statistics (from thompson.ts)
+  confidence: number;
+  expectedLoss: number;
+  liftPercent: number;
+  winnerCandidateId: string | null;
+  leaderOrders: number;             // orders on the leading arm (zero-laggard guard)
+  loserOrders: number;              // orders on the losing arm (evidence floor)
+  targetOrdersPerVariant: number;
+  dynamicLossThreshold: number;
+  // timeline
+  visitorsPerDay: number;
+  runningDays: number;
+  hasSaturday: boolean;
+  hasSunday: boolean;
+  consecutiveLeaderDays: number;
+  maxDays: number;                  // per-experiment cap; clamped to MAX_DAYS below
+}
+
+// When a gate fails: WAIT until the cap, then terminate.
+// LOW tier terminates as INCONCLUSIVE (apply cross-store default);
+// HIGH/MEDIUM terminate as NO_DIFFERENCE (backstop).
+function unresolved(input: WinnerDecisionInput, tier: Tier, effectiveMaxDays: number, waitReason: string): Verdict {
+  if (input.runningDays < effectiveMaxDays) {
+    return { kind: 'WAIT', reason: waitReason };
+  }
+  if (tier === 'LOW') {
+    return { kind: 'INCONCLUSIVE', reason: `Reached ${effectiveMaxDays}-day cap without enough data — applying cross-store default` };
+  }
+  return { kind: 'NO_DIFFERENCE', reason: `Reached ${effectiveMaxDays}-day cap without a clear winner` };
+}
+
+export function decideVerdict(input: WinnerDecisionInput): Verdict {
+  const tier = selectTier(input.visitorsPerDay);
+  const effectiveMaxDays = Math.min(input.maxDays, MAX_DAYS);
+
+  // Gate 1: weekend coverage (irreducible) — volume/confidence can never skip it.
+  if (!input.hasSaturday || !input.hasSunday) {
+    return unresolved(input, tier, effectiveMaxDays, 'Need at least one Saturday and one Sunday of data');
+  }
+  // Gate 2: minimum calendar days per tier.
+  if (input.runningDays < MIN_DAYS[tier]) {
+    return unresolved(input, tier, effectiveMaxDays, `Need ${MIN_DAYS[tier]} days for ${tier} tier (day ${input.runningDays})`);
+  }
+  // Gate 3: confidence + a real candidate.
+  if (!input.winnerCandidateId || input.confidence < CONFIDENCE_THRESHOLD) {
+    return unresolved(input, tier, effectiveMaxDays, `Confidence ${(input.confidence * 100).toFixed(1)}% below ${CONFIDENCE_THRESHOLD * 100}%`);
+  }
+  // Gate 4: expected loss.
+  if (input.expectedLoss > input.dynamicLossThreshold) {
+    return unresolved(input, tier, effectiveMaxDays, `Expected loss ${input.expectedLoss.toFixed(3)}pp above ${input.dynamicLossThreshold.toFixed(3)}pp`);
+  }
+  // Gate 5: practical significance. Zero-laggard guard: liftPercent collapses to 0
+  // when the loser has no orders, so fall back to an absolute leader-order check.
+  const practicallySignificant = input.loserOrders === 0
+    ? input.leaderOrders >= HARD_MIN_FLOOR / 2
+    : Math.abs(input.liftPercent) >= PRACTICAL_LIFT_FLOOR;
+  if (!practicallySignificant) {
+    // Gates 1-4 passed AND the variants are within the trivial band → terminal equivalence.
+    return { kind: 'NO_DIFFERENCE', reason: `No meaningful difference (lift ${input.liftPercent.toFixed(1)}% at ${(input.confidence * 100).toFixed(1)}% confidence)` };
+  }
+  // Gate 6: evidence floor on the losing arm (consistency credit may lower it).
+  const floor = requiredEvidenceFloor(input);
+  if (input.loserOrders < floor) {
+    return unresolved(input, tier, effectiveMaxDays, `Need ${floor} orders on the trailing variant (have ${input.loserOrders})`);
+  }
+
+  return {
+    kind: 'WINNER',
+    winnerId: input.winnerCandidateId,
+    reason: `Winner: ${(input.confidence * 100).toFixed(1)}% confidence, ${input.expectedLoss.toFixed(3)}pp loss, +${Math.abs(input.liftPercent).toFixed(1)}% lift`,
+  };
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd backend && npx vitest run src/__tests__/winner-decision.test.ts`
+Expected: PASS (all `decideVerdict` cases). Re-run the whole file to confirm earlier tasks still pass.
+
+- [ ] **Step 5: Typecheck + commit**
+
+```bash
+cd backend && npx tsc --noEmit
+git add backend/src/lib/winner-decision.ts backend/src/__tests__/winner-decision.test.ts
+git commit -m "feat(cro): decideVerdict traffic-tiered trust-first gate chain"
+```
+
+**End of Chunk 1.** Run the plan-document-reviewer on this chunk before proceeding.
+
+---
+
+## Chunk 2: `thompson.ts` surgery (expose inputs, remove the decision)
+
+**Blast radius for this chunk:** `thompson.ts` produces `winnerId`/`reason`/`calculateConsistency`, consumed by the cron and by `thompson.test.ts`. After this chunk, thompson no longer makes the winner call. The cron is rewired in Chunk 3 — so between Chunk 2 and Chunk 3 the cron is temporarily inconsistent; do NOT ship between them. Run the full suite only at the end of Chunk 3.
+
+### Task 2.1: Expose `dynamicLossThreshold` and `winnerCandidateId`; remove the winner block + blowout
+
+**Files:**
+- Modify: `backend/src/lib/thompson.ts` (interface ~35-51, return ~288-304, winner block ~212-269)
+- Test: `backend/src/__tests__/thompson.test.ts`
+
+- [ ] **Step 1: Update the LOCK tests first (capture the new contract)**
+
+In `backend/src/__tests__/thompson.test.ts`:
+- **Delete** these now-obsolete winner-declaration tests (the decision moved to `winner-decision.ts`, already covered there):
+  - `'shifts traffic toward variant with more orders (past hard floor)'` — KEEP the traffic-split assertion but **remove** its `expect(result.winnerId).toBe('treatment')` line; the test should now assert `result.winnerCandidateId` instead (the statistical leader). Rename references accordingly.
+  - `'does NOT declare winner with fewer than target orders per variant'` — DELETE (winner gating is no longer thompson's job).
+  - `'declares blowout winner when leading variant meets order target even if loser has few'` — DELETE (blowout removed).
+  - `'does NOT blowout before 3 days even with overwhelming data'` — DELETE.
+  - In `'detects no difference with similar order rates'` and `'stays ~50/50 with very sparse order data'` — **remove** the `result.winnerId` assertions; keep the split/statistical assertions.
+- **Add** a new test for the exposed fields:
+
+```ts
+it('exposes dynamicLossThreshold and winnerCandidateId for the decision module', () => {
+  const result = calculateThompsonSampling(
+    [
+      { id: 'control', successes: 5, failures: 195 },
+      { id: 'treatment', successes: 30, failures: 170 },
+    ],
+    { dailyTraffic: 600, dailyOrders: 8 },
+  );
+  expect(typeof result.dynamicLossThreshold).toBe('number');
+  expect(result.dynamicLossThreshold).toBeGreaterThan(0);
+  expect(result.winnerCandidateId).toBe('treatment'); // statistical leader by mean
+});
+```
+
+- [ ] **Step 2: Run tests to verify the new test fails**
+
+Run: `cd backend && npx vitest run src/__tests__/thompson.test.ts`
+Expected: FAIL — `dynamicLossThreshold`/`winnerCandidateId` are undefined on the result.
+
+- [ ] **Step 3: Implement in `thompson.ts`**
+
+1. In the `ThompsonResult` interface (lines ~35-51): remove `winnerId: string | null;` and `reason?: string;`. Add:
+```ts
+  winnerCandidateId: string | null;  // statistical leader (bestId); decision made by winner-decision.ts
+  dynamicLossThreshold: number;      // tier-scaled expected-loss threshold (for decideVerdict)
+```
+2. Delete the entire winner-declaration block (lines ~212-269: `let winnerId`/`reason`, `isBlowout`, all Gate 1-5 branches). Keep the `dynamicLossThreshold` computation (lines ~219-223) — it now feeds the result. Keep `bestId`/`secondMean`/`liftPercent`.
+3. In the return object (lines ~288-304): remove `winnerId` and `reason`; add:
+```ts
+    winnerCandidateId: bestId,
+    dynamicLossThreshold,
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd backend && npx vitest run src/__tests__/thompson.test.ts`
+Expected: PASS (statistical + new field test; obsolete winner tests removed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/lib/thompson.ts backend/src/__tests__/thompson.test.ts
+git commit -m "refactor(cro): thompson exposes decision inputs, drops winner declaration"
+```
+
+### Task 2.2: Remove extend-only `calculateConsistency`
+
+**Files:**
+- Modify: `backend/src/lib/thompson.ts` (remove `calculateConsistency` ~418-452, `ConsistencyResult` ~59-63, `DailyLeader` ~53-57 if unused after)
+- Test: `backend/src/__tests__/thompson.test.ts`
+
+- [ ] **Step 1: Update tests**
+
+In `thompson.test.ts`: delete the entire `describe('calculateConsistency', ...)` block (4 tests) and remove `calculateConsistency` from the import on line 2. The extend-only behavior is replaced by the credit slide in `winner-decision.ts` (already tested there).
+
+- [ ] **Step 2: Run tests to verify failure**
+
+Run: `cd backend && npx vitest run src/__tests__/thompson.test.ts`
+Expected: PASS (the deleted tests are gone) — but `tsc` will still see `calculateConsistency` exported & referenced by the cron. That's fixed in Chunk 3. Do NOT run `tsc` across the whole project yet.
+
+- [ ] **Step 3: Remove the function**
+
+In `thompson.ts`: delete `export function calculateConsistency(...)` (~418-452) and the now-unused `ConsistencyResult` interface (~59-63). Keep `DailyLeader` only if still referenced; otherwise delete it (the cron's daily-leader shape is local).
+
+- [ ] **Step 4: Verify the thompson test file passes in isolation**
+
+Run: `cd backend && npx vitest run src/__tests__/thompson.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/lib/thompson.ts backend/src/__tests__/thompson.test.ts
+git commit -m "refactor(cro): remove extend-only calculateConsistency (superseded by credit slide)"
+```
+
+**End of Chunk 2.** The project does NOT typecheck yet (cron still imports `calculateConsistency` and reads `ts.winnerId`). This is expected and fixed in Chunk 3. Run the plan-document-reviewer on this chunk before proceeding.
+
+---
+
+## Chunk 3: Wire the cron to `decideVerdict`
+
+This is the integration. It derives the new timeline inputs, replaces the decision block, and maps verdicts to DB status. The harm-revert block stays untouched.
+
+### Task 3.1: Derive timeline inputs from `DailySummary`
+
+**Files:**
+- Modify: `backend/src/app/api/cron/nightly/route.ts`
+- Test: `backend/src/__tests__/nightly-cron.test.ts`
+
+**Context:** `DailySummary` has rows per `(experimentId, variantId, date)` where `date` is yesterday at UTC midnight (written in cron step 2). To get RUNNING days + weekend coverage, query distinct `date` values for the experiment. Visitors/day = the existing `dailyTraffic` (route.ts:91).
+
+- [ ] **Step 1: Add the prisma mock + a failing integration test**
+
+In `nightly-cron.test.ts`:
+1. Add `dailySummary.findMany` to the prisma mock (line ~44 block):
+```ts
+    dailySummary: { upsert: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+```
+2. Add a helper to fabricate summary dates and a test asserting weekend coverage is required even when stats are conclusive:
+```ts
+function mockSummaryDates(isoDates: string[]) {
+  (prisma.dailySummary.findMany as any).mockResolvedValue(
+    isoDates.map(d => ({ date: new Date(d + 'T00:00:00Z') })),
+  );
+}
+
+it('LOCK-3b: stays RUNNING when weekend not yet covered, even with a strong winner', async () => {
+  // Conclusive stats but only weekdays observed → must WAIT.
+  (calculateThompsonSampling as any).mockReturnValue({
+    ...DEFAULT_TS_RESULT, confidence: 0.99, liftPercent: 90,
+    winnerCandidateId: 'treatment', dynamicLossThreshold: 0.05,
+    minOrdersPerVariant: 30, orderRates: { control: 0.05, treatment: 0.09 },
+  });
+  mockEventGroupBy(4000, 800, 40);                    // HIGH tier
+  mockSummaryDates(['2026-06-01','2026-06-02','2026-06-03','2026-06-04','2026-06-05']); // Mon-Fri
+  const POST = await getHandler();
+  await POST(makeRequest('test-secret-123'));
+  const update = (prisma.experiment.update as any).mock.calls[0][0];
+  expect(update.data.status).toBe('RUNNING');
+});
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `cd backend && npx vitest run src/__tests__/nightly-cron.test.ts`
+Expected: FAIL (cron does not yet derive weekend coverage; also still references removed thompson exports → may error on import). Acceptable — this drives Step 3.
+
+- [ ] **Step 3: Implement derivation in `route.ts`**
+
+After `dailyTraffic` is computed (~line 91), and before the decision, add:
+
+```ts
+// Derive RUNNING-day timeline from DailySummary (one row-set per active date).
+const summaryRows = await prisma.dailySummary.findMany({
+  where: { experimentId: exp.id },
+  select: { date: true },
+  distinct: ['date'],
+});
+const runningDates = summaryRows.map(r => new Date(r.date));
+const runningDays = runningDates.length;
+const hasSaturday = runningDates.some(d => d.getUTCDay() === 6);
+const hasSunday = runningDates.some(d => d.getUTCDay() === 0);
+```
+
+(Leave the existing `daysRunning` on line ~101 in place for now — it still feeds `minDaysRunning` into thompson, which no longer gates on it; it is removed in Task 3.3. Do not break the call yet.)
+
+- [ ] **Step 4: Run tests**
+
+Run: `cd backend && npx vitest run src/__tests__/nightly-cron.test.ts`
+Expected: still failing on the decision wiring (Task 3.2), but the import/derivation compiles. If the import of `calculateConsistency` errors, that's resolved in Task 3.2 — proceed.
+
+- [ ] **Step 5: Commit (WIP, compiles after 3.2)**
+
+Defer commit until Task 3.2 lands so the file is coherent. Skip commit here.
+
+### Task 3.2: Replace the decision block with `decideVerdict`
+
+**Files:**
+- Modify: `backend/src/app/api/cron/nightly/route.ts` (imports line ~3-5; decision block ~119-174; notes ~208-217)
+- Test: `backend/src/__tests__/nightly-cron.test.ts`
+
+- [ ] **Step 1: Write/adjust the failing integration tests**
+
+In `nightly-cron.test.ts`, update the Thompson mock shape used everywhere to the new contract (replace `winnerId` with `winnerCandidateId`, add `dynamicLossThreshold`). Update `DEFAULT_TS_RESULT`:
+```ts
+const DEFAULT_TS_RESULT = {
+  confidence: 0.80,
+  liftPercent: 5,
+  winnerCandidateId: 'treatment',
+  dynamicLossThreshold: 0.05,
+  trafficSplit: { control: 0.35, treatment: 0.65 },
+  minOrdersPerVariant: 25,
+  targetOrdersPerVariant: 30,
+  orderRates: { control: 0.05, treatment: 0.06 },
+};
+```
+Update the thompson mock to also expose `calculateConsistency` removal — delete `calculateConsistency: vi.fn()...` from the `vi.mock('../lib/thompson', ...)` block (line ~54). Rewrite LOCK-3/4/5 to the verdict model:
+- **LOCK-3 (WINNER):** strong stats + weekend covered + enough orders → `status === 'WINNER_FOUND'`, `winnerVariantId === 'treatment'`.
+- **LOCK-4 (NO_DIFFERENCE):** gates 1-4 pass, lift < 5% → `status === 'NO_DIFFERENCE'`.
+- **LOCK-5 (cap backstop):** runningDays at cap, no winner, HIGH/MED → `NO_DIFFERENCE`; add a LOW-tier variant asserting `NO_DIFFERENCE` in DB **and** `notes.inconclusive === true`.
+- **New: consistency credit** — steady leader (provide `notes.dailyLeaders` of 5 same-leader days), loser orders 16, conf 0.99, loss 0.01 → `WINNER_FOUND` (floor slid to 15).
+- **New: harm-revert independence** — verdict would be WAIT but a real checkout cliff → `REVERTED` (reuse existing LOCK-6 fixture; assert it still fires).
+
+Each WINNER/NO_DIFFERENCE test must set `mockSummaryDates([...])` including a Saturday + Sunday and enough days for the tier. Example weekend-covered set spanning a Sat/Sun: `['2026-06-01'...'2026-06-07']` (2026-06-06 is Sat, 2026-06-07 is Sun).
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `cd backend && npx vitest run src/__tests__/nightly-cron.test.ts`
+Expected: FAIL — cron still uses old `ts.winnerId`/`consistencyOk`/string-match.
+
+- [ ] **Step 3: Implement in `route.ts`**
+
+1. Imports (line ~3): change
+```ts
+import { calculateThompsonSampling, buildCrossStorePriors, calculateSampleTarget, calculateConsistency } from '@/lib/thompson';
+```
+to
+```ts
+import { calculateThompsonSampling, buildCrossStorePriors } from '@/lib/thompson';
+import { decideVerdict, countConsecutiveLeaderDays } from '@/lib/winner-decision';
+```
+(`calculateSampleTarget` was only used for the `adjustedTarget`/consistency multiplier, which is removed — see below.)
+
+2. Keep the daily-leader tracking (lines ~119-138) — it still records `dailyLeaders` into notes. **Remove** `const consistency = calculateConsistency(...)` (line 141) and the `calculateSampleTarget`/`adjustedTarget` block (lines ~143-152).
+
+3. Replace the decision block (lines ~154-174) with:
+```ts
+// Decision — single source of truth in winner-decision.ts
+let newStatus = exp.status;
+let winnerVariantId = exp.winnerVariantId;
+let endedAt = exp.endedAt;
+let inconclusive = false;
+
+const candidateId = ts.winnerCandidateId;
+const leaderOrders = candidateId
+  ? (variantStats.find(v => v.id === candidateId)?.successes ?? 0)
+  : 0;
+const loserOrders = Math.min(...variantStats.map(v => v.successes));
+const consecutiveLeaderDays = countConsecutiveLeaderDays(dailyLeaders, candidateId);
+
+const verdict = decideVerdict({
+  confidence: ts.confidence,
+  expectedLoss: ts.expectedLoss,
+  liftPercent: ts.liftPercent,
+  winnerCandidateId: candidateId,
+  leaderOrders,
+  loserOrders,
+  targetOrdersPerVariant: ts.targetOrdersPerVariant,
+  dynamicLossThreshold: ts.dynamicLossThreshold,
+  visitorsPerDay: dailyTraffic,
+  runningDays,
+  hasSaturday,
+  hasSunday,
+  consecutiveLeaderDays,
+  maxDays: exp.maxDays,
+});
+
+if (verdict.kind === 'WINNER') {
+  newStatus = 'WINNER_FOUND';
+  winnerVariantId = verdict.winnerId;
+  endedAt = new Date();
+} else if (verdict.kind === 'NO_DIFFERENCE') {
+  newStatus = 'NO_DIFFERENCE';
+  endedAt = new Date();
+} else if (verdict.kind === 'INCONCLUSIVE') {
+  // No INCONCLUSIVE enum value — persist as NO_DIFFERENCE + a note flag.
+  newStatus = 'NO_DIFFERENCE';
+  endedAt = new Date();
+  inconclusive = true;
+}
+// verdict.kind === 'WAIT' → leave RUNNING
+```
+
+4. In the `notes` object of `experiment.update` (lines ~208-217): remove `consistencyMultiplier`, `consistencyMessage`, `sampleTargetPerVariant`. Keep `dailyLeaders`. Add:
+```ts
+          verdict: verdict.kind,
+          verdictReason: verdict.reason,
+          inconclusive,
+```
+Set `confidence`/`expectedLoss`/`liftPercent`/`trafficSplit` from `ts` exactly as before.
+
+5. The harm-revert block (lines ~176-195) stays exactly as-is, AFTER this decision (so a real cliff overrides any verdict by setting `REVERTED`).
+
+- [ ] **Step 4: Run tests to verify pass**
+
+Run: `cd backend && npx vitest run src/__tests__/nightly-cron.test.ts`
+Expected: PASS (rewritten LOCKs + new credit/fallback/harm-revert tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/app/api/cron/nightly/route.ts backend/src/__tests__/nightly-cron.test.ts
+git commit -m "feat(cro): cron uses decideVerdict (tiers, weekend, credit, fallback)"
+```
+
+### Task 3.3: INCONCLUSIVE applies cross-store default; clean up dead `daysRunning`/`minDaysRunning`
+
+**Files:**
+- Modify: `backend/src/app/api/cron/nightly/route.ts`
+- Test: `backend/src/__tests__/nightly-cron.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `nightly-cron.test.ts` — when verdict is INCONCLUSIVE and autopilot is enabled, `progressAutopilot` is called so the cross-store default is applied (the autopilot engine already chooses the carry-forward config on a terminal non-winner). Assert the cron still reaches the terminal autopilot branch with `status:'NO_DIFFERENCE'` and `inconclusive:true` persisted:
+```ts
+it('INCONCLUSIVE (LOW tier at cap) persists NO_DIFFERENCE + inconclusive flag and progresses autopilot', async () => {
+  (calculateThompsonSampling as any).mockReturnValue({
+    ...DEFAULT_TS_RESULT, confidence: 0.96, liftPercent: 3,
+    winnerCandidateId: 'treatment', dynamicLossThreshold: 0.15, targetOrdersPerVariant: 30,
+    orderRates: { control: 0.02, treatment: 0.021 },
+  });
+  mockEventGroupBy(200, 30, 5);                       // LOW tier (~28/day)
+  mockSummaryDates([ /* 14 distinct dates incl a Sat+Sun */ ]);
+  // ...set startedAt 14d ago, autopilot enabled in store.config...
+  const POST = await getHandler();
+  await POST(makeRequest('test-secret-123'));
+  const update = (prisma.experiment.update as any).mock.calls[0][0];
+  expect(update.data.status).toBe('NO_DIFFERENCE');
+  expect(update.data.notes.inconclusive).toBe(true);
+});
+```
+
+- [ ] **Step 2: Run to verify failure / confirm behavior**
+
+Run: `cd backend && npx vitest run src/__tests__/nightly-cron.test.ts`
+Expected: the `inconclusive` flag assertion fails if not persisted, or passes if Task 3.2 already covers it. If 3.2 already persists the flag, this test will pass immediately — keep it as a regression lock.
+
+- [ ] **Step 3: Implement remaining cleanup**
+
+1. The terminal-autopilot block (lines ~221-236) already runs for any terminal status including the INCONCLUSIVE→NO_DIFFERENCE mapping; verify `terminal` includes `NO_DIFFERENCE` (it does). No change needed unless the test reveals a gap. The autopilot engine applies the carry-forward/cross-store default on a non-winner terminal — confirm `progressAutopilot` handles `status:'NO_DIFFERENCE'` (it already does; see `autopilot-engine.ts`).
+2. Remove now-dead code: `const daysRunning = ...` (line ~101) and the `minDaysRunning: daysRunning` option passed to `calculateThompsonSampling` (line ~115) — thompson no longer gates on days. Also drop the `dailyOrders`/`minDaysRunning` plumbing only if unused; KEEP `dailyOrders` (still used by thompson's hard floor). Verify with `tsc`.
+
+- [ ] **Step 4: Full typecheck + full suite**
+
+Run: `cd backend && npx tsc --noEmit`
+Expected: clean (no references to removed `winnerId`/`reason`/`calculateConsistency`).
+
+Run: `cd backend && npm test`
+Expected: ALL suites green (winner-decision, thompson, nightly-cron, checkout-safety, and the rest).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/app/api/cron/nightly/route.ts backend/src/__tests__/nightly-cron.test.ts
+git commit -m "feat(cro): INCONCLUSIVE applies cross-store default; drop dead day-gating plumbing"
+```
+
+**End of Chunk 3.** Run the plan-document-reviewer, then the final code-reviewer over the whole feature.
+
+---
+
+## Final verification (after all chunks)
+
+- [ ] `cd backend && npx tsc --noEmit` → clean
+- [ ] `cd backend && npm test` → full suite green
+- [ ] Manually re-read the diff of `route.ts` to confirm the harm-revert block is byte-for-byte unchanged.
+- [ ] Confirm no `prisma migrate`/`db push` was run and `prisma/schema.prisma` is unchanged.
+- [ ] Use superpowers:finishing-a-development-branch to integrate.
+
+## Notes for the implementer
+
+- DRY: the tier thresholds, floors, and day minimums live ONLY in `winner-decision.ts`. Do not re-hardcode `500`/`50`/`15` in the cron.
+- YAGNI: no `INCONCLUSIVE` enum, no timezone handling, no continuous credit slide. If a reviewer asks for these, push back with the spec's rationale.
+- TDD: every task is red→green→commit. Do not write implementation before the failing test.
+- The deploy step (`cd backend && railway up --ci`) is intentionally NOT in this plan — deploying is the user's call after review.
