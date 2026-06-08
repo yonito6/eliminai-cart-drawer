@@ -50,18 +50,6 @@ interface ThompsonResult {
   hardFloorPerVariant: number;             // Dynamic hard floor — pure 50/50 until this many orders per arm
 }
 
-interface DailyLeader {
-  date: string;       // ISO date (YYYY-MM-DD)
-  leaderId: string;   // variant ID that led this day
-  liftPct: number;    // observed lift that day
-}
-
-interface ConsistencyResult {
-  score: number;         // 0-1: fraction of days the current leader led
-  multiplier: number;    // 1.0, 1.5, or 2.0 — extends sample target
-  message: string | null; // null = stable, string = explanation for user
-}
-
 interface SampleTargetResult {
   nPerVariant: number;    // visitors needed per variant
   totalNeeded: number;    // total visitors across all variants
@@ -353,46 +341,4 @@ export function calculateSampleTarget(
     totalNeeded: nPerVariant * numVariants,
     baselineRate: p1,
   };
-}
-
-/**
- * Calculate day-over-day consistency score.
- *
- * Tracks which variant leads each day. If results flip frequently,
- * the consistency score drops and we extend the test.
- */
-export function calculateConsistency(
-  dailyLeaders: DailyLeader[],
-): ConsistencyResult {
-  if (dailyLeaders.length < 2) {
-    return { score: 1, multiplier: 1.0, message: null };
-  }
-
-  // Find the overall leading variant (most days in the lead)
-  const leaderCounts: Record<string, number> = {};
-  for (const d of dailyLeaders) {
-    leaderCounts[d.leaderId] = (leaderCounts[d.leaderId] || 0) + 1;
-  }
-  const overallLeader = Object.entries(leaderCounts)
-    .sort((a, b) => b[1] - a[1])[0][0];
-
-  // Consistency = fraction of days the overall leader actually led
-  const daysLeading = leaderCounts[overallLeader];
-  const score = daysLeading / dailyLeaders.length;
-
-  let multiplier: number;
-  let message: string | null;
-
-  if (score > 0.80) {
-    multiplier = 1.0;
-    message = null; // stable
-  } else if (score >= 0.60) {
-    multiplier = 1.5;
-    message = `Results vary between days — extending for reliability (${daysLeading}/${dailyLeaders.length} days favor the leader)`;
-  } else {
-    multiplier = 2.0;
-    message = `Daily results keep flipping — need more data to be confident (${daysLeading}/${dailyLeaders.length} days favor the leader)`;
-  }
-
-  return { score, multiplier, message };
 }

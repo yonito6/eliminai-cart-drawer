@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateThompsonSampling, pickVariant, calculateSampleTarget, calculateConsistency } from '../lib/thompson';
+import { calculateThompsonSampling, pickVariant, calculateSampleTarget } from '../lib/thompson';
 
 describe('Thompson Sampling — order-based optimization', () => {
   it('returns 50/50 split with no data', () => {
@@ -218,60 +218,5 @@ describe('calculateSampleTarget', () => {
   it('clamps to maximum 8000 per variant', () => {
     const result = calculateSampleTarget(0.005, 2);
     expect(result.nPerVariant).toBeLessThanOrEqual(8000);
-  });
-});
-
-describe('calculateConsistency', () => {
-  it('returns perfect score with fewer than 2 days', () => {
-    const result = calculateConsistency([
-      { date: '2026-04-13', leaderId: 'A', liftPct: 10 },
-    ]);
-    expect(result.score).toBe(1);
-    expect(result.multiplier).toBe(1.0);
-    expect(result.message).toBeNull();
-  });
-
-  it('returns high consistency when same variant leads every day', () => {
-    const result = calculateConsistency([
-      { date: '2026-04-10', leaderId: 'A', liftPct: 12 },
-      { date: '2026-04-11', leaderId: 'A', liftPct: 8 },
-      { date: '2026-04-12', leaderId: 'A', liftPct: 15 },
-      { date: '2026-04-13', leaderId: 'A', liftPct: 10 },
-    ]);
-    expect(result.score).toBe(1);
-    expect(result.multiplier).toBe(1.0);
-    expect(result.message).toBeNull();
-  });
-
-  it('detects medium volatility and extends 1.5x', () => {
-    const result = calculateConsistency([
-      { date: '2026-04-10', leaderId: 'A', liftPct: 12 },
-      { date: '2026-04-11', leaderId: 'B', liftPct: 3 },
-      { date: '2026-04-12', leaderId: 'A', liftPct: 8 },
-      { date: '2026-04-13', leaderId: 'A', liftPct: 10 },
-      { date: '2026-04-14', leaderId: 'B', liftPct: 2 },
-    ]);
-    expect(result.score).toBe(0.6);
-    expect(result.multiplier).toBe(1.5);
-    expect(result.message).toContain('vary between days');
-  });
-
-  it('applies 2x multiplier when results flip frequently', () => {
-    const result = calculateConsistency([
-      { date: '2026-04-08', leaderId: 'A', liftPct: 5 },
-      { date: '2026-04-09', leaderId: 'B', liftPct: 3 },
-      { date: '2026-04-10', leaderId: 'A', liftPct: 2 },
-      { date: '2026-04-11', leaderId: 'B', liftPct: 4 },
-      { date: '2026-04-12', leaderId: 'B', liftPct: 1 },
-      { date: '2026-04-13', leaderId: 'A', liftPct: 6 },
-      { date: '2026-04-14', leaderId: 'B', liftPct: 2 },
-      { date: '2026-04-15', leaderId: 'A', liftPct: 3 },
-      { date: '2026-04-16', leaderId: 'B', liftPct: 1 },
-      { date: '2026-04-17', leaderId: 'A', liftPct: 4 },
-    ]);
-    // A: 5, B: 5 → 50% → 2x multiplier
-    expect(result.score).toBeLessThan(0.6);
-    expect(result.multiplier).toBe(2.0);
-    expect(result.message).toContain('keep flipping');
   });
 });
