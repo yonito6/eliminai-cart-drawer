@@ -50,3 +50,21 @@ export function countConsecutiveLeaderDays(
   }
   return count;
 }
+
+export interface EvidenceFloorInput {
+  consecutiveLeaderDays: number;
+  confidence: number;
+  expectedLoss: number;
+  dynamicLossThreshold: number;
+  targetOrdersPerVariant: number;
+}
+
+// Binary slide: a strong + steady leader earns credit and the floor drops to the
+// hard minimum (15). Otherwise the full power-analysis target stands.
+export function requiredEvidenceFloor(input: EvidenceFloorInput): number {
+  const creditEarned =
+    input.consecutiveLeaderDays >= CREDIT_MIN_CONSECUTIVE_DAYS &&
+    input.confidence >= CREDIT_CONFIDENCE &&
+    input.expectedLoss <= input.dynamicLossThreshold / 2;
+  return creditEarned ? HARD_MIN_FLOOR : input.targetOrdersPerVariant;
+}

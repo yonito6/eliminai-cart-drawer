@@ -27,3 +27,27 @@ describe('countConsecutiveLeaderDays', () => {
     expect(countConsecutiveLeaderDays([], 'a')).toBe(0);
   });
 });
+
+import { requiredEvidenceFloor, HARD_MIN_FLOOR } from '../lib/winner-decision';
+
+describe('requiredEvidenceFloor', () => {
+  const base = {
+    consecutiveLeaderDays: 4,
+    confidence: 0.99,
+    expectedLoss: 0.01,
+    dynamicLossThreshold: 0.05,   // half = 0.025, loss 0.01 ≤ 0.025 → credit
+    targetOrdersPerVariant: 30,
+  };
+  it('earns credit → slides to hard minimum (15)', () => {
+    expect(requiredEvidenceFloor(base)).toBe(HARD_MIN_FLOOR);
+  });
+  it('flipping leader (consecutive<4) → no credit → full target floor', () => {
+    expect(requiredEvidenceFloor({ ...base, consecutiveLeaderDays: 2 })).toBe(30);
+  });
+  it('confidence below 0.99 → no credit → full target floor', () => {
+    expect(requiredEvidenceFloor({ ...base, confidence: 0.96 })).toBe(30);
+  });
+  it('loss above half-threshold → no credit → full target floor', () => {
+    expect(requiredEvidenceFloor({ ...base, expectedLoss: 0.04 })).toBe(30);
+  });
+});
