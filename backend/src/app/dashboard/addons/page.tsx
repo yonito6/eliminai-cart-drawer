@@ -830,12 +830,13 @@ function AddonsPage() {
       // Apply the current test's best variant before starting new test
       await resolveTestOutcome(addonKey);
     } else if (runningExp?.status === 'PAUSED') {
-      // A paused test keeps its collected results — warn before discarding them
+      // A paused test keeps its collected results — they're never deleted, just
+      // set aside (they stay in "Previous tests" history).
       const visitors = runningExp.totalVisitors ?? 0;
       const proceed = await showConfirm({
-        title: 'Discard paused test?',
-        message: `A paused test with ${visitors} visitors is saved for this add-on.\nStarting a new test will discard those results and begin a fresh test.`,
-        confirmLabel: 'Discard & start new test',
+        title: 'Paused test will be set aside',
+        message: `A paused test with ${visitors} visitors is saved for this add-on.\nStarting a new test sets it aside — its results stay in your "Previous tests" history, but the new test becomes the one you can resume.`,
+        confirmLabel: 'Start new test',
         cancelLabel: 'Keep paused test',
         variant: 'warning',
       });
@@ -878,6 +879,18 @@ function AddonsPage() {
       });
       if (!proceed) return;
       await resolveTestOutcome(payload.addonKey);
+    } else if (runningExp?.status === 'PAUSED') {
+      // Mirror startTest: a paused test's data is kept (in "Previous tests"),
+      // but launching a new one sets it aside.
+      const visitors = runningExp.totalVisitors ?? 0;
+      const proceed = await showConfirm({
+        title: 'Paused test will be set aside',
+        message: `A paused test with ${visitors} visitors is saved for this add-on.\nLaunching this new test sets it aside — its results stay in your "Previous tests" history, but the new test becomes the one you can resume.`,
+        confirmLabel: 'Launch new test',
+        cancelLabel: 'Keep paused test',
+        variant: 'warning',
+      });
+      if (!proceed) return;
     }
     setLaunchingBuilder(true);
     try {
