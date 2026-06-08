@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { calculateThompsonSampling, buildCrossStorePriors, calculateSampleTarget, calculateConsistency } from '@/lib/thompson';
+import { calculateThompsonSampling, buildCrossStorePriors } from '@/lib/thompson';
+import { decideVerdict, countConsecutiveLeaderDays, MAX_DAYS } from '@/lib/winner-decision';
 import { progressAutopilot } from '@/lib/autopilot-engine';
 import { shouldRevertForCheckoutDrop } from '@/lib/checkout-safety';
 
@@ -98,7 +99,16 @@ export async function POST(req: NextRequest) {
     // Build cross-store priors for this addon slot
     const priors = buildCrossStorePriors(crossStoreData, exp.slot, trafficTier);
 
-    const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
+    // Derive RUNNING-day timeline from DailySummary (one row-set per active date).
+    const summaryRows = await prisma.dailySummary.findMany({
+      where: { experimentId: exp.id },
+      select: { date: true },
+      distinct: ['date'],
+    });
+    const runningDates = summaryRows.map(r => new Date(r.date));
+    const runningDays = runningDates.length;
+    const hasSaturday = runningDates.some(d => d.getUTCDay() === 6);
+    const hasSunday = runningDates.some(d => d.getUTCDay() === 0);
 
     // Calculate daily orders for dynamic hard floor
     const recentOrderSessions = await prisma.event.groupBy({
@@ -112,7 +122,6 @@ export async function POST(req: NextRequest) {
       priors,
       dailyTraffic,
       displayStats,
-      minDaysRunning: daysRunning,
       dailyOrders,
     });
 
@@ -137,41 +146,58 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Calculate consistency score
-    const consistency = calculateConsistency(dailyLeaders);
-
-    // Calculate smart sample target based on observed purchase rate
+    // Observed purchase rate — retained for notes + future-prior context.
     const totalObs = variantStats.reduce((s, v) => s + v.successes + v.failures, 0);
     const totalSuccesses = variantStats.reduce((s, v) => s + v.successes, 0);
-    // Use observed rate when we have orders, otherwise assume 3% (typical Shopify store)
-    // Without this, 0 orders → 0% rate → sample target explodes to 6000+
+    // Use observed rate when we have orders, otherwise assume 3% (typical Shopify store).
     const observedPurchaseRate = totalSuccesses > 0
       ? totalSuccesses / totalObs
       : 0.03;
-    const sampleTarget = calculateSampleTarget(observedPurchaseRate, variants.length);
-    const adjustedTarget = Math.ceil(sampleTarget.nPerVariant * consistency.multiplier);
 
-    // Decision logic — Thompson handles winner declaration internally
+    // Decision — single source of truth in winner-decision.ts
     let newStatus = exp.status;
     let winnerVariantId = exp.winnerVariantId;
     let endedAt = exp.endedAt;
+    let inconclusive = false;
 
-    // Consistency gate: don't declare winner if results flip too much
-    const consistencyOk = consistency.score > 0.70 || dailyLeaders.length < 3;
+    const candidateId = ts.winnerCandidateId;
+    const leaderOrders = candidateId
+      ? (variantStats.find(v => v.id === candidateId)?.successes ?? 0)
+      : 0;
+    const loserOrders = Math.min(...variantStats.map(v => v.successes));
+    const consecutiveLeaderDays = countConsecutiveLeaderDays(dailyLeaders, candidateId);
 
-    if (ts.winnerId && consistencyOk) {
+    const verdict = decideVerdict({
+      confidence: ts.confidence,
+      expectedLoss: ts.expectedLoss,
+      liftPercent: ts.liftPercent,
+      winnerCandidateId: candidateId,
+      leaderOrders,
+      loserOrders,
+      targetOrdersPerVariant: ts.targetOrdersPerVariant,
+      dynamicLossThreshold: ts.dynamicLossThreshold,
+      visitorsPerDay: dailyTraffic,
+      runningDays,
+      hasSaturday,
+      hasSunday,
+      consecutiveLeaderDays,
+      maxDays: exp.maxDays ?? MAX_DAYS,   // nullish guard — decideVerdict clamps to MAX_DAYS internally
+    });
+
+    if (verdict.kind === 'WINNER') {
       newStatus = 'WINNER_FOUND';
-      winnerVariantId = ts.winnerId;
+      winnerVariantId = verdict.winnerId;
       endedAt = new Date();
-    } else if (ts.winnerId && !consistencyOk) {
-      // Thompson wants winner but results are too volatile — keep running
-    } else if (ts.reason?.includes('No meaningful difference') || ts.reason?.includes('Low impact detected')) {
+    } else if (verdict.kind === 'NO_DIFFERENCE') {
       newStatus = 'NO_DIFFERENCE';
       endedAt = new Date();
-    } else if (daysRunning >= exp.maxDays && ts.confidence < 0.80) {
+    } else if (verdict.kind === 'INCONCLUSIVE') {
+      // No INCONCLUSIVE enum value — persist as NO_DIFFERENCE + a note flag.
       newStatus = 'NO_DIFFERENCE';
       endedAt = new Date();
+      inconclusive = true;
     }
+    // verdict.kind === 'WAIT' → leave RUNNING
 
     // Safety check: 48h rolling checkout rate (unique sessions)
     if (exp.store.baselineCheckoutRate && exp.store.baselineCheckoutRate > 0) {
@@ -208,12 +234,11 @@ export async function POST(req: NextRequest) {
         notes: {
           ...existingNotes,
           dailyLeaders,
-          consistency: consistency.score,
-          consistencyMultiplier: consistency.multiplier,
-          consistencyMessage: consistency.message,
-          sampleTargetPerVariant: adjustedTarget,
           baselinePurchaseRate: observedPurchaseRate,
           minOrdersPerVariant: ts.minOrdersPerVariant,
+          verdict: verdict.kind,
+          verdictReason: verdict.reason,
+          inconclusive,
         },
       },
     });
@@ -243,14 +268,12 @@ export async function POST(req: NextRequest) {
       expectedLoss: ts.expectedLoss,
       liftPercent: ts.liftPercent,
       status: newStatus,
-      reason: ts.reason,
+      reason: verdict.reason,
       trafficSplit: ts.trafficSplit,
       dailyTraffic,
       crossStorePriors: Object.keys(priors).length > 0,
       orderRates: ts.orderRates,
       checkoutRates: ts.checkoutRates,
-      consistency: consistency.score,
-      sampleTarget: adjustedTarget,
     });
   }
 

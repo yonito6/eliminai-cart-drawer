@@ -41,7 +41,7 @@ vi.mock('../lib/prisma', () => ({
     experiment: { findMany: vi.fn(), update: vi.fn(), create: vi.fn() },
     store: { findUnique: vi.fn(), update: vi.fn() },
     event: { groupBy: vi.fn(), deleteMany: vi.fn() },
-    dailySummary: { upsert: vi.fn() },
+    dailySummary: { upsert: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
     variantAssignment: { count: vi.fn().mockResolvedValue(0) },
   },
 }));
@@ -51,7 +51,6 @@ vi.mock('../lib/thompson', () => ({
   calculateThompsonSampling: vi.fn(),
   buildCrossStorePriors: vi.fn().mockReturnValue({}),
   calculateSampleTarget: vi.fn().mockReturnValue({ nPerVariant: 1980, totalNeeded: 3960, baselineRate: 0.03 }),
-  calculateConsistency: vi.fn().mockReturnValue({ score: 1, multiplier: 1.0, message: null }),
 }));
 
 import { prisma } from '../lib/prisma';
@@ -99,12 +98,28 @@ const MOCK_EXPERIMENT = {
 // Default Thompson result (not yet conclusive)
 const DEFAULT_TS_RESULT = {
   confidence: 0.80,
+  expectedLoss: 0.05,
   liftPercent: 5,
-  winnerId: null,
+  winnerCandidateId: 'treatment',
+  dynamicLossThreshold: 0.05,
   trafficSplit: { control: 0.35, treatment: 0.65 },
   minOrdersPerVariant: 25,
+  targetOrdersPerVariant: 30,
   orderRates: { control: 0.05, treatment: 0.06 },
 };
+
+// Helper: fabricate distinct DailySummary dates for timeline derivation.
+function mockSummaryDates(isoDates: string[]) {
+  (prisma.dailySummary.findMany as any).mockResolvedValue(
+    isoDates.map((d) => ({ date: new Date(d + 'T00:00:00Z') })),
+  );
+}
+
+// A 7-day window that covers a Saturday (2026-06-06) and Sunday (2026-06-07).
+const WEEKEND_DATES = [
+  '2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04',
+  '2026-06-05', '2026-06-06', '2026-06-07',
+];
 
 // Helper: mock groupBy to return arrays of { sessionId } with given lengths
 function mockEventGroupBy(cartOpens: number, checkoutClicks: number, orders: number = 0) {
@@ -139,6 +154,9 @@ describe('POST /api/cron/nightly', () => {
     (prisma.store.findUnique as any).mockResolvedValue({ id: 'store_1', config: {} });
     (prisma.store.update as any).mockResolvedValue({});
     (prisma.dailySummary.upsert as any).mockResolvedValue({});
+    // Reset timeline derivation to "no summary rows" each test — clearAllMocks() clears
+    // call history but NOT prior .mockResolvedValue, so CAP/WEEKEND dates would otherwise leak.
+    (prisma.dailySummary.findMany as any).mockResolvedValue([]);
     (prisma.event.deleteMany as any).mockResolvedValue({ count: 42 });
     (calculateThompsonSampling as any).mockReturnValue(DEFAULT_TS_RESULT);
 
@@ -175,12 +193,32 @@ describe('POST /api/cron/nightly', () => {
 
   // LOCK-3: WINNER_FOUND when confidence >= 0.95 AND lift > 1%
   it('LOCK-3: sets status to WINNER_FOUND when confidence>=0.95 and lift>1%', async () => {
+    // Strong + steady leader earns consistency credit → evidence floor slides to 15.
+    const steadyExp = {
+      ...MOCK_EXPERIMENT,
+      notes: {
+        dailyLeaders: [
+          { date: '2026-06-04', leaderId: 'treatment', liftPct: 12 },
+          { date: '2026-06-05', leaderId: 'treatment', liftPct: 12 },
+          { date: '2026-06-06', leaderId: 'treatment', liftPct: 12 },
+          { date: '2026-06-07', leaderId: 'treatment', liftPct: 12 },
+        ],
+      },
+    };
+    (prisma.experiment.findMany as any).mockResolvedValue([steadyExp]);
     (calculateThompsonSampling as any).mockReturnValue({
-      confidence: 0.97,
+      ...DEFAULT_TS_RESULT,
+      confidence: 0.99,
+      expectedLoss: 0.01,
       liftPercent: 12.5,
-      winnerId: 'treatment',
+      winnerCandidateId: 'treatment',
+      dynamicLossThreshold: 0.05,
+      targetOrdersPerVariant: 30,
       trafficSplit: { control: 0.1, treatment: 0.9 },
+      orderRates: { control: 0.05, treatment: 0.09 },
     });
+    mockEventGroupBy(200, 40, 16); // 16 orders/arm ≥ slid floor of 15
+    mockSummaryDates(WEEKEND_DATES);
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');
     const res = await POST(req);
@@ -201,15 +239,92 @@ describe('POST /api/cron/nightly', () => {
     expect(json.experiments[0].status).toBe('WINNER_FOUND');
   });
 
-  // LOCK-4: NO_DIFFERENCE when Thompson reports no meaningful difference
+  // LOCK-3b: weekend coverage is irreducible — strong stats but weekdays-only → WAIT (RUNNING).
+  it('LOCK-3b: stays RUNNING when weekend not yet covered, even with a strong winner', async () => {
+    (calculateThompsonSampling as any).mockReturnValue({
+      ...DEFAULT_TS_RESULT, confidence: 0.99, expectedLoss: 0.01, liftPercent: 90,
+      winnerCandidateId: 'treatment', dynamicLossThreshold: 0.05, targetOrdersPerVariant: 30,
+      orderRates: { control: 0.05, treatment: 0.09 },
+    });
+    mockEventGroupBy(4000, 800, 40); // HIGH tier
+    mockSummaryDates(['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04', '2026-06-05']); // Mon-Fri
+    const POST = await getHandler();
+    await POST(makeRequest('test-secret-123'));
+    const update = (prisma.experiment.update as any).mock.calls[0][0];
+    expect(update.data.status).toBe('RUNNING');
+  });
+
+  // LOCK-3c: brand-new experiment with empty DailySummary → runningDays 0, no weekend → WAIT.
+  it('LOCK-3c: brand-new experiment with empty DailySummary stays RUNNING', async () => {
+    (calculateThompsonSampling as any).mockReturnValue({
+      ...DEFAULT_TS_RESULT, confidence: 0.99, expectedLoss: 0.01, liftPercent: 90,
+      winnerCandidateId: 'treatment', dynamicLossThreshold: 0.05, targetOrdersPerVariant: 30,
+    });
+    mockEventGroupBy(4000, 800, 40);
+    (prisma.dailySummary.findMany as any).mockResolvedValue([]); // none yet
+    const POST = await getHandler();
+    await POST(makeRequest('test-secret-123'));
+    const update = (prisma.experiment.update as any).mock.calls[0][0];
+    expect(update.data.status).toBe('RUNNING');
+  });
+
+  // LOCK-3d: consistency credit slides the evidence floor to 15 → 16 loser orders wins.
+  it('LOCK-3d: consistency credit lets a steady leader win at the 15-order floor', async () => {
+    const steadyExp = {
+      ...MOCK_EXPERIMENT,
+      notes: {
+        dailyLeaders: [
+          { date: '2026-06-03', leaderId: 'treatment', liftPct: 11 },
+          { date: '2026-06-04', leaderId: 'treatment', liftPct: 11 },
+          { date: '2026-06-05', leaderId: 'treatment', liftPct: 11 },
+          { date: '2026-06-06', leaderId: 'treatment', liftPct: 11 },
+        ],
+      },
+    };
+    (prisma.experiment.findMany as any).mockResolvedValue([steadyExp]);
+    (calculateThompsonSampling as any).mockReturnValue({
+      ...DEFAULT_TS_RESULT, confidence: 0.99, expectedLoss: 0.01, liftPercent: 11,
+      winnerCandidateId: 'treatment', dynamicLossThreshold: 0.05,
+      targetOrdersPerVariant: 30, // base floor would block; credit slides it to 15
+      orderRates: { control: 0.05, treatment: 0.09 },
+    });
+    mockEventGroupBy(200, 40, 16); // 16 loser orders ≥ 15 but < 30
+    mockSummaryDates(WEEKEND_DATES);
+    const POST = await getHandler();
+    await POST(makeRequest('test-secret-123'));
+    const update = (prisma.experiment.update as any).mock.calls[0][0];
+    expect(update.data.status).toBe('WINNER_FOUND');
+    expect(update.data.winnerVariantId).toBe('treatment');
+  });
+
+  // LOCK-6b: harm-revert fires independently — verdict would WAIT but a real cliff → REVERTED.
+  it('LOCK-6b: harm-revert overrides a WAIT verdict when checkout cliffs', async () => {
+    // No weekend dates + low confidence default → verdict WAIT; but 5/100 checkout is a cliff.
+    mockEventGroupBy(100, 5, 2);
+    mockSummaryDates([]); // no weekend → WAIT
+    const POST = await getHandler();
+    const res = await POST(makeRequest('test-secret-123'));
+    const update = (prisma.experiment.update as any).mock.calls[0][0];
+    expect(update.data.status).toBe('REVERTED');
+    const json = await res.json();
+    expect(json.experiments[0].status).toBe('REVERTED');
+  });
+
+  // LOCK-4: NO_DIFFERENCE when gates 1-4 pass but lift is below the practical floor
   it('LOCK-4: sets status to NO_DIFFERENCE when Thompson reports no meaningful difference', async () => {
     (calculateThompsonSampling as any).mockReturnValue({
+      ...DEFAULT_TS_RESULT,
       confidence: 0.96,
+      expectedLoss: 0.01,
       liftPercent: 0.5,
-      winnerId: null,
-      reason: 'No meaningful difference (lift 0.5% with 96.0% confidence)',
+      winnerCandidateId: 'treatment',
+      dynamicLossThreshold: 0.05,
+      targetOrdersPerVariant: 30,
       trafficSplit: { control: 0.52, treatment: 0.48 },
+      orderRates: { control: 0.05, treatment: 0.0503 },
     });
+    mockEventGroupBy(200, 40, 10); // non-zero loser orders → real lift gate
+    mockSummaryDates(WEEKEND_DATES);
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');
     const res = await POST(req);
@@ -227,20 +342,33 @@ describe('POST /api/cron/nightly', () => {
     expect(json.experiments[0].status).toBe('NO_DIFFERENCE');
   });
 
-  // LOCK-5: NO_DIFFERENCE when maxDays exceeded and confidence < 0.80
-  it('LOCK-5: sets NO_DIFFERENCE when maxDays exceeded and confidence<0.80', async () => {
+  // 15 distinct dates incl a Sat (06-06) and Sun (06-07) → runningDays at the 14-day cap.
+  const CAP_DATES = [
+    '2026-05-25', '2026-05-26', '2026-05-27', '2026-05-28', '2026-05-29',
+    '2026-05-30', '2026-05-31', '2026-06-01', '2026-06-02', '2026-06-03',
+    '2026-06-04', '2026-06-05', '2026-06-06', '2026-06-07', '2026-06-08',
+  ];
+
+  // LOCK-5: NO_DIFFERENCE backstop when the cap is reached with no clear winner (HIGH/MED)
+  it('LOCK-5: sets NO_DIFFERENCE when maxDays cap reached and confidence<0.95', async () => {
     const expiredExp = {
       ...MOCK_EXPERIMENT,
-      startedAt: new Date(Date.now() - 15 * 86400000), // 15 days ago, maxDays=14
+      startedAt: new Date(Date.now() - 15 * 86400000),
       maxDays: 14,
     };
     (prisma.experiment.findMany as any).mockResolvedValue([expiredExp]);
     (calculateThompsonSampling as any).mockReturnValue({
+      ...DEFAULT_TS_RESULT,
       confidence: 0.70,
+      expectedLoss: 0.05,
       liftPercent: 8,
-      winnerId: null,
+      winnerCandidateId: null,
+      dynamicLossThreshold: 0.05,
+      targetOrdersPerVariant: 30,
       trafficSplit: { control: 0.45, treatment: 0.55 },
     });
+    mockEventGroupBy(4000, 800, 40); // HIGH tier
+    mockSummaryDates(CAP_DATES);
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');
     const res = await POST(req);
@@ -255,8 +383,8 @@ describe('POST /api/cron/nightly', () => {
     );
   });
 
-  // LOCK-5b: If maxDays exceeded BUT confidence >= 0.95, WINNER_FOUND takes priority
-  it('LOCK-5b: WINNER_FOUND takes priority over maxDays expiry when confidence>=0.95', async () => {
+  // LOCK-5c: LOW tier at the cap with no winner → persisted as NO_DIFFERENCE + inconclusive flag.
+  it('LOCK-5c: LOW tier at cap with no winner persists NO_DIFFERENCE and inconclusive=true', async () => {
     const expiredExp = {
       ...MOCK_EXPERIMENT,
       startedAt: new Date(Date.now() - 15 * 86400000),
@@ -264,11 +392,97 @@ describe('POST /api/cron/nightly', () => {
     };
     (prisma.experiment.findMany as any).mockResolvedValue([expiredExp]);
     (calculateThompsonSampling as any).mockReturnValue({
-      confidence: 0.97,
-      liftPercent: 10,
-      winnerId: 'treatment',
-      trafficSplit: { control: 0.1, treatment: 0.9 },
+      ...DEFAULT_TS_RESULT,
+      confidence: 0.70,
+      expectedLoss: 0.05,
+      liftPercent: 8,
+      winnerCandidateId: null,
+      dynamicLossThreshold: 0.05,
+      targetOrdersPerVariant: 30,
+      trafficSplit: { control: 0.45, treatment: 0.55 },
     });
+    mockEventGroupBy(200, 30, 5); // LOW tier (~28/day)
+    mockSummaryDates(CAP_DATES);
+    const POST = await getHandler();
+    const req = makeRequest('test-secret-123');
+    await POST(req);
+
+    const update = (prisma.experiment.update as any).mock.calls[0][0];
+    expect(update.data.status).toBe('NO_DIFFERENCE');
+    expect(update.data.notes.inconclusive).toBe(true);
+  });
+
+  // INCONCLUSIVE (LOW tier at cap) persists NO_DIFFERENCE + inconclusive and reaches the
+  // terminal autopilot branch (carries current config forward — no winner is force-applied).
+  it('INCONCLUSIVE (LOW tier at cap) persists NO_DIFFERENCE + inconclusive flag and progresses autopilot', async () => {
+    const autopilotConfig = {
+      autopilot: {
+        enabled: true,
+        currentTestSlot: 'trustBadges:enabled',
+        queue: ['trustBadges:enabled', 'scarcityTimer:enabled'],
+        completedCount: 0, totalLift: 0, startedAt: '2026-05-01T00:00:00.000Z',
+      },
+      addons: { trustBadges: { config: { text: 'old' } } },
+    };
+    const inconclusiveExp = {
+      ...MOCK_EXPERIMENT,
+      slot: 'trustBadges',
+      startedAt: new Date(Date.now() - 15 * 86400000),
+      maxDays: 14,
+      store: { ...MOCK_STORE, config: autopilotConfig },
+      variants: [
+        { id: 'control', features: { _enabled: false } },
+        { id: 'treatment', features: { _enabled: true } },
+      ],
+    };
+    mockFindMany([inconclusiveExp], []);
+    (calculateThompsonSampling as any).mockReturnValue({
+      ...DEFAULT_TS_RESULT, confidence: 0.70, expectedLoss: 0.05, liftPercent: 3,
+      winnerCandidateId: null, dynamicLossThreshold: 0.15, targetOrdersPerVariant: 30,
+      orderRates: { control: 0.02, treatment: 0.021 },
+    });
+    mockEventGroupBy(200, 30, 5); // LOW tier (~28/day)
+    mockSummaryDates(CAP_DATES);
+    (prisma.store.findUnique as any).mockResolvedValue({ id: 'store_1', config: autopilotConfig });
+
+    const POST = await getHandler();
+    await POST(makeRequest('test-secret-123'));
+    const update = (prisma.experiment.update as any).mock.calls[0][0];
+    expect(update.data.status).toBe('NO_DIFFERENCE');
+    expect(update.data.notes.inconclusive).toBe(true);
+    // Terminal non-winner still advances the autopilot queue.
+    expect(prisma.store.update).toHaveBeenCalled();
+  });
+
+  // LOCK-5b: If maxDays exceeded BUT confidence >= 0.95, WINNER_FOUND takes priority
+  it('LOCK-5b: WINNER_FOUND takes priority over maxDays expiry when confidence>=0.95', async () => {
+    const expiredExp = {
+      ...MOCK_EXPERIMENT,
+      startedAt: new Date(Date.now() - 15 * 86400000),
+      maxDays: 14,
+      notes: {
+        dailyLeaders: [
+          { date: '2026-06-04', leaderId: 'treatment', liftPct: 10 },
+          { date: '2026-06-05', leaderId: 'treatment', liftPct: 10 },
+          { date: '2026-06-06', leaderId: 'treatment', liftPct: 10 },
+          { date: '2026-06-07', leaderId: 'treatment', liftPct: 10 },
+        ],
+      },
+    };
+    (prisma.experiment.findMany as any).mockResolvedValue([expiredExp]);
+    (calculateThompsonSampling as any).mockReturnValue({
+      ...DEFAULT_TS_RESULT,
+      confidence: 0.99,
+      expectedLoss: 0.01,
+      liftPercent: 10,
+      winnerCandidateId: 'treatment',
+      dynamicLossThreshold: 0.05,
+      targetOrdersPerVariant: 30,
+      trafficSplit: { control: 0.1, treatment: 0.9 },
+      orderRates: { control: 0.05, treatment: 0.09 },
+    });
+    mockEventGroupBy(200, 40, 16);
+    mockSummaryDates(CAP_DATES);
     const POST = await getHandler();
     const req = makeRequest('test-secret-123');
     await POST(req);
@@ -510,10 +724,27 @@ describe('POST /api/cron/nightly', () => {
   });
 
   it('LOCK: store without autopilot still verdicts, no progression', async () => {
+    const steadyExp = {
+      ...MOCK_EXPERIMENT,
+      notes: {
+        dailyLeaders: [
+          { date: '2026-06-04', leaderId: 'treatment', liftPct: 12 },
+          { date: '2026-06-05', leaderId: 'treatment', liftPct: 12 },
+          { date: '2026-06-06', leaderId: 'treatment', liftPct: 12 },
+          { date: '2026-06-07', leaderId: 'treatment', liftPct: 12 },
+        ],
+      },
+    };
+    (prisma.experiment.findMany as any).mockResolvedValue([steadyExp]);
     (calculateThompsonSampling as any).mockReturnValue({
-      confidence: 0.97, liftPercent: 12, winnerId: 'treatment',
+      ...DEFAULT_TS_RESULT,
+      confidence: 0.99, expectedLoss: 0.01, liftPercent: 12,
+      winnerCandidateId: 'treatment', dynamicLossThreshold: 0.05, targetOrdersPerVariant: 30,
       trafficSplit: { control: 0.1, treatment: 0.9 },
+      orderRates: { control: 0.05, treatment: 0.09 },
     });
+    mockEventGroupBy(200, 40, 16);
+    mockSummaryDates(WEEKEND_DATES);
     // MOCK_STORE (default) has no `config` → autopilot gate is falsy.
     const POST = await getHandler();
     const res = await POST(makeRequest('test-secret-123'));
@@ -543,12 +774,25 @@ describe('POST /api/cron/nightly', () => {
         { id: 'control', features: { _enabled: false } },
         { id: 'treatment', features: { _enabled: true } },
       ],
+      notes: {
+        dailyLeaders: [
+          { date: '2026-06-04', leaderId: 'treatment', liftPct: 12 },
+          { date: '2026-06-05', leaderId: 'treatment', liftPct: 12 },
+          { date: '2026-06-06', leaderId: 'treatment', liftPct: 12 },
+          { date: '2026-06-07', leaderId: 'treatment', liftPct: 12 },
+        ],
+      },
     };
     mockFindMany([autopilotExp], []);
     (calculateThompsonSampling as any).mockReturnValue({
-      confidence: 0.97, liftPercent: 12, winnerId: 'treatment',
+      ...DEFAULT_TS_RESULT,
+      confidence: 0.99, expectedLoss: 0.01, liftPercent: 12,
+      winnerCandidateId: 'treatment', dynamicLossThreshold: 0.05, targetOrdersPerVariant: 30,
       trafficSplit: { control: 0.1, treatment: 0.9 },
+      orderRates: { control: 0.05, treatment: 0.09 },
     });
+    mockEventGroupBy(200, 40, 16);
+    mockSummaryDates(WEEKEND_DATES);
     (prisma.store.findUnique as any).mockResolvedValue({ id: 'store_1', config: autopilotConfig });
     (prisma.experiment.create as any).mockResolvedValue({ id: 'expNew', startedAt: new Date() });
 
