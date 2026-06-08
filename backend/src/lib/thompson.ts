@@ -36,9 +36,9 @@ interface ThompsonResult {
   trafficSplit: Record<string, number>;
   confidence: number;           // P(best > second)
   expectedLoss: number;         // Expected conversion rate lost if we pick wrong winner (pp)
-  winnerId: string | null;
+  winnerCandidateId: string | null;  // statistical leader (bestId); decision made by winner-decision.ts
+  dynamicLossThreshold: number;      // tier-scaled expected-loss threshold (for decideVerdict)
   liftPercent: number;
-  reason?: string;              // Why winner was/wasn't declared
   orderRates?: Record<string, number>;     // Per-variant order rate (orders/cartOpens) — THE metric
   checkoutRates?: Record<string, number>;  // Per-variant checkout rate — display only
   explorationMinPerVariant?: number;       // Exported for dashboard progress display
@@ -209,65 +209,11 @@ export function calculateThompsonSampling(
     ? ((bestMean - secondMean) / secondMean) * 100
     : 0;
 
-  // ── Winner declaration: unified adaptive thresholds ──
-  let winnerId: string | null = null;
-  let reason = '';
-
-  const totalOrdersAll = variants.reduce((s, v) => s + v.successes, 0);
-  const maxOrdersPerArm = Math.max(...variants.map(v => v.successes));
-
   // Dynamic expected loss threshold — scaled by conversion rate (VWO approach)
   // Higher conversion stores can tolerate larger absolute loss
   const baselineLossScale = Math.max(0.5, Math.min(observedRate / 0.05, 2.0));
   const baseLossThreshold = dailyTraffic >= 500 ? 0.05 : dailyTraffic >= 50 ? 0.10 : 0.15;
   const dynamicLossThreshold = baseLossThreshold * baselineLossScale;
-
-  // Blowout shortcut: overwhelming signal transcends day-of-week noise
-  // Can declare at 3 days if the data is irrefutable
-  const isBlowout = confidence >= 0.995
-    && expectedLoss <= 0.005
-    && minDaysRunning >= 3
-    && maxOrdersPerArm >= targetOrdersPerVariant
-    && totalOrdersAll >= 40
-    && Math.abs(liftPercent) > 5;
-
-  // Gate 1: Minimum calendar days — 7 standard, 3 for blowout only
-  if (minDaysRunning < 3) {
-    reason = 'Need at least 3 days to capture traffic patterns';
-  }
-  // Gate 2: Blowout — clear winner even if loser has fewer orders
-  else if (isBlowout) {
-    winnerId = bestId;
-    reason = `Clear winner: ${(confidence * 100).toFixed(1)}% confidence, +${Math.abs(liftPercent).toFixed(0)}% lift, ${maxOrdersPerArm} orders on leading variant`;
-  }
-  // Gate 3: Standard path requires 7 days (day-of-week effects)
-  else if (minDaysRunning < 7) {
-    reason = `Need 7 days for day-of-week coverage (day ${minDaysRunning}/7)`;
-  }
-  // Gate 4: Dynamic minimum orders — derived from store's conversion rate
-  else if (minOrdersPerArm < targetOrdersPerVariant) {
-    reason = `Need ${targetOrdersPerVariant} orders per variant (currently ${minOrdersPerArm}, based on ${(observedRate * 100).toFixed(1)}% purchase rate)`;
-  }
-  // Gate 5: Confidence + expected loss check
-  else {
-    const confThreshold = 0.95;
-
-    if (confidence >= confThreshold && expectedLoss <= dynamicLossThreshold && Math.abs(liftPercent) > 1) {
-      winnerId = bestId;
-      reason = `Winner: ${(confidence * 100).toFixed(1)}% confidence, ${expectedLoss.toFixed(3)}pp expected loss, +${Math.abs(liftPercent).toFixed(1)}% lift`;
-    } else if (confidence >= 0.95 && Math.abs(liftPercent) <= 1) {
-      // High confidence but no meaningful difference
-      winnerId = null; // will be marked NO_DIFFERENCE by cron
-      reason = `No meaningful difference (lift ${liftPercent.toFixed(1)}% with ${(confidence * 100).toFixed(1)}% confidence)`;
-    } else if (dataMaturity >= 1.0 && Math.abs(liftPercent) < 3 && confidence >= 0.60) {
-      // Enough data collected, no meaningful impact — move on
-      winnerId = null; // will be marked NO_DIFFERENCE by cron
-      reason = `Low impact after full data collection (lift ${liftPercent.toFixed(1)}%, ${minOrdersPerArm} orders/variant) — move on`;
-    } else {
-      reason = `Collecting data: ${(confidence * 100).toFixed(1)}% confidence, ${expectedLoss.toFixed(3)}pp loss, ${liftPercent.toFixed(1)}% lift, maturity ${(dataMaturity * 100).toFixed(0)}%`;
-    }
-  }
-
 
   // Calculate per-variant rates for display
   // Order rate = the primary metric (what Thompson optimizes)
@@ -289,9 +235,9 @@ export function calculateThompsonSampling(
     trafficSplit,
     confidence,
     expectedLoss,
-    winnerId,
+    winnerCandidateId: bestId,
+    dynamicLossThreshold,
     liftPercent,
-    reason,
     orderRates,
     checkoutRates: Object.keys(checkoutRates).length > 0 ? checkoutRates : undefined,
     explorationMinPerVariant: explorationMin,

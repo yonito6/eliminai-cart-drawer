@@ -23,39 +23,7 @@ describe('Thompson Sampling — order-based optimization', () => {
     ], { dailyTraffic: 500, minDaysRunning: 5, dailyOrders: 1 });
     expect(result.trafficSplit.treatment).toBeGreaterThan(0.7);
     expect(result.confidence).toBeGreaterThan(0.9);
-    expect(result.winnerId).toBe('treatment');
-  });
-
-  it('does NOT declare winner with fewer than target orders per variant', () => {
-    // Even with high confidence, below dynamic order target + need 7 days
-    const result = calculateThompsonSampling([
-      { id: 'control', successes: 3, failures: 197 },
-      { id: 'treatment', successes: 15, failures: 185 },
-    ], { dailyTraffic: 500, minDaysRunning: 10 });
-    expect(result.winnerId).toBeNull();
-    expect(result.reason).toContain('orders per variant');
-  });
-
-  it('declares blowout winner when leading variant meets order target even if loser has few', () => {
-    // Blowout: 10% vs 0.5% — winner has 80 orders, loser has 5
-    // At ~5.5% observed rate, target orders ~48, winner exceeds it
-    // Total = 85 orders (>= 40), massive lift, 5+ days, confidence ~99.9%
-    const result = calculateThompsonSampling([
-      { id: 'control', successes: 5, failures: 995 },
-      { id: 'treatment', successes: 80, failures: 720 },
-    ], { dailyTraffic: 500, minDaysRunning: 5 });
-    // Should declare winner via blowout even though control has only 5 orders
-    expect(result.winnerId).toBe('treatment');
-    expect(result.reason).toContain('Clear winner');
-  });
-
-  it('does NOT blowout before 3 days even with overwhelming data', () => {
-    const result = calculateThompsonSampling([
-      { id: 'control', successes: 2, failures: 298 },
-      { id: 'treatment', successes: 50, failures: 250 },
-    ], { dailyTraffic: 200, minDaysRunning: 2 });
-    expect(result.winnerId).toBeNull();
-    expect(result.reason).toContain('3 days');
+    expect(result.winnerCandidateId).toBe('treatment');
   });
 
   it('reports low confidence with small samples', () => {
@@ -85,8 +53,19 @@ describe('Thompson Sampling — order-based optimization', () => {
     // Both should be relatively close to 50% (exploration phase forces equal)
     expect(result.trafficSplit.control).toBeGreaterThan(0.3);
     expect(result.trafficSplit.treatment).toBeGreaterThan(0.3);
-    // No winner should be declared
-    expect(result.winnerId).toBeNull();
+  });
+
+  it('exposes dynamicLossThreshold and winnerCandidateId for the decision module', () => {
+    const result = calculateThompsonSampling(
+      [
+        { id: 'control', successes: 5, failures: 195 },
+        { id: 'treatment', successes: 30, failures: 170 },
+      ],
+      { dailyTraffic: 600, dailyOrders: 8 },
+    );
+    expect(typeof result.dynamicLossThreshold).toBe('number');
+    expect(result.dynamicLossThreshold).toBeGreaterThan(0);
+    expect(result.winnerCandidateId).toBe('treatment'); // statistical leader by mean
   });
 
   // ── Hard floor tests ──
