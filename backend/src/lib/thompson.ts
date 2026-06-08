@@ -26,8 +26,6 @@ interface ThompsonOptions {
   dailyTraffic?: number;
   // Display stats — checkout & order rates for dashboard (NOT used in algorithm)
   displayStats?: VariantDisplayStats[];
-  // Minimum calendar days before declaring winner (day-of-week effects)
-  minDaysRunning?: number;
   // Average daily orders for this store (used for dynamic hard floor)
   dailyOrders?: number;
 }
@@ -36,9 +34,9 @@ interface ThompsonResult {
   trafficSplit: Record<string, number>;
   confidence: number;           // P(best > second)
   expectedLoss: number;         // Expected conversion rate lost if we pick wrong winner (pp)
-  winnerId: string | null;
+  winnerCandidateId: string | null;  // statistical leader (bestId); decision made by winner-decision.ts
+  dynamicLossThreshold: number;      // tier-scaled expected-loss threshold (for decideVerdict)
   liftPercent: number;
-  reason?: string;              // Why winner was/wasn't declared
   orderRates?: Record<string, number>;     // Per-variant order rate (orders/cartOpens) — THE metric
   checkoutRates?: Record<string, number>;  // Per-variant checkout rate — display only
   explorationMinPerVariant?: number;       // Exported for dashboard progress display
@@ -48,18 +46,6 @@ interface ThompsonResult {
   targetOrdersPerVariant: number;          // Dynamic order target from power analysis
   currentDetectableLift: number;           // Smallest relative lift detectable right now (%)
   hardFloorPerVariant: number;             // Dynamic hard floor — pure 50/50 until this many orders per arm
-}
-
-interface DailyLeader {
-  date: string;       // ISO date (YYYY-MM-DD)
-  leaderId: string;   // variant ID that led this day
-  liftPct: number;    // observed lift that day
-}
-
-interface ConsistencyResult {
-  score: number;         // 0-1: fraction of days the current leader led
-  multiplier: number;    // 1.0, 1.5, or 2.0 — extends sample target
-  message: string | null; // null = stable, string = explanation for user
 }
 
 interface SampleTargetResult {
@@ -87,7 +73,7 @@ export function calculateThompsonSampling(
   variants: VariantStats[],
   options: ThompsonOptions = {}
 ): ThompsonResult {
-  const { priors = {}, dailyTraffic = 100, displayStats, minDaysRunning = 0, dailyOrders = 0 } = options;
+  const { priors = {}, dailyTraffic = 100, displayStats, dailyOrders = 0 } = options;
 
   // Draw samples from Beta distribution for each variant
   // Prior: cross-store data if available, otherwise weak uninformative Beta(1, 1)
@@ -209,65 +195,11 @@ export function calculateThompsonSampling(
     ? ((bestMean - secondMean) / secondMean) * 100
     : 0;
 
-  // ── Winner declaration: unified adaptive thresholds ──
-  let winnerId: string | null = null;
-  let reason = '';
-
-  const totalOrdersAll = variants.reduce((s, v) => s + v.successes, 0);
-  const maxOrdersPerArm = Math.max(...variants.map(v => v.successes));
-
   // Dynamic expected loss threshold — scaled by conversion rate (VWO approach)
   // Higher conversion stores can tolerate larger absolute loss
   const baselineLossScale = Math.max(0.5, Math.min(observedRate / 0.05, 2.0));
   const baseLossThreshold = dailyTraffic >= 500 ? 0.05 : dailyTraffic >= 50 ? 0.10 : 0.15;
   const dynamicLossThreshold = baseLossThreshold * baselineLossScale;
-
-  // Blowout shortcut: overwhelming signal transcends day-of-week noise
-  // Can declare at 3 days if the data is irrefutable
-  const isBlowout = confidence >= 0.995
-    && expectedLoss <= 0.005
-    && minDaysRunning >= 3
-    && maxOrdersPerArm >= targetOrdersPerVariant
-    && totalOrdersAll >= 40
-    && Math.abs(liftPercent) > 5;
-
-  // Gate 1: Minimum calendar days — 7 standard, 3 for blowout only
-  if (minDaysRunning < 3) {
-    reason = 'Need at least 3 days to capture traffic patterns';
-  }
-  // Gate 2: Blowout — clear winner even if loser has fewer orders
-  else if (isBlowout) {
-    winnerId = bestId;
-    reason = `Clear winner: ${(confidence * 100).toFixed(1)}% confidence, +${Math.abs(liftPercent).toFixed(0)}% lift, ${maxOrdersPerArm} orders on leading variant`;
-  }
-  // Gate 3: Standard path requires 7 days (day-of-week effects)
-  else if (minDaysRunning < 7) {
-    reason = `Need 7 days for day-of-week coverage (day ${minDaysRunning}/7)`;
-  }
-  // Gate 4: Dynamic minimum orders — derived from store's conversion rate
-  else if (minOrdersPerArm < targetOrdersPerVariant) {
-    reason = `Need ${targetOrdersPerVariant} orders per variant (currently ${minOrdersPerArm}, based on ${(observedRate * 100).toFixed(1)}% purchase rate)`;
-  }
-  // Gate 5: Confidence + expected loss check
-  else {
-    const confThreshold = 0.95;
-
-    if (confidence >= confThreshold && expectedLoss <= dynamicLossThreshold && Math.abs(liftPercent) > 1) {
-      winnerId = bestId;
-      reason = `Winner: ${(confidence * 100).toFixed(1)}% confidence, ${expectedLoss.toFixed(3)}pp expected loss, +${Math.abs(liftPercent).toFixed(1)}% lift`;
-    } else if (confidence >= 0.95 && Math.abs(liftPercent) <= 1) {
-      // High confidence but no meaningful difference
-      winnerId = null; // will be marked NO_DIFFERENCE by cron
-      reason = `No meaningful difference (lift ${liftPercent.toFixed(1)}% with ${(confidence * 100).toFixed(1)}% confidence)`;
-    } else if (dataMaturity >= 1.0 && Math.abs(liftPercent) < 3 && confidence >= 0.60) {
-      // Enough data collected, no meaningful impact — move on
-      winnerId = null; // will be marked NO_DIFFERENCE by cron
-      reason = `Low impact after full data collection (lift ${liftPercent.toFixed(1)}%, ${minOrdersPerArm} orders/variant) — move on`;
-    } else {
-      reason = `Collecting data: ${(confidence * 100).toFixed(1)}% confidence, ${expectedLoss.toFixed(3)}pp loss, ${liftPercent.toFixed(1)}% lift, maturity ${(dataMaturity * 100).toFixed(0)}%`;
-    }
-  }
-
 
   // Calculate per-variant rates for display
   // Order rate = the primary metric (what Thompson optimizes)
@@ -289,9 +221,9 @@ export function calculateThompsonSampling(
     trafficSplit,
     confidence,
     expectedLoss,
-    winnerId,
+    winnerCandidateId: bestId,
+    dynamicLossThreshold,
     liftPercent,
-    reason,
     orderRates,
     checkoutRates: Object.keys(checkoutRates).length > 0 ? checkoutRates : undefined,
     explorationMinPerVariant: explorationMin,
@@ -407,46 +339,4 @@ export function calculateSampleTarget(
     totalNeeded: nPerVariant * numVariants,
     baselineRate: p1,
   };
-}
-
-/**
- * Calculate day-over-day consistency score.
- *
- * Tracks which variant leads each day. If results flip frequently,
- * the consistency score drops and we extend the test.
- */
-export function calculateConsistency(
-  dailyLeaders: DailyLeader[],
-): ConsistencyResult {
-  if (dailyLeaders.length < 2) {
-    return { score: 1, multiplier: 1.0, message: null };
-  }
-
-  // Find the overall leading variant (most days in the lead)
-  const leaderCounts: Record<string, number> = {};
-  for (const d of dailyLeaders) {
-    leaderCounts[d.leaderId] = (leaderCounts[d.leaderId] || 0) + 1;
-  }
-  const overallLeader = Object.entries(leaderCounts)
-    .sort((a, b) => b[1] - a[1])[0][0];
-
-  // Consistency = fraction of days the overall leader actually led
-  const daysLeading = leaderCounts[overallLeader];
-  const score = daysLeading / dailyLeaders.length;
-
-  let multiplier: number;
-  let message: string | null;
-
-  if (score > 0.80) {
-    multiplier = 1.0;
-    message = null; // stable
-  } else if (score >= 0.60) {
-    multiplier = 1.5;
-    message = `Results vary between days — extending for reliability (${daysLeading}/${dailyLeaders.length} days favor the leader)`;
-  } else {
-    multiplier = 2.0;
-    message = `Daily results keep flipping — need more data to be confident (${daysLeading}/${dailyLeaders.length} days favor the leader)`;
-  }
-
-  return { score, multiplier, message };
 }

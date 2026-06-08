@@ -2648,9 +2648,6 @@ function AddonsPage() {
                                                   <div style={{ marginTop: 3, fontWeight: 600 }}>Estimated ~{estDays} day{estDays !== 1 ? 's' : ''} remaining ({estimatedDailyOrders} orders/day).</div>
                                                 ) : null;
                                               })()}
-                                              {consistencyScore < 1 && dailyLeaders.length >= 3 && (
-                                                <div style={{ marginTop: 3, color: '#92400e' }}>Extended ×{exp.consistencyMultiplier?.toFixed(1) || '1.0'} due to inconsistent daily results.</div>
-                                              )}
                                             </div>
                                           </details>
                                         )}

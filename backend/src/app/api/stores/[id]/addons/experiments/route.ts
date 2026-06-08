@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { calculateSampleTarget, calculateConsistency } from '@/lib/thompson';
+import { calculateSampleTarget } from '@/lib/thompson';
+import { countConsecutiveLeaderDays, CREDIT_MIN_CONSECUTIVE_DAYS } from '@/lib/winner-decision';
 
 // GET /api/stores/:id/addons/experiments — get active experiments per addon
 export async function GET(
@@ -68,15 +69,20 @@ export async function GET(
       // Get stored notes for daily leaders + consistency
       const expNotes = (exp as any).notes || {};
       const dailyLeaders = expNotes.dailyLeaders || [];
-      const consistency = calculateConsistency(dailyLeaders);
+      const recentLeaderId = dailyLeaders.length ? dailyLeaders[dailyLeaders.length - 1].leaderId : null;
+      const consecutiveLeaderDays = countConsecutiveLeaderDays(dailyLeaders, recentLeaderId);
+      const consistencyScore = Math.min(1, consecutiveLeaderDays / CREDIT_MIN_CONSECUTIVE_DAYS);
+      const consistencyMessage = consecutiveLeaderDays >= CREDIT_MIN_CONSECUTIVE_DAYS
+        ? `Same leader ${consecutiveLeaderDays} days running`
+        : 'Leader still stabilizing';
 
-      // Smart sample target with consistency multiplier
+      // Smart sample target — base power-analysis number (credit only ever LOWERS the floor).
       const sampleTarget = calculateSampleTarget(observedPurchaseRate, variants.length);
-      const adjustedTargetPerVariant = Math.ceil(sampleTarget.nPerVariant * consistency.multiplier);
+      const adjustedTargetPerVariant = sampleTarget.nPerVariant;
 
       // Dynamic order target — derived from store's conversion rate
       const targetOrdersPerVariant = Math.max(25, Math.ceil(sampleTarget.nPerVariant * Math.max(0.005, observedPurchaseRate)));
-      const adjustedOrderTarget = Math.ceil(targetOrdersPerVariant * consistency.multiplier);
+      const adjustedOrderTarget = targetOrdersPerVariant;
       const minOrdersAcrossVariants = Math.min(...variantStats.map((v: any) => v.orders));
       const dataMaturity = Math.min(1.0, minOrdersAcrossVariants / adjustedOrderTarget);
 
@@ -164,9 +170,8 @@ export async function GET(
         baselinePurchaseRate: observedPurchaseRate,
         // Consistency fields
         dailyLeaders,
-        consistency: consistency.score,
-        consistencyMultiplier: consistency.multiplier,
-        consistencyMessage: consistency.message,
+        consistency: consistencyScore,
+        consistencyMessage,
         // ── Smooth dampening fields (new) ──
         dataMaturity,
         targetOrdersPerVariant: adjustedOrderTarget,
