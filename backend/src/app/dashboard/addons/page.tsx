@@ -465,6 +465,8 @@ function AddonsPage() {
   const [experiments, setExperiments] = useState<Record<string, any>>({});
   // ── Full test history per addon slot (every test ever run) ───────────────
   const [testHistory, setTestHistory] = useState<Record<string, any[]>>({});
+  // Collapsed by default — user expands the "Previous tests" list per addon.
+  const [historyOpen, setHistoryOpen] = useState<Record<string, boolean>>({});
   const [dailyTraffic, setDailyTraffic] = useState(0);
   const [estimatedDailyOrders, setEstimatedDailyOrders] = useState(0);
   const [logEventInput, setLogEventInput] = useState<Record<string, string>>({});
@@ -2506,9 +2508,23 @@ function AddonsPage() {
                 {/* ── Previous Tests (history) ─────────────────── */}
                 {isExpanded && expandedView === 'results' && slotHistory.length > 0 && (
                   <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 10 }}>
+                    <button
+                      onClick={() => setHistoryOpen(s => ({ ...s, [def.key]: !s[def.key] }))}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                        fontSize: 13, fontWeight: 600, color: '#111827',
+                        marginBottom: historyOpen[def.key] ? 10 : 0, textAlign: 'left' as const,
+                      }}
+                    >
+                      <span style={{
+                        display: 'inline-block', fontSize: 10, color: '#9ca3af',
+                        transform: historyOpen[def.key] ? 'rotate(90deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s ease',
+                      }}>▶</span>
                       Previous tests ({slotHistory.length})
-                    </div>
+                    </button>
+                    {historyOpen[def.key] && (
                     <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
                       {slotHistory.map((h: any) => {
                         const rawC = h.confidence ?? 0;
@@ -2557,6 +2573,7 @@ function AddonsPage() {
                         );
                       })}
                     </div>
+                    )}
                   </div>
                 )}
 
