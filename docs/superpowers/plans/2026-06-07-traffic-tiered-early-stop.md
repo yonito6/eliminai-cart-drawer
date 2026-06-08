@@ -30,14 +30,16 @@
 - `thompson.ts` `calculateThompsonSampling` winner block (lines ~212-269) — produces `winnerId`/`reason` today.
 - `nightly/route.ts` decision block (lines ~154-174) — consumes `ts.winnerId`/`ts.reason` + `consistencyOk`.
 - `thompson.ts` `calculateConsistency` (lines ~418-452) — extend-only multiplier, used by cron (route.ts:141, 152).
+- **`cron/adaptive/route.ts` (HOURLY cron, 183 lines) — SECOND winner-declaration site.** Independently sets `WINNER_FOUND` from `ts.winnerId` (line ~136-139), `winnerVariantId = ts.winnerId` (~138), plus ad-hoc NO_DIFFERENCE heuristics (~140 `confidence>=0.95 && |lift|<=1`; ~143 `daysRunning>=maxDays && confidence<0.80`), and `reason: ts.reason` in results.push (~169). References removed `ts.winnerId`/`ts.reason` → breaks `tsc`. **No test file.**
+- **`stores/[id]/addons/experiments/route.ts` (dashboard GET, 238 lines) — consumes `calculateConsistency`.** Imports it (line 3) alongside `calculateSampleTarget` (kept); calls `calculateConsistency(dailyLeaders)` (~71); uses `.multiplier` to inflate `adjustedTargetPerVariant` (~75) and `adjustedOrderTarget` (~79); returns display fields `consistency`/`consistencyMultiplier`/`consistencyMessage` (~167-169) consumed by the dashboard frontend. References removed function → breaks `tsc` + runtime. **No test file.**
 
-**Duplicated logic:** the WIN/NO_DIFFERENCE decision is duplicated across thompson (statistical call) and cron (consistency gate + string-match NO_DIFFERENCE). This plan consolidates both into `winner-decision.ts`.
+**Duplicated logic:** the WIN/NO_DIFFERENCE decision is duplicated across **THREE** sites — thompson (statistical call), the **nightly** cron (consistency gate + string-match NO_DIFFERENCE), and the **hourly adaptive** cron (its own `ts.winnerId` + heuristic NO_DIFFERENCE). This is exactly the duplicated-logic hazard blast-radius-shield warns about. This plan makes `winner-decision.ts` the SINGLE decision authority: only the **nightly** cron declares terminal verdicts (it has the full timeline inputs — DailySummary dates, dailyLeaders, weekend coverage). The **adaptive** cron is demoted to traffic-rebalancing only (it keeps calling thompson for `trafficSplit`/`confidence`/`expectedLoss`/`liftPercent` and writes those, but no longer sets `status`/`winnerVariantId`/`endedAt`). The dashboard route drops the retired extend-only multiplier.
 
 **Shared state written:** `experiment.status`, `winnerVariantId`, `confidence`, `liftPercent`, `trafficSplit`, `endedAt`, `notes.*`. Read by `variant-assign.ts` (only `status:'RUNNING'`) and the dashboard.
 
-**Cross-path risk:** if thompson stops setting `winnerId` but the cron still reads `ts.winnerId`, winners silently never declare. → Chunks 2 and 3 must land together-coherent; Chunk 2 updates thompson's tests and Chunk 3 rewires the cron. Run the FULL suite at the end of Chunk 3.
+**Cross-path risk:** (1) if thompson stops setting `winnerId` but a cron still reads `ts.winnerId`, winners silently never declare AND `tsc` breaks. → Chunks 2 and 3 must land together-coherent; Chunk 3 rewires BOTH crons. (2) If the adaptive cron kept declaring winners with its weaker heuristics, it would race the nightly gated logic and undermine the trust-first goal — so it is demoted. Run the FULL suite + `tsc --noEmit` at the end of Chunk 3.
 
-**Tests that lock current behavior:** `thompson.test.ts` (winner/blowout/consistency + statistical), `nightly-cron.test.ts` (LOCK-1..12), `checkout-safety.test.ts`.
+**Tests that lock current behavior:** `thompson.test.ts` (winner/blowout/consistency + statistical), `nightly-cron.test.ts` (LOCK-1..12), `checkout-safety.test.ts`. The two extra consumer files have NO tests — they are locked by `tsc --noEmit` (compile gate) plus Task 3.4's behavioral assertions where practical.
 
 ---
 
@@ -51,6 +53,8 @@
 | `backend/src/__tests__/thompson.test.ts` | Keep statistical tests; remove migrated winner/blowout/consistency tests. | **Modify** |
 | `backend/src/app/api/cron/nightly/route.ts` | Derive timeline inputs from `DailySummary`, call `decideVerdict`, apply verdict (incl. INCONCLUSIVE→NO_DIFFERENCE+note). Harm-revert untouched. | **Modify** |
 | `backend/src/__tests__/nightly-cron.test.ts` | Update mocks/LOCKs to the verdict flow; add tier/weekend/credit/fallback integration tests. | **Modify** |
+| `backend/src/app/api/cron/adaptive/route.ts` | Demote to traffic-rebalancing only: keep thompson call for split/confidence/loss/lift; stop declaring `WINNER_FOUND`/`NO_DIFFERENCE` (nightly owns terminal verdicts). Drop `ts.winnerId`/`ts.reason` references. | **Modify** |
+| `backend/src/app/api/stores/[id]/addons/experiments/route.ts` | Drop removed `calculateConsistency`; replace extend-only multiplier with the new consecutive-leader signal; keep dashboard field shape stable. | **Modify** |
 
 ---
 
@@ -866,6 +870,75 @@ Expected: ALL suites green (winner-decision, thompson, nightly-cron, checkout-sa
 ```bash
 git add backend/src/app/api/cron/nightly/route.ts backend/src/__tests__/nightly-cron.test.ts
 git commit -m "feat(cro): INCONCLUSIVE carries config forward; drop dead day-gating plumbing"
+```
+
+### Task 3.4: Fix the two out-of-plan thompson consumers (blast-radius closure)
+
+**Files:**
+- Modify: `backend/src/app/api/cron/adaptive/route.ts`
+- Modify: `backend/src/app/api/stores/[id]/addons/experiments/route.ts`
+
+**Context:** Chunk 2 removed `ThompsonResult.winnerId`/`ThompsonResult.reason` and the `calculateConsistency` export. Two production files outside the original plan still reference them and will fail `tsc --noEmit`. Neither has a test file. The fix consolidates decision authority into the nightly cron (single source of truth) and retires the extend-only multiplier on the dashboard.
+
+#### 3.4a — `cron/adaptive/route.ts`: demote to traffic-rebalancing only
+
+The adaptive (hourly) cron must STOP independently declaring winners. The nightly cron — which has the full timeline inputs (DailySummary dates, dailyLeaders, weekend coverage) — is the only place `decideVerdict` runs. The adaptive cron keeps doing the one thing it is uniquely good at: frequent traffic rebalancing toward the live leader during exploration.
+
+- [ ] **Step 1: Implement**
+
+1. The `calculateThompsonSampling(...)` call stays — it still yields `trafficSplit`, `confidence`, `expectedLoss`, `liftPercent`, all valid for live rebalancing and dashboard display.
+2. **Delete** the winner/NO_DIFFERENCE declaration block (~lines 132-146): the `let newStatus`/`let winnerVariantId`/`let endedAt` machinery, the `if (ts.winnerId) { ... } else if (ts.confidence >= 0.95 && Math.abs(ts.liftPercent) <= 1) { ... } else if (daysRunning >= exp.maxDays && ts.confidence < 0.80) { ... }` chain.
+3. The `prisma.experiment.update` (~149-160) keeps `confidence`, `expectedLoss`, `liftPercent`, `trafficSplit` only. **Remove** `status`, `winnerVariantId`, `endedAt` from its `data` (the experiment stays `RUNNING`; the nightly cron flips it terminal). Since the `where` already filters `status: 'RUNNING'`, never writing a terminal status here is correct.
+4. In `results.push` (~162-172): **delete** `reason: ts.reason,` and the `status: newStatus,` line. Keep `confidence`, `expectedLoss`, `slot`, `store`, `dailyTraffic`, `batchInterval`, `experimentId`.
+5. `daysRunning` (~116) becomes unused once the heuristic chain is deleted — remove it to keep `tsc` clean (it is computed only for that chain). Leave the `dailyOrders`/`priors`/`trafficTier` plumbing (still feeds thompson).
+
+- [ ] **Step 2: Typecheck**
+
+Run: `cd backend && npx tsc --noEmit`
+Expected: no `ts.winnerId`/`ts.reason` errors from this file.
+
+#### 3.4b — `stores/[id]/addons/experiments/route.ts`: drop the retired multiplier
+
+- [ ] **Step 1: Implement**
+
+1. Import (line 3): change `import { calculateSampleTarget, calculateConsistency } from '@/lib/thompson';` to `import { calculateSampleTarget } from '@/lib/thompson';` and add `import { countConsecutiveLeaderDays, CREDIT_MIN_CONSECUTIVE_DAYS } from '@/lib/winner-decision';`.
+2. Replace `const consistency = calculateConsistency(dailyLeaders);` (~line 71) with a lightweight consecutive-leader signal using the new helper. The route already has `dailyLeaders` from `expNotes.dailyLeaders`; the most-recent leader is `dailyLeaders[dailyLeaders.length - 1]?.leaderId ?? null`:
+```ts
+const recentLeaderId = dailyLeaders.length ? dailyLeaders[dailyLeaders.length - 1].leaderId : null;
+const consecutiveLeaderDays = countConsecutiveLeaderDays(dailyLeaders, recentLeaderId);
+const consistencyScore = Math.min(1, consecutiveLeaderDays / CREDIT_MIN_CONSECUTIVE_DAYS);
+const consistencyMessage = consecutiveLeaderDays >= CREDIT_MIN_CONSECUTIVE_DAYS
+  ? `Same leader ${consecutiveLeaderDays} days running`
+  : 'Leader still stabilizing';
+```
+3. **Remove the extend-only inflation.** The old model MULTIPLIED targets up when results were jumpy; the new credit model only ever LOWERS the floor, so the dashboard target is just the base power-analysis number:
+   - `const adjustedTargetPerVariant = sampleTarget.nPerVariant;` (drop `* consistency.multiplier` and the `Math.ceil`).
+   - `const adjustedOrderTarget = targetOrdersPerVariant;` (drop `* consistency.multiplier`).
+   (Keep whatever clamps already exist around these other than the multiplier.)
+4. Keep the dashboard response field shape stable so the frontend does not break:
+   - `consistency: consistencyScore,`
+   - `consistencyMultiplier: 1,` (retired — always 1, no extension)
+   - `consistencyMessage,`
+   Replace the old `consistency.score` / `consistency.multiplier` / `consistency.message` references with these.
+
+- [ ] **Step 2: Typecheck**
+
+Run: `cd backend && npx tsc --noEmit`
+Expected: clean — no `calculateConsistency` reference remains anywhere in the repo.
+
+- [ ] **Step 3: Full suite + grep guard**
+
+Run: `cd backend && npm test`
+Expected: full suite green (no behavior change to tested paths).
+
+Run a final grep to PROVE no stragglers reference removed symbols:
+- `Grep "ts\.winnerId|ts\.reason|calculateConsistency"` across `backend/src` → expect ZERO matches.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add backend/src/app/api/cron/adaptive/route.ts "backend/src/app/api/stores/[id]/addons/experiments/route.ts"
+git commit -m "fix(cro): consolidate winner authority — adaptive cron rebalances only; dashboard drops extend-only multiplier"
 ```
 
 **End of Chunk 3.** Run the plan-document-reviewer, then the final code-reviewer over the whole feature.
