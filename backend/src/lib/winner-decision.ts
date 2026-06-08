@@ -29,3 +29,24 @@ export function selectTier(visitorsPerDay: number): Tier {
   if (visitorsPerDay >= TIER_MEDIUM_MIN) return 'MEDIUM';
   return 'LOW';
 }
+
+export interface DailyLeaderEntry {
+  date: string;
+  leaderId: string;
+  liftPct: number;
+}
+
+// Walk dailyLeaders newest→oldest, counting while the leader equals candidateId.
+// Resets to 0 on the first mismatch (or when candidate is null).
+export function countConsecutiveLeaderDays(
+  dailyLeaders: DailyLeaderEntry[],
+  candidateId: string | null,
+): number {
+  if (!candidateId) return 0;
+  let count = 0;
+  for (let i = dailyLeaders.length - 1; i >= 0; i--) {
+    if (dailyLeaders[i].leaderId === candidateId) count++;
+    else break;
+  }
+  return count;
+}
