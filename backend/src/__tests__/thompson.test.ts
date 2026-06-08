@@ -20,7 +20,7 @@ describe('Thompson Sampling — order-based optimization', () => {
     const result = calculateThompsonSampling([
       { id: 'control', successes: 50, failures: 450 },
       { id: 'treatment', successes: 90, failures: 410 },
-    ], { dailyTraffic: 500, minDaysRunning: 5, dailyOrders: 1 });
+    ], { dailyTraffic: 500, dailyOrders: 1 });
     expect(result.trafficSplit.treatment).toBeGreaterThan(0.7);
     expect(result.confidence).toBeGreaterThan(0.9);
     expect(result.winnerCandidateId).toBe('treatment');

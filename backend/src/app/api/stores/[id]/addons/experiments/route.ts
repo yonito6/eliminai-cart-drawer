@@ -171,7 +171,6 @@ export async function GET(
         // Consistency fields
         dailyLeaders,
         consistency: consistencyScore,
-        consistencyMultiplier: 1,
         consistencyMessage,
         // ── Smooth dampening fields (new) ──
         dataMaturity,

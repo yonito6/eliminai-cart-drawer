@@ -26,8 +26,6 @@ interface ThompsonOptions {
   dailyTraffic?: number;
   // Display stats — checkout & order rates for dashboard (NOT used in algorithm)
   displayStats?: VariantDisplayStats[];
-  // Minimum calendar days before declaring winner (day-of-week effects)
-  minDaysRunning?: number;
   // Average daily orders for this store (used for dynamic hard floor)
   dailyOrders?: number;
 }
@@ -75,7 +73,7 @@ export function calculateThompsonSampling(
   variants: VariantStats[],
   options: ThompsonOptions = {}
 ): ThompsonResult {
-  const { priors = {}, dailyTraffic = 100, displayStats, minDaysRunning = 0, dailyOrders = 0 } = options;
+  const { priors = {}, dailyTraffic = 100, displayStats, dailyOrders = 0 } = options;
 
   // Draw samples from Beta distribution for each variant
   // Prior: cross-store data if available, otherwise weak uninformative Beta(1, 1)

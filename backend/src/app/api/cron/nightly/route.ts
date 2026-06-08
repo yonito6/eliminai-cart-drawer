@@ -100,6 +100,8 @@ export async function POST(req: NextRequest) {
     const priors = buildCrossStorePriors(crossStoreData, exp.slot, trafficTier);
 
     // Derive RUNNING-day timeline from DailySummary (one row-set per active date).
+    // runningDays counts distinct DailySummary days, NOT raw calendar age: summaries lag by
+    // a day, so a brand-new experiment reads 0 here until the first nightly run aggregates yesterday.
     const summaryRows = await prisma.dailySummary.findMany({
       where: { experimentId: exp.id },
       select: { date: true },
