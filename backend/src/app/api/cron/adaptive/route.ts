@@ -113,7 +113,6 @@ export async function POST(req: NextRequest) {
         : 'low' as const;
 
       const priors = buildCrossStorePriors(crossStoreData, exp.slot, trafficTier);
-      const daysRunning = Math.floor((Date.now() - new Date(exp.startedAt).getTime()) / 86400000);
 
       // Calculate daily orders for dynamic hard floor
       const orderEvents7d = await prisma.event.groupBy({
@@ -125,27 +124,12 @@ export async function POST(req: NextRequest) {
       const ts = calculateThompsonSampling(variantStats, {
         priors,
         dailyTraffic,
-        minDaysRunning: daysRunning,
         dailyOrders,
       });
 
-      let newStatus = exp.status;
-      let winnerVariantId = exp.winnerVariantId;
-      let endedAt = exp.endedAt;
-
-      if (ts.winnerId) {
-        newStatus = 'WINNER_FOUND';
-        winnerVariantId = ts.winnerId;
-        endedAt = new Date();
-      } else if (ts.confidence >= 0.95 && Math.abs(ts.liftPercent) <= 1) {
-        newStatus = 'NO_DIFFERENCE';
-        endedAt = new Date();
-      } else if (daysRunning >= exp.maxDays && ts.confidence < 0.80) {
-        newStatus = 'NO_DIFFERENCE';
-        endedAt = new Date();
-      }
-
-      // Update experiment with latest Thompson results
+      // Adaptive cron only rebalances live traffic. Winner/NO_DIFFERENCE decisions
+      // belong solely to the nightly cron (it has the full timeline inputs). The
+      // `where: status: 'RUNNING'` filter already prevents touching terminal experiments.
       await prisma.experiment.update({
         where: { id: exp.id },
         data: {
@@ -153,9 +137,6 @@ export async function POST(req: NextRequest) {
           expectedLoss: ts.expectedLoss,
           liftPercent: ts.liftPercent,
           trafficSplit: ts.trafficSplit,
-          status: newStatus as any,
-          winnerVariantId,
-          endedAt,
         },
       });
 
@@ -165,8 +146,6 @@ export async function POST(req: NextRequest) {
         slot: exp.slot,
         confidence: ts.confidence,
         expectedLoss: ts.expectedLoss,
-        status: newStatus,
-        reason: ts.reason,
         dailyTraffic,
         batchInterval: `${optimalInterval}h`,
       });
