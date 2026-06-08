@@ -220,7 +220,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Update experiment — persist daily leaders + sample target in notes
+    // Update experiment — persist daily leaders + verdict in notes
     await prisma.experiment.update({
       where: { id: exp.id },
       data: {
@@ -278,8 +278,11 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Aggregate daily summaries (also unique sessions)
+  // Dates throughout this file are UTC-based: the @db.Date summary date is written at
+  // UTC midnight (here) and read back by the weekend gate via getUTCDay(), so the stored
+  // calendar day and recovered weekday stay correct regardless of server timezone.
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  today.setUTCHours(0, 0, 0, 0);
   const yesterday = new Date(today.getTime() - 86400000);
 
   for (const exp of experiments) {

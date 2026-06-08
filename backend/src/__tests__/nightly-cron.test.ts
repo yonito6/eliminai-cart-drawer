@@ -564,6 +564,20 @@ describe('POST /api/cron/nightly', () => {
     expect(typeof createData.checkoutClicks).toBe('number');
   });
 
+  // LOCK-8b: DailySummary date is stored at UTC midnight (weekend-gate contract).
+  // The @db.Date column is read back via getUTCDay() by the weekend gate, so the
+  // written boundary MUST be UTC midnight or the recovered weekday is off-by-one on
+  // any non-UTC server, corrupting hasSaturday/hasSunday.
+  it('LOCK-8b: DailySummary date is stored at UTC midnight (weekend-gate contract)', async () => {
+    const POST = await getHandler();
+    await POST(makeRequest('test-secret-123'));
+    const dateUsed: Date = (prisma.dailySummary.upsert as any).mock.calls[0][0].where.experimentId_variantId_date.date;
+    expect(dateUsed.getUTCHours()).toBe(0);
+    expect(dateUsed.getUTCMinutes()).toBe(0);
+    expect(dateUsed.getUTCSeconds()).toBe(0);
+    expect(dateUsed.getUTCMilliseconds()).toBe(0);
+  });
+
   // LOCK-9: Events older than 30 days pruned
   it('LOCK-9: prunes events older than 30 days', async () => {
     const POST = await getHandler();
