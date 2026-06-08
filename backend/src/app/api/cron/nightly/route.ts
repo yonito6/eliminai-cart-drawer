@@ -4,6 +4,7 @@ import { calculateThompsonSampling, buildCrossStorePriors } from '@/lib/thompson
 import { decideVerdict, countConsecutiveLeaderDays, MAX_DAYS } from '@/lib/winner-decision';
 import { progressAutopilot } from '@/lib/autopilot-engine';
 import { shouldRevertForCheckoutDrop } from '@/lib/checkout-safety';
+import { buildCrossStoreLearning } from '@/lib/cross-store-learning';
 
 export async function POST(req: NextRequest) {
   // Verify cron secret
@@ -222,6 +223,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // On a terminal verdict, snapshot what was learned (effect size + winning/losing
+    // configs + store context) so the cross-store suggestion engine can mine it later.
+    // Stored in notes JSON — no schema change. WAIT verdicts skip this (still RUNNING).
+    const concluded = verdict.kind === 'WINNER' || verdict.kind === 'NO_DIFFERENCE' || verdict.kind === 'INCONCLUSIVE';
+    const crossStoreLearning = concluded
+      ? buildCrossStoreLearning({
+          slot: exp.slot,
+          verdict: verdict.kind,
+          liftPercent: ts.liftPercent,
+          winnerVariantId,
+          variants: variants.map((v: any) => ({ id: v.id, label: v.label, features: v.features || {} })),
+          trafficTier,
+          dailyTraffic,
+          runningDays,
+          confidence: ts.confidence,
+        })
+      : (existingNotes.crossStoreLearning ?? undefined);
+
     // Update experiment — persist daily leaders + verdict in notes
     await prisma.experiment.update({
       where: { id: exp.id },
@@ -241,6 +260,7 @@ export async function POST(req: NextRequest) {
           verdict: verdict.kind,
           verdictReason: verdict.reason,
           inconclusive,
+          crossStoreLearning,
         },
       },
     });
