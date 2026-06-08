@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AddonPreview from './addon-preview';
+import TestBuilderModal, { LaunchPayload } from './test-builder-modal';
 import type { StagingHint } from './addon-preview';
 import { RewardsTierEditorWithSave } from './rewards-tier-editor';
 import ProtectionEditor from './protection-editor';
@@ -445,6 +446,10 @@ function AddonsPage() {
     pendingData?: any;
   } | null>(null);
 
+  // ── Manual A/B builder modal state ───────────────────────────────────────
+  const [builderAddonKey, setBuilderAddonKey] = useState<string | null>(null);
+  const [launchingBuilder, setLaunchingBuilder] = useState(false);
+
   // ── Time estimate state (per experiment) ────────────────────────────────
   const [timeEstimates, setTimeEstimates] = useState<Record<string, {
     estimatedDaysRemaining: number;
@@ -840,6 +845,49 @@ function AddonsPage() {
     } finally {
       // Small delay so the animation completes smoothly
       setTimeout(() => setStartingTest(s => ({ ...s, [addonKey]: false })), 300);
+    }
+  }
+
+  // Manual builder launch: POST hand-picked variants to the same /addons/test endpoint.
+  async function launchCustomTest(payload: LaunchPayload) {
+    if (!STORE_ID) return;
+    const runningExp = experiments[payload.addonKey];
+    if (runningExp?.status === 'RUNNING') {
+      const proceed = await showConfirm({
+        title: 'Test already running',
+        message: 'A test is already running for this add-on. Launching this one will stop the current test and apply its best-performing variant first.',
+        confirmLabel: 'Stop & launch new test',
+        cancelLabel: 'Keep current test',
+        variant: 'warning',
+      });
+      if (!proceed) return;
+      await resolveTestOutcome(payload.addonKey);
+    }
+    setLaunchingBuilder(true);
+    try {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setBuilderAddonKey(null);
+        await fetchExperiments();
+        setExpanded(payload.addonKey);
+        setExpandedView('results');
+        window.history.replaceState({}, '', window.location.pathname);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        await showConfirm({
+          title: 'Could not launch test',
+          message: err.error || 'Something went wrong launching the A/B test.',
+          confirmLabel: 'OK', cancelLabel: '', variant: 'danger',
+        });
+      }
+    } catch (e) {
+      console.error('Failed to launch custom test', e);
+    } finally {
+      setLaunchingBuilder(false);
     }
   }
 
@@ -2302,6 +2350,19 @@ function AddonsPage() {
                               </>
                             )}
                           </button>
+                          <button
+                            onClick={() => setBuilderAddonKey(def.key)}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                              padding: '10px 20px', marginTop: 8, width: '100%',
+                              background: '#fff', color: '#6d28d9',
+                              border: '1px solid #d8b4fe', borderRadius: 10,
+                              cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                            }}
+                          >
+                            <span style={{ fontSize: 15 }}>🛠️</span>
+                            Test conversion — build it yourself
+                          </button>
                         </div>
                       )}
                       {addon.enabled && experiments[def.key]?.status === 'RUNNING' && (
@@ -2929,6 +2990,25 @@ function AddonsPage() {
           Eliminai Cart Optimizer
         </div>
       </div>
+
+      {/* ── Manual A/B Test Builder Modal ────────────────────────────────── */}
+      {builderAddonKey && (() => {
+        const def = definitions.find(d => d.key === builderAddonKey);
+        if (!def) return null;
+        const addon = addons[builderAddonKey];
+        return (
+          <TestBuilderModal
+            def={def as any}
+            config={addon?.config ?? {}}
+            enabled={addon?.enabled ?? false}
+            themeSettings={themeSettings}
+            storeId={STORE_ID}
+            launching={launchingBuilder}
+            onClose={() => setBuilderAddonKey(null)}
+            onLaunch={launchCustomTest}
+          />
+        );
+      })()}
 
       {/* ── Custom Confirm Dialog Modal ──────────────────────────────────── */}
       {confirmDialog && (
