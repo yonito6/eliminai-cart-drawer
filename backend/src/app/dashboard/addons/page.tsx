@@ -2950,36 +2950,36 @@ function AddonsPage() {
                                 <span style={{ fontSize: 11, color: '#9ca3af' }}>{trafficPct}% traffic</span>
                               </div>
 
-                              {/* Stats row */}
-                              <div style={{ padding: '0 16px 12px', display: 'flex', gap: 24 }}>
-                                <div>
-                                  <div><AnimatedNum value={v.checkoutRate ?? 0} suffix="%" decimals={1} /></div>
-                                  <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Checkout Rate</div>
+                              {/* Stats row — wraps so every metric stays visible on
+                                  mobile. Orders comes first + highlighted (the metric
+                                  that matters most) so it's never clipped off-screen. */}
+                              <div style={{ padding: '0 16px 12px', display: 'flex', flexWrap: 'wrap' as const, gap: '12px 18px', alignItems: 'flex-start' }}>
+                                <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 8, padding: '5px 12px' }}>
+                                  <div><AnimatedNum value={v.orders ?? 0} color="#7c3aed" /></div>
+                                  <div style={{ fontSize: 10, color: '#7c3aed', fontWeight: 700 }}>Orders</div>
                                 </div>
                                 {v.purchaseRate !== undefined && (
-                                  <div>
+                                  <div style={{ padding: '5px 0' }}>
                                     <div><AnimatedNum value={v.purchaseRate ?? 0} suffix="%" decimals={1} color="#7c3aed" /></div>
                                     <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Purchase Rate</div>
                                   </div>
                                 )}
-                                <div>
-                                  <div><AnimatedNum value={v.visitors ?? 0} /></div>
-                                  <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Visitors</div>
+                                <div style={{ padding: '5px 0' }}>
+                                  <div><AnimatedNum value={v.checkoutRate ?? 0} suffix="%" decimals={1} /></div>
+                                  <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Checkout Rate</div>
                                 </div>
-                                <div>
-                                  <div><AnimatedNum value={v.cartOpens ?? 0} /></div>
-                                  <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Cart Opens</div>
-                                </div>
-                                <div>
+                                <div style={{ padding: '5px 0' }}>
                                   <div><AnimatedNum value={v.checkoutClicks ?? 0} /></div>
                                   <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Checkouts</div>
                                 </div>
-                                {v.orders !== undefined && v.orders > 0 && (
-                                  <div>
-                                    <div><AnimatedNum value={v.orders ?? 0} color="#7c3aed" /></div>
-                                    <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Orders</div>
-                                  </div>
-                                )}
+                                <div style={{ padding: '5px 0' }}>
+                                  <div><AnimatedNum value={v.cartOpens ?? 0} /></div>
+                                  <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Cart Opens</div>
+                                </div>
+                                <div style={{ padding: '5px 0' }}>
+                                  <div><AnimatedNum value={v.visitors ?? 0} /></div>
+                                  <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>Visitors</div>
+                                </div>
                               </div>
 
                               {/* Preview of this variant */}
