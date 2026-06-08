@@ -463,6 +463,8 @@ function AddonsPage() {
 
   // ── Experiment data for timeline notes ──────────────────────────────────
   const [experiments, setExperiments] = useState<Record<string, any>>({});
+  // ── Full test history per addon slot (every test ever run) ───────────────
+  const [testHistory, setTestHistory] = useState<Record<string, any[]>>({});
   const [dailyTraffic, setDailyTraffic] = useState(0);
   const [estimatedDailyOrders, setEstimatedDailyOrders] = useState(0);
   const [logEventInput, setLogEventInput] = useState<Record<string, string>>({});
@@ -579,6 +581,18 @@ function AddonsPage() {
     } catch (e) { console.error('Failed to load experiments', e); }
   }, [STORE_ID]);
 
+  // ── Fetch full test history (every test ever run, grouped by addon slot) ──
+  const loadHistory = useCallback(async () => {
+    if (!STORE_ID) return;
+    try {
+      const res = await fetch(API + '/api/stores/' + STORE_ID + '/addons/experiments/history');
+      if (res.ok) {
+        const json = await res.json();
+        setTestHistory(json.history || {});
+      }
+    } catch (e) { console.error('Failed to load test history', e); }
+  }, [STORE_ID]);
+
 
   const fetchStoreStats = useCallback(async () => {
     if (!STORE_ID) return;
@@ -643,8 +657,8 @@ function AddonsPage() {
 
   // ── Unified refresh: load everything on mount + every 15s ────────────────
   const refreshAll = useCallback(async () => {
-    await Promise.all([load(), loadAutopilot(), loadExperiments(), fetchExperiments(), fetchStoreStats(), loadLayout()]);
-  }, [load, loadAutopilot, loadExperiments, fetchExperiments, fetchStoreStats, loadLayout]);
+    await Promise.all([load(), loadAutopilot(), loadExperiments(), fetchExperiments(), fetchStoreStats(), loadLayout(), loadHistory()]);
+  }, [load, loadAutopilot, loadExperiments, fetchExperiments, fetchStoreStats, loadLayout, loadHistory]);
 
   useEffect(() => {
     refreshAll();
@@ -1815,15 +1829,35 @@ function AddonsPage() {
 
             const activeExp = experiments[def.key];
             const isTesting = activeExp?.status === 'RUNNING';
-            const hasWinner = activeExp?.status === 'WINNER_FOUND';
+
+            // Every test ever run for this addon (newest first). Drives the
+            // "See previous tests" button + history list.
+            const slotHistory = testHistory[def.key] || [];
+            const hasHistory = slotHistory.length > 0;
+
+            // Live teaser for a running test — confidence + order progress,
+            // shown inline on the collapsed row (no click needed).
+            let testTeaser: { conf: number; orders: number; target: number; ready: boolean } | null = null;
+            if (isTesting && activeExp) {
+              const vs = (activeExp.variantStats || []) as any[];
+              const collectedOrders = vs.reduce((s: number, v: any) => s + (v.orders ?? 0), 0);
+              const targetPerVariant = activeExp.targetOrdersPerVariant ?? activeExp.minOrdersPerVariant ?? 25;
+              const target = targetPerVariant * Math.max(1, vs.length);
+              const rawConf = activeExp.confidence ?? 0;
+              const conf = Math.round(Math.max(0, (rawConf - 0.5) / 0.5) * 100);
+              const ready = collectedOrders >= 10;
+              testTeaser = { conf: ready ? conf : 0, orders: collectedOrders, target, ready };
+            }
 
             // Only the addon currently under test gets a highlighted border.
             // Everything else (on or off) uses the neutral border — an addon being
             // "on" is already conveyed by the Active badge, not the border.
+            // Finished tests show the addon's LIVE state (Active/Off), not a stale
+            // "Winner Found" — the result lives in "See previous tests".
             const borderColor = isTesting ? '#7c3aed' : '#e5e7eb';
             const borderWidth = isTesting ? 2 : 1;
-            const badgeColor = isTesting ? '#7c3aed' : hasWinner ? '#16a34a' : addon.enabled ? '#7c3aed' : '#9ca3af';
-            const badgeLabel = isTesting ? 'Testing now' : hasWinner ? 'Winner Found' : addon.enabled ? 'Active' : 'Off';
+            const badgeColor = isTesting ? '#7c3aed' : addon.enabled ? '#7c3aed' : '#9ca3af';
+            const badgeLabel = isTesting ? 'Testing now' : addon.enabled ? 'Active' : 'Off';
 
             return (
               <div
@@ -1904,16 +1938,33 @@ function AddonsPage() {
                     >
                       {def.description}
                     </div>
-                    {isTesting && activeExp && (
-                      <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 500, marginTop: 3 }}>
-                        {activeExp.totalVisitors} visitors tested
+                    {isTesting && activeExp && testTeaser && (
+                      <div style={{ marginTop: 5 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, fontWeight: 600, marginBottom: 3 }}>
+                          <span style={{ color: testTeaser.conf >= 90 ? '#16a34a' : '#7c3aed' }}>
+                            {testTeaser.ready ? testTeaser.conf + '% confidence' : 'Gathering data'}
+                          </span>
+                          <span style={{ color: '#9ca3af', fontWeight: 500 }}>·</span>
+                          <span style={{ color: '#6b7280', fontWeight: 500 }}>
+                            {testTeaser.orders}/{testTeaser.target} orders
+                          </span>
+                        </div>
+                        <div style={{ height: 4, width: 180, maxWidth: '100%', background: '#ede9fe', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{
+                            height: '100%',
+                            width: Math.min(100, Math.round((testTeaser.orders / Math.max(1, testTeaser.target)) * 100)) + '%',
+                            background: testTeaser.conf >= 90 ? '#16a34a' : '#7c3aed',
+                            borderRadius: 2,
+                            transition: 'width 0.5s ease',
+                          }} />
+                        </div>
                       </div>
                     )}
                   </div>
 
                   {/* Action buttons */}
                   <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                    {(isTesting || hasWinner || (activeExp?.status === 'NO_DIFFERENCE')) && (
+                    {(isTesting || hasHistory) && (
                       <button
                         onClick={() => {
                           if (isExpanded && expandedView === 'results') { setExpanded(null); }
@@ -1925,7 +1976,9 @@ function AddonsPage() {
                           padding: '4px 8px',
                         }}
                       >
-                        {isExpanded && expandedView === 'results' ? 'Close' : 'Track Results'}
+                        {isExpanded && expandedView === 'results'
+                          ? 'Close'
+                          : isTesting ? 'Track Results' : 'See previous tests'}
                       </button>
                     )}
                     <button
@@ -2450,8 +2503,65 @@ function AddonsPage() {
                   </div>
                 )}
 
+                {/* ── Previous Tests (history) ─────────────────── */}
+                {isExpanded && expandedView === 'results' && slotHistory.length > 0 && (
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 10 }}>
+                      Previous tests ({slotHistory.length})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+                      {slotHistory.map((h: any) => {
+                        const rawC = h.confidence ?? 0;
+                        const c = Math.round(Math.max(0, (rawC - 0.5) / 0.5) * 100);
+                        const statusMeta: Record<string, { label: string; color: string }> = {
+                          RUNNING: { label: 'Running', color: '#7c3aed' },
+                          PAUSED: { label: 'Paused', color: '#d97706' },
+                          WINNER_FOUND: { label: 'Winner found', color: '#16a34a' },
+                          NO_DIFFERENCE: { label: 'No difference', color: '#6b7280' },
+                          REVERTED: { label: 'Reverted', color: '#9ca3af' },
+                        };
+                        const sm = statusMeta[h.status] || { label: h.status, color: '#6b7280' };
+                        return (
+                          <div key={h.id} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            gap: 12, padding: '10px 12px', background: '#f9fafb',
+                            border: '1px solid #f3f4f6', borderRadius: 8,
+                          }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {h.name}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                                {new Date(h.startedAt).toLocaleDateString()}
+                                {h.endedAt ? ' – ' + new Date(h.endedAt).toLocaleDateString() : ''}
+                                {' · '}{h.totalVisitors} visitors
+                                {h.winnerLabel ? ' · Winner: ' + h.winnerLabel : ''}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                              {h.status === 'WINNER_FOUND' && h.liftPercent != null && (
+                                <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a' }}>
+                                  +{Math.abs(h.liftPercent).toFixed(1)}%
+                                </span>
+                              )}
+                              <span style={{ fontSize: 11, color: '#6b7280' }}>{c}% conf.</span>
+                              <span style={{
+                                fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 12,
+                                background: sm.color + '18', color: sm.color,
+                                textTransform: 'uppercase' as const, letterSpacing: 0.3, whiteSpace: 'nowrap' as const,
+                              }}>
+                                {sm.label}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Results View Section ─────────────────────── */}
-                {isExpanded && expandedView === 'results' && (() => {
+                {isExpanded && expandedView === 'results' && experiments[def.key] && (() => {
                   const exp = experiments[def.key];
                   if (!exp) return null;
                   // Transform raw Bayesian confidence (50%=no data, 100%=certain) to user-friendly 0-100% scale
